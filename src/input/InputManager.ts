@@ -40,11 +40,11 @@ export class InputManager {
   }
 
   private bindEvents(): void {
-    // Keyboard
-    window.addEventListener('keydown', (e: KeyboardEvent) => {
+    // Keyboard — use document so events fire reliably under pointer lock
+    document.addEventListener('keydown', (e: KeyboardEvent) => {
       this.keysDown.add(e.code);
     });
-    window.addEventListener('keyup', (e: KeyboardEvent) => {
+    document.addEventListener('keyup', (e: KeyboardEvent) => {
       this.keysDown.delete(e.code);
     });
 
@@ -61,11 +61,11 @@ export class InputManager {
       });
     });
 
-    // Mouse buttons
-    window.addEventListener('mousedown', (e: MouseEvent) => {
+    // Mouse buttons — use document for pointer lock compatibility
+    document.addEventListener('mousedown', (e: MouseEvent) => {
       this.mouseButtons.add(e.button);
     });
-    window.addEventListener('mouseup', (e: MouseEvent) => {
+    document.addEventListener('mouseup', (e: MouseEvent) => {
       this.mouseButtons.delete(e.button);
     });
 
