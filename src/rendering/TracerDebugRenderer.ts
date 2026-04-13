@@ -54,11 +54,22 @@ export class TracerDebugRenderer {
   }
 
   private onKeyDown = (e: KeyboardEvent): void => {
-    if (e.key === 'F5') {
-      this.visible = !this.visible;
-      this.lineGroup.visible = this.visible;
+    // F6 for tracer debug (F5 is camera toggle)
+    if (e.code === 'F6') {
+      e.preventDefault();
+      this.toggle();
     }
   };
+
+  /** Programmatically toggle tracer debug visibility */
+  toggle(): void {
+    this.visible = !this.visible;
+    this.lineGroup.visible = this.visible;
+  }
+
+  isVisible(): boolean {
+    return this.visible;
+  }
 
   /**
    * Update the debug line geometry from the tracer segment ring buffer.
