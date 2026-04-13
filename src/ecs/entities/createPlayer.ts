@@ -13,6 +13,8 @@ import {
   Health,
   Stamina,
   CombatStateComp,
+  CombatStateComponent,
+  AnimationComp,
 } from '../components';
 import { registerPhysicsBody } from '../systems/MovementSystem';
 import type { GameWorld } from '../../core/types';
@@ -40,6 +42,8 @@ export function createPlayer(
   addComponent(world.ecs, Health, eid);
   addComponent(world.ecs, Stamina, eid);
   addComponent(world.ecs, CombatStateComp, eid);
+  addComponent(world.ecs, CombatStateComponent, eid);
+  addComponent(world.ecs, AnimationComp, eid);
 
   // Set initial values
   Position.x[eid] = spawnPos.x;
@@ -59,9 +63,9 @@ export function createPlayer(
   Health.max[eid] = 100;
   Stamina.current[eid] = 100;
   Stamina.max[eid] = 100;
-  CombatStateComp.state[eid] = 0; // Idle
-  CombatStateComp.ticksRemaining[eid] = 0;
-  CombatStateComp.weaponId[eid] = 0;
+  CombatStateComponent.state[eid] = 0; // Idle
+  CombatStateComponent.ticksRemaining[eid] = 0;
+  CombatStateComponent.weaponId[eid] = 0;
 
   // Create Rapier kinematic body
   const bodyDesc = world.rapier.RigidBodyDesc.kinematicPositionBased()

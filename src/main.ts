@@ -7,8 +7,12 @@ import { staminaSystemTick } from './ecs/systems/StaminaSystem';
 import { healthSystemTick } from './ecs/systems/HealthSystem';
 import { createPlayer } from './ecs/entities/createPlayer';
 import { createArena } from './ecs/entities/createArena';
+import { animationSystem } from './ecs/systems/AnimationSystem';
 import { DebugOverlay } from './hud/DebugOverlay';
 import { HUD } from './hud/HUD';
+import { TracerSystem } from './ecs/systems/TracerSystem';
+import { DamageSystem } from './ecs/systems/DamageSystem';
+import { TracerDebugRenderer } from './rendering/TracerDebugRenderer';
 import { FIXED_TIMESTEP } from './core/types';
 import { Position } from './ecs/components';
 
@@ -39,6 +43,9 @@ async function main(): Promise<void> {
 
   // HUD (health bar, stamina bar, FSM state label, FPS counter)
   const hud = new HUD();
+
+  // Initialize debug renderers
+  const tracerDebugRenderer = new TracerDebugRenderer(world.scene);
 
   // Click-to-play handler
   const overlay = document.getElementById('click-to-play');
@@ -77,6 +84,10 @@ async function main(): Promise<void> {
     // Step physics
     world.physicsWorld.step();
 
+    // Tracer hit detection + damage resolution
+    TracerSystem(world, FIXED_TIMESTEP);
+    DamageSystem(world, FIXED_TIMESTEP);
+
     // Sync player mesh position with ECS
     playerMesh.position.set(
       Position.x[playerEid],
@@ -86,11 +97,14 @@ async function main(): Promise<void> {
   };
 
   loop.update = (dt: number) => {
+    // Variable-rate updates: animation blending
+    animationSystem(world, dt);
     debugOverlay.update(dt, playerEid, cameraController);
     hud.update(dt, playerEid);
   };
 
   loop.render = (alpha: number) => {
+    tracerDebugRenderer.update();
     cameraController.updateCamera(playerEid, alpha);
     world.renderer.render(world.scene, world.camera);
   };

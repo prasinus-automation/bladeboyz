@@ -2,11 +2,14 @@ import { addEntity, addComponent } from 'bitecs';
 import {
   Position,
   Rotation,
+  Velocity,
   CharacterModel,
   Health,
   Hitboxes,
   Stamina,
   CombatStateComp,
+  CombatStateComponent,
+  AnimationComp,
   meshRegistry,
 } from '../components';
 import { createCharacterModel } from '../../rendering/CharacterModel';
@@ -31,8 +34,11 @@ export function createDummy(
   addComponent(world.ecs, CharacterModel, eid);
   addComponent(world.ecs, Health, eid);
   addComponent(world.ecs, Hitboxes, eid);
+  addComponent(world.ecs, Velocity, eid);
   addComponent(world.ecs, Stamina, eid);
   addComponent(world.ecs, CombatStateComp, eid);
+  addComponent(world.ecs, CombatStateComponent, eid);
+  addComponent(world.ecs, AnimationComp, eid);
 
   Position.x[eid] = x;
   Position.y[eid] = y;
@@ -41,9 +47,9 @@ export function createDummy(
   Health.max[eid] = 100;
   Stamina.current[eid] = 100;
   Stamina.max[eid] = 100;
-  CombatStateComp.state[eid] = 0; // Idle
-  CombatStateComp.ticksRemaining[eid] = 0;
-  CombatStateComp.weaponId[eid] = 0;
+  CombatStateComponent.state[eid] = 0; // Idle
+  CombatStateComponent.ticksRemaining[eid] = 0;
+  CombatStateComponent.weaponId[eid] = 0;
 
   const { group, skeleton, bones } = createCharacterModel(color);
   group.position.set(x, y, z);

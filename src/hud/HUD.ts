@@ -11,7 +11,7 @@
  * All HUD elements are HTML overlays with pointer-events: none.
  */
 
-import { Health, Stamina, CombatStateComp } from '../ecs/components';
+import { Health, Stamina, CombatStateComponent } from '../ecs/components';
 import { COMBAT_STATE_NAMES } from '../combat/states';
 import { HealthBar } from './HealthBar';
 import { StaminaBar } from './StaminaBar';
@@ -103,9 +103,9 @@ export class HUD {
 
     // Update FSM state label
     if (this.fsmVisible) {
-      const stateNum = CombatStateComp.state[playerEntity] ?? 0;
+      const stateNum = CombatStateComponent.state[playerEntity] ?? 0;
       const stateName = COMBAT_STATE_NAMES[stateNum] ?? 'Unknown';
-      const ticksLeft = CombatStateComp.ticksRemaining[playerEntity] ?? 0;
+      const ticksLeft = CombatStateComponent.ticksRemaining[playerEntity] ?? 0;
       this.fsmLabel.textContent = `${stateName} [${ticksLeft}]`;
     }
 

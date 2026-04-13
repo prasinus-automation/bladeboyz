@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createWorld, addEntity, addComponent } from 'bitecs';
-import { Stamina, CombatStateComp } from '../components';
+import { Stamina, CombatStateComponent } from '../components';
 import { CombatState, BLOCK_BREAK_STUN_TICKS } from '../../combat/states';
 import {
   staminaSystemTick,
@@ -24,17 +24,20 @@ const mockWeapon: WeaponConfig = {
   turncap: {} as any,
   tracerPoints: [],
   range: 1.0,
+  blockStaminaDrain: 10,
+  parryStunTicks: 12,
+  hitStunTicks: 15,
 };
 
 function createTestEntity(world: any, stamina = 100, maxStamina = 100, state = CombatState.Idle): number {
   const eid = addEntity(world);
   addComponent(world, Stamina, eid);
-  addComponent(world, CombatStateComp, eid);
+  addComponent(world, CombatStateComponent, eid);
   Stamina.current[eid] = stamina;
   Stamina.max[eid] = maxStamina;
-  CombatStateComp.state[eid] = state;
-  CombatStateComp.ticksRemaining[eid] = 0;
-  CombatStateComp.weaponId[eid] = 0;
+  CombatStateComponent.state[eid] = state;
+  CombatStateComponent.ticksRemaining[eid] = 0;
+  CombatStateComponent.weaponId[eid] = 0;
   return eid;
 }
 
@@ -96,8 +99,8 @@ describe('StaminaSystem', () => {
       const eid = createTestEntity(world, 5, 100, CombatState.Block);
       queueStaminaCost({ entity: eid, type: 'block', weaponConfig: mockWeapon });
       const broken = staminaSystemTick(world);
-      expect(CombatStateComp.state[eid]).toBe(CombatState.Stunned);
-      expect(CombatStateComp.ticksRemaining[eid]).toBe(BLOCK_BREAK_STUN_TICKS);
+      expect(CombatStateComponent.state[eid]).toBe(CombatState.Stunned);
+      expect(CombatStateComponent.ticksRemaining[eid]).toBe(BLOCK_BREAK_STUN_TICKS);
       expect(broken).toContain(eid);
     });
 
@@ -105,7 +108,7 @@ describe('StaminaSystem', () => {
       const eid = createTestEntity(world, 3, 100, CombatState.ParryWindow);
       queueStaminaCost({ entity: eid, type: 'parry', weaponConfig: mockWeapon });
       const broken = staminaSystemTick(world);
-      expect(CombatStateComp.state[eid]).toBe(CombatState.Stunned);
+      expect(CombatStateComponent.state[eid]).toBe(CombatState.Stunned);
       expect(broken).toContain(eid);
     });
 
@@ -113,7 +116,7 @@ describe('StaminaSystem', () => {
       const eid = createTestEntity(world, 5, 100, CombatState.Windup);
       queueStaminaCost({ entity: eid, type: 'attack', weaponConfig: mockWeapon });
       const broken = staminaSystemTick(world);
-      expect(CombatStateComp.state[eid]).toBe(CombatState.Windup); // unchanged
+      expect(CombatStateComponent.state[eid]).toBe(CombatState.Windup); // unchanged
       expect(broken).not.toContain(eid);
     });
 
@@ -121,7 +124,7 @@ describe('StaminaSystem', () => {
       const eid = createTestEntity(world, 1, 100, CombatState.Block);
       queueStaminaCost({ entity: eid, type: 'block', weaponConfig: mockWeapon });
       staminaSystemTick(world);
-      expect(CombatStateComp.ticksRemaining[eid]).toBe(30);
+      expect(CombatStateComponent.ticksRemaining[eid]).toBe(30);
     });
   });
 

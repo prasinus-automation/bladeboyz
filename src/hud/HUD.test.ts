@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createWorld, addEntity, addComponent } from 'bitecs';
-import { Health, Stamina, CombatStateComp } from '../ecs/components';
+import { Health, Stamina, CombatStateComponent } from '../ecs/components';
 import { CombatState } from '../combat/states';
 import { HUD } from './HUD';
 
@@ -8,13 +8,13 @@ function createTestEntity(world: any): number {
   const eid = addEntity(world);
   addComponent(world, Health, eid);
   addComponent(world, Stamina, eid);
-  addComponent(world, CombatStateComp, eid);
+  addComponent(world, CombatStateComponent, eid);
   Health.current[eid] = 75;
   Health.max[eid] = 100;
   Stamina.current[eid] = 60;
   Stamina.max[eid] = 100;
-  CombatStateComp.state[eid] = CombatState.Idle;
-  CombatStateComp.ticksRemaining[eid] = 0;
+  CombatStateComponent.state[eid] = CombatState.Idle;
+  CombatStateComponent.ticksRemaining[eid] = 0;
   return eid;
 }
 

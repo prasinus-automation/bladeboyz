@@ -11,7 +11,7 @@
  */
 
 import { defineQuery, type IWorld } from 'bitecs';
-import { Stamina, CombatStateComp } from '../components';
+import { Stamina, CombatStateComponent } from '../components';
 import { CombatState, BLOCK_BREAK_STUN_TICKS } from '../../combat/states';
 import type { WeaponConfig } from '../../weapons/WeaponConfig';
 
@@ -22,8 +22,8 @@ const STAMINA_REGEN_PER_TICK = STAMINA_REGEN_PER_SECOND / 60;
 /** Ticks of idle before regen starts (1 second at 60Hz) */
 const REGEN_DELAY_TICKS = 60;
 
-/** Query entities that have both Stamina and CombatStateComp */
-const staminaQuery = defineQuery([Stamina, CombatStateComp]);
+/** Query entities that have both Stamina and CombatStateComponent */
+const staminaQuery = defineQuery([Stamina, CombatStateComponent]);
 
 /**
  * Per-entity stamina tracking state (not in ECS because it's internal bookkeeping).
@@ -90,14 +90,14 @@ export function staminaSystemTick(ecsWorld: IWorld): number[] {
       ticksSinceLastCost.set(eid, 0);
 
       // Check block break: stamina hit 0 while blocking
-      const currentState = CombatStateComp.state[eid] as CombatState;
+      const currentState = CombatStateComponent.state[eid] as CombatState;
       if (
         Stamina.current[eid] <= 0 &&
         (currentState === CombatState.Block || currentState === CombatState.ParryWindow)
       ) {
         // Transition to Stunned
-        CombatStateComp.state[eid] = CombatState.Stunned;
-        CombatStateComp.ticksRemaining[eid] = BLOCK_BREAK_STUN_TICKS;
+        CombatStateComponent.state[eid] = CombatState.Stunned;
+        CombatStateComponent.ticksRemaining[eid] = BLOCK_BREAK_STUN_TICKS;
         blockBrokenEntities.push(eid);
       }
     } else {
@@ -107,7 +107,7 @@ export function staminaSystemTick(ecsWorld: IWorld): number[] {
       ticksSinceLastCost.set(eid, ticks);
 
       // Passive regeneration after delay, only when not attacking or blocking
-      const currentState = CombatStateComp.state[eid] as CombatState;
+      const currentState = CombatStateComponent.state[eid] as CombatState;
       const isIdle =
         currentState === CombatState.Idle || currentState === CombatState.Recovery;
 
