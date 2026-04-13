@@ -11,6 +11,8 @@ import {
   PhysicsBody,
   MovementState,
   Health,
+  CombatStateComp,
+  AnimationComp,
 } from '../components';
 import { registerPhysicsBody } from '../systems/MovementSystem';
 import type { GameWorld } from '../../core/types';
@@ -36,6 +38,8 @@ export function createPlayer(
   addComponent(world.ecs, PhysicsBody, eid);
   addComponent(world.ecs, MovementState, eid);
   addComponent(world.ecs, Health, eid);
+  addComponent(world.ecs, CombatStateComp, eid);
+  addComponent(world.ecs, AnimationComp, eid);
 
   // Set initial values
   Position.x[eid] = spawnPos.x;
