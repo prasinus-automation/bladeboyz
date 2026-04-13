@@ -17,6 +17,7 @@ import { createCharacterModel } from '../../rendering/CharacterModel';
 import { createHitboxes } from '../systems/HitboxSystem';
 import { CombatState } from '../../combat/states';
 import { BlockDirection } from '../../combat/directions';
+import { SPAWN_HEIGHT } from '../../core/types';
 import type { GameWorld } from '../../core/types';
 
 /** Track all active dummy entity IDs */
@@ -39,7 +40,7 @@ const HEALTH_RESET_TICKS = 180;
 export function createDummy(
   world: GameWorld,
   x = 0,
-  y = 0,
+  y = SPAWN_HEIGHT,
   z = -3,
   color = 0xcc4444,
 ): number {

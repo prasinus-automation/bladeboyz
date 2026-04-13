@@ -29,7 +29,7 @@ import { FloatingDamage } from './hud/FloatingDamage';
 import { DummyHealthBar } from './hud/DummyHealthBar';
 import { createDummyDamageObserver } from './ecs/systems/DummyDamageObserver';
 import { showNotification } from './hud/DebugNotification';
-import { FIXED_TIMESTEP } from './core/types';
+import { FIXED_TIMESTEP, SPAWN_HEIGHT } from './core/types';
 import { Position, meshRegistry } from './ecs/components';
 import { createFSM, fsmRegistry } from './combat/CombatFSM';
 import { weaponConfigs } from './weapons/WeaponConfig';
@@ -41,14 +41,14 @@ import './weapons/longsword';
 /** Next dummy spawn index for position cycling */
 let dummySpawnIdx = 0;
 const DUMMY_SPAWN_POSITIONS: Array<{ x: number; y: number; z: number }> = [
-  { x: 0, y: 0, z: -4 },
-  { x: 3, y: 0, z: -4 },
-  { x: -3, y: 0, z: -4 },
-  { x: 0, y: 0, z: -7 },
-  { x: 3, y: 0, z: -7 },
-  { x: -3, y: 0, z: -7 },
-  { x: 6, y: 0, z: -4 },
-  { x: -6, y: 0, z: -4 },
+  { x: 0, y: SPAWN_HEIGHT, z: -4 },
+  { x: 3, y: SPAWN_HEIGHT, z: -4 },
+  { x: -3, y: SPAWN_HEIGHT, z: -4 },
+  { x: 0, y: SPAWN_HEIGHT, z: -7 },
+  { x: 3, y: SPAWN_HEIGHT, z: -7 },
+  { x: -3, y: SPAWN_HEIGHT, z: -7 },
+  { x: 6, y: SPAWN_HEIGHT, z: -4 },
+  { x: -6, y: SPAWN_HEIGHT, z: -4 },
 ];
 
 function spawnDummyAtNextPosition(world: GameWorld): void {
@@ -75,7 +75,7 @@ async function main(): Promise<void> {
   createArena(world);
 
   // Create player
-  const { eid: playerEid, mesh: playerMesh } = createPlayer(world, { x: 0, y: 0.1, z: 0 });
+  const { eid: playerEid, mesh: playerMesh } = createPlayer(world, { x: 0, y: SPAWN_HEIGHT, z: 0 });
   world.playerEntity = playerEid;
   cameraController.setPlayerMesh(playerMesh);
 
@@ -83,7 +83,7 @@ async function main(): Promise<void> {
   createFSM(playerEid, weaponConfigs['Longsword']);
 
   // Spawn initial training dummy
-  createDummy(world, 0, 0, -4, 0xcc4444);
+  createDummy(world, 0, SPAWN_HEIGHT, -4, 0xcc4444);
   dummySpawnIdx = 1;
 
   // Create movement system
