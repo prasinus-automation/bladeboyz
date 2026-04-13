@@ -3,6 +3,9 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { World } from './core/World';
 import { GameLoop } from './core/GameLoop';
 import { PhysicsSystem } from './ecs/systems/PhysicsSystem';
+import { TracerSystem } from './ecs/systems/TracerSystem';
+import { DamageSystem } from './ecs/systems/DamageSystem';
+import { TracerDebugRenderer } from './rendering/TracerDebugRenderer';
 
 /** Create the test arena scene: ground plane, scattered boxes, lights */
 function createTestArena(world: World): void {
@@ -91,15 +94,21 @@ async function main(): Promise<void> {
   // Build the test arena
   createTestArena(world);
 
+  // Initialize debug renderers
+  const tracerDebugRenderer = new TracerDebugRenderer(world.scene);
+
   // Create and start the game loop
   const gameLoop = new GameLoop({
     fixedUpdate(dt: number) {
       PhysicsSystem(world, dt);
+      TracerSystem(world, dt);
+      DamageSystem(world, dt);
     },
     update(_dt: number) {
       // Variable-rate work (animation blending, etc.) — nothing yet
     },
     render(_alpha: number) {
+      tracerDebugRenderer.update();
       world.renderer.render(world.scene, world.camera);
     },
   });
@@ -110,6 +119,7 @@ async function main(): Promise<void> {
   if (import.meta.hot) {
     import.meta.hot.dispose(() => {
       gameLoop.stop();
+      tracerDebugRenderer.dispose();
       world.dispose();
     });
   }
