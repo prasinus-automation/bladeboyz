@@ -60,8 +60,9 @@ describe('GameLoop', () => {
     expect(render).toHaveBeenCalledWith(expect.any(Number));
   });
 
-  it('calls onFrameEnd after render', () => {
+  it('calls onFrameStart before fixedUpdate', () => {
     const callOrder: string[] = [];
+    loop.onFrameStart = () => callOrder.push('frameStart');
     loop.fixedUpdate = () => callOrder.push('fixed');
     loop.update = () => callOrder.push('update');
     loop.render = () => callOrder.push('render');
@@ -72,7 +73,26 @@ describe('GameLoop', () => {
     vi.spyOn(performance, 'now').mockReturnValue(20);
     cb(20);
 
-    expect(callOrder).toEqual(['fixed', 'update', 'render', 'frameEnd']);
+    expect(callOrder).toEqual(['frameStart', 'fixed', 'update', 'render', 'frameEnd']);
+  });
+
+  it('calls onFrameStart only once even with multiple fixedUpdate steps', () => {
+    let frameStartCount = 0;
+    let fixedUpdateCount = 0;
+    loop.onFrameStart = () => frameStartCount++;
+    loop.fixedUpdate = () => fixedUpdateCount++;
+    loop.update = vi.fn();
+    loop.render = vi.fn();
+
+    loop.start();
+
+    // Simulate ~50ms frame — should trigger 3 fixedUpdate ticks but only 1 onFrameStart
+    const cb = rafCallbacks[rafCallbacks.length - 1];
+    vi.spyOn(performance, 'now').mockReturnValue(50);
+    cb(50);
+
+    expect(frameStartCount).toBe(1);
+    expect(fixedUpdateCount).toBe(3);
   });
 
   it('stops when stop() is called', () => {

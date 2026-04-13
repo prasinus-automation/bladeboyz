@@ -51,10 +51,14 @@ async function main(): Promise<void> {
   // Game loop
   const loop = new GameLoop();
 
-  loop.fixedUpdate = (_dt: number) => {
-    // Process camera input first (so yaw is available for movement)
+  // Process camera input once per frame, before fixed updates.
+  // This prevents mouse delta from being applied N times when multiple
+  // fixedUpdate ticks run in a single frame.
+  loop.onFrameStart = () => {
     cameraController.processInput();
+  };
 
+  loop.fixedUpdate = (_dt: number) => {
     // Movement system
     movementSystem(FIXED_TIMESTEP);
 

@@ -16,6 +16,7 @@ export class GameLoop {
   private running = false;
   private rafId = 0;
 
+  public onFrameStart: () => void = () => {};
   public fixedUpdate: FixedUpdateFn = () => {};
   public update: UpdateFn = () => {};
   public render: RenderFn = () => {};
@@ -44,6 +45,9 @@ export class GameLoop {
     if (frameTime > 0.25) frameTime = 0.25;
 
     this.accumulator += frameTime;
+
+    // Process per-frame input before fixed updates (e.g. camera mouse delta)
+    this.onFrameStart();
 
     let steps = 0;
     while (this.accumulator >= FIXED_TIMESTEP && steps < MAX_SUBSTEPS) {

@@ -24,6 +24,9 @@ export const enum CameraMode {
  *
  * Camera structured for future turncap integration via maxTurnRate multiplier.
  */
+// Reusable temp vector to avoid per-frame allocations in third-person mode
+const _tempTarget = new THREE.Vector3();
+
 export class CameraController {
   private camera: THREE.PerspectiveCamera;
   private input: InputManager;
@@ -101,7 +104,8 @@ export class CameraController {
 
   /**
    * Process mouse input and update camera angles.
-   * Called during fixedUpdate so yaw is available for movement calculations.
+   * Called once per frame (onFrameStart) before the fixedUpdate loop,
+   * so mouse delta is consumed exactly once and yaw is available for movement.
    */
   processInput(): void {
     if (!this.input.isPointerLocked) return;
@@ -168,7 +172,7 @@ export class CameraController {
       this.camera.rotation.set(this.pitch, this.yaw, 0);
     } else {
       // Third-person: orbit camera around player
-      const targetPos = new THREE.Vector3(x, y + eyeHeight * 0.8, z);
+      _tempTarget.set(x, y + eyeHeight * 0.8, z);
 
       // Calculate orbit position
       const offsetX = Math.sin(this.yaw) * Math.cos(this.pitch) * this.orbitDistance;
@@ -176,11 +180,11 @@ export class CameraController {
       const offsetZ = Math.cos(this.yaw) * Math.cos(this.pitch) * this.orbitDistance;
 
       this.camera.position.set(
-        targetPos.x + offsetX,
-        targetPos.y + offsetY,
-        targetPos.z + offsetZ,
+        _tempTarget.x + offsetX,
+        _tempTarget.y + offsetY,
+        _tempTarget.z + offsetZ,
       );
-      this.camera.lookAt(targetPos);
+      this.camera.lookAt(_tempTarget);
     }
   }
 }
