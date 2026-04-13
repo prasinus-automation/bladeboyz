@@ -83,6 +83,12 @@ export function createMovementSystem(
   return function movementSystem(_dt: number): void {
     const entities = playerQuery(world.ecs);
 
+    if ((window as any).__debugMovement) {
+      console.log('movement tick — entities:', entities.length,
+        'bodyMap:', bodyMap.size, 'colliderMap:', colliderMap.size,
+        'charCtrl:', !!characterController);
+    }
+
     for (let i = 0; i < entities.length; i++) {
       const eid = entities[i];
       const bodyHandle = PhysicsBody.bodyHandle[eid];
@@ -90,7 +96,12 @@ export function createMovementSystem(
       const body = bodyMap.get(bodyHandle);
       const collider = colliderMap.get(colliderHandle);
 
-      if (!body || !collider || !characterController) continue;
+      if (!body || !collider || !characterController) {
+        if ((window as any).__debugMovement) {
+          console.log('SKIP eid', eid, 'body:', !!body, 'collider:', !!collider, 'handle:', bodyHandle, colliderHandle);
+        }
+        continue;
+      }
 
       // Save previous position for interpolation
       PreviousPosition.x[eid] = Position.x[eid];
@@ -106,6 +117,10 @@ export function createMovementSystem(
       const wantSprint = input.isKeyDown('ShiftLeft') || input.isKeyDown('ShiftRight');
       const wantCrouch = input.isKeyDown('ControlLeft') || input.isKeyDown('ControlRight');
       const wantJump = input.isKeyDown('Space');
+
+      if ((window as any).__debugMovement && (forward !== 0 || strafe !== 0)) {
+        console.log('INPUT fwd:', forward, 'strafe:', strafe, 'pos:', Position.x[eid].toFixed(2), Position.y[eid].toFixed(2), Position.z[eid].toFixed(2));
+      }
 
       // Update movement state
       MovementState.sprinting[eid] = (wantSprint && !wantCrouch && forward > 0) ? 1 : 0;
