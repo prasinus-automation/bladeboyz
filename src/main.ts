@@ -3,6 +3,7 @@ import { GameLoop } from './core/GameLoop';
 import { InputManager } from './input/InputManager';
 import { CameraController } from './rendering/CameraController';
 import { createMovementSystem } from './ecs/systems/MovementSystem';
+import { createCombatSystem } from './ecs/systems/CombatSystem';
 import { staminaSystemTick } from './ecs/systems/StaminaSystem';
 import { healthSystemTick } from './ecs/systems/HealthSystem';
 import { createPlayer } from './ecs/entities/createPlayer';
@@ -30,6 +31,7 @@ import { createDummyDamageObserver } from './ecs/systems/DummyDamageObserver';
 import { showNotification } from './hud/DebugNotification';
 import { FIXED_TIMESTEP } from './core/types';
 import { Position, meshRegistry } from './ecs/components';
+import { createFSM, fsmRegistry } from './combat/CombatFSM';
 import { weaponConfigs } from './weapons/WeaponConfig';
 import type { GameWorld } from './core/types';
 
@@ -77,12 +79,18 @@ async function main(): Promise<void> {
   world.playerEntity = playerEid;
   cameraController.setPlayerMesh(playerMesh);
 
+  // Register combat FSM for the player entity (uses auto-registered longsword config)
+  createFSM(playerEid, weaponConfigs['Longsword']);
+
   // Spawn initial training dummy
   createDummy(world, 0, 0, -4, 0xcc4444);
   dummySpawnIdx = 1;
 
   // Create movement system
   const movementSystem = createMovementSystem(world, input, cameraController);
+
+  // Create combat system (reads input, drives per-entity FSMs)
+  const combatSystem = createCombatSystem(world.ecs, input);
 
   // HUD & debug
   const debugOverlay = new DebugOverlay();
@@ -131,8 +139,11 @@ async function main(): Promise<void> {
     }
     console.log(`Weapon set to: ${config.name}`);
     showNotification(`Weapon: ${config.name}`);
-    // In the future this will update the player's weapon config reference.
-    // For now it logs and notifies, since the full combat FSM (#5) is not yet merged.
+    // Update the player's FSM weapon config
+    const playerFsm = fsmRegistry.get(world.playerEntity);
+    if (playerFsm) {
+      playerFsm.setWeaponConfig(config);
+    }
   };
 
   // ─── Click-to-play handler ───
@@ -156,6 +167,9 @@ async function main(): Promise<void> {
   };
 
   loop.fixedUpdate = (_dt: number) => {
+    // Combat system (reads input, ticks FSMs, syncs ECS components)
+    combatSystem();
+
     // Movement system
     movementSystem(FIXED_TIMESTEP);
 
