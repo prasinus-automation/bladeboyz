@@ -11,18 +11,25 @@ npm run build        # Production build
 npm run preview      # Preview production build locally
 ```
 
+## Controls
+
+- **WASD** — Move
+- **Mouse** — Look around (requires pointer lock)
+- **Shift** — Sprint
+- **Ctrl** — Crouch
+- **Space** — Jump
+- **F5** — Toggle first-person / third-person camera
+- **F3** — Toggle hitbox debug wireframes
+- **Click** — Lock mouse pointer (required for mouse look)
+
 ## Testing & Checks
 
 ```bash
-npm run test         # Run unit tests (vitest)
+npm test             # Run test suite
+npm run test:watch   # Run tests in watch mode
 npm run typecheck    # TypeScript type checking
 npm run lint         # ESLint
 ```
-
-## Controls
-
-- **Click** to capture pointer lock
-- **F3** to toggle hitbox debug wireframes
 
 ## Tech Stack
 
@@ -31,3 +38,4 @@ npm run lint         # ESLint
 - Rapier3D WASM (physics)
 - bitECS (entity component system)
 - Vite (build tool)
+- Vitest (testing)

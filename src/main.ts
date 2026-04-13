@@ -1,59 +1,92 @@
-import RAPIER from '@dimforge/rapier3d-compat';
 import { createGameWorld } from './core/World';
-import { startGameLoop } from './core/GameLoop';
+import { GameLoop } from './core/GameLoop';
+import { InputManager } from './input/InputManager';
+import { CameraController } from './rendering/CameraController';
+import { createMovementSystem } from './ecs/systems/MovementSystem';
 import { createPlayer } from './ecs/entities/createPlayer';
-import { createDummy } from './ecs/entities/createDummy';
-import { hitboxSystem } from './ecs/systems/HitboxSystem';
-import { DebugRenderer } from './rendering/DebugRenderer';
+import { createArena } from './ecs/entities/createArena';
+import { DebugOverlay } from './hud/DebugOverlay';
+import { FIXED_TIMESTEP } from './core/types';
+import { Position } from './ecs/components';
 
 async function main(): Promise<void> {
-  // Rapier WASM must be initialized before anything else
-  await RAPIER.init();
+  // Initialize game world
+  const world = await createGameWorld();
+  document.body.prepend(world.renderer.domElement);
 
-  const world = createGameWorld();
+  // Input manager
+  const input = new InputManager(world.renderer.domElement);
 
-  const appEl = document.getElementById('app')!;
-  appEl.appendChild(world.renderer.domElement);
+  // Camera controller
+  const cameraController = new CameraController(world.camera, input);
 
-  // Handle window resize
-  window.addEventListener('resize', () => {
-    world.camera.aspect = window.innerWidth / window.innerHeight;
-    world.camera.updateProjectionMatrix();
-    world.renderer.setSize(window.innerWidth, window.innerHeight);
-  });
+  // Create arena
+  createArena(world);
 
-  // Create entities
-  createPlayer(world, 0x4488cc);
-  createDummy(world, 0, 0, -3, 0xcc4444);
+  // Create player
+  const { eid: playerEid, mesh: playerMesh } = createPlayer(world, { x: 0, y: 0.1, z: 0 });
+  world.playerEntity = playerEid;
+  cameraController.setPlayerMesh(playerMesh);
 
-  // Debug renderer (F3 for hitbox wireframes)
-  const debugRenderer = new DebugRenderer(world);
+  // Create movement system
+  const movementSystem = createMovementSystem(world, input, cameraController);
 
-  // Add a ground plane for reference
-  {
-    const THREE = await import('three');
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(20, 20),
-      new THREE.MeshStandardMaterial({ color: 0x556b2f }),
-    );
-    ground.rotation.x = -Math.PI / 2;
-    world.scene.add(ground);
+  // Debug overlay
+  const debugOverlay = new DebugOverlay();
+
+  // Click-to-play handler
+  const overlay = document.getElementById('click-to-play');
+  if (overlay) {
+    overlay.addEventListener('click', () => {
+      input.requestPointerLock();
+    });
+    // Also re-lock on canvas click
+    world.renderer.domElement.addEventListener('click', () => {
+      if (!input.isPointerLocked) {
+        input.requestPointerLock();
+      }
+    });
   }
 
-  // Start game loop
-  startGameLoop({
-    fixedUpdate(_dt: number) {
-      world.physicsWorld.step();
-      hitboxSystem(world);
-    },
-    update(_dt: number) {
-      // Variable-rate updates (animation blending, etc.) go here
-    },
-    render(_alpha: number) {
-      debugRenderer.update();
-      world.renderer.render(world.scene, world.camera);
-    },
-  });
+  // Game loop
+  const loop = new GameLoop();
+
+  // Process camera input once per frame, before fixed updates.
+  // This prevents mouse delta from being applied N times when multiple
+  // fixedUpdate ticks run in a single frame.
+  loop.onFrameStart = () => {
+    cameraController.processInput();
+  };
+
+  loop.fixedUpdate = (_dt: number) => {
+    // Movement system
+    movementSystem(FIXED_TIMESTEP);
+
+    // Step physics
+    world.physicsWorld.step();
+
+    // Sync player mesh position with ECS
+    playerMesh.position.set(
+      Position.x[playerEid],
+      Position.y[playerEid],
+      Position.z[playerEid],
+    );
+  };
+
+  loop.update = (dt: number) => {
+    debugOverlay.update(dt, playerEid, cameraController);
+  };
+
+  loop.render = (alpha: number) => {
+    cameraController.updateCamera(playerEid, alpha);
+    world.renderer.render(world.scene, world.camera);
+  };
+
+  loop.onFrameEnd = () => {
+    input.resetFrameDeltas();
+  };
+
+  loop.start();
 }
 
 main().catch(console.error);

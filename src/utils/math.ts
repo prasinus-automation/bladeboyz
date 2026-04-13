@@ -10,6 +10,16 @@ export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
+/**
+ * Shortest-path angle interpolation.
+ */
+export function lerpAngle(a: number, b: number, t: number): number {
+  let diff = b - a;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  return a + diff * t;
+}
+
 /** Lerp for Vector3 */
 export function lerpVec3(
   out: THREE.Vector3,

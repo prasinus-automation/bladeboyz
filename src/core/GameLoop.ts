@@ -1,48 +1,68 @@
-const FIXED_DT = 1 / 60; // 60 Hz fixed timestep
-const MAX_FRAME_TIME = 0.25; // clamp to prevent spiral of death
+import { FIXED_TIMESTEP, MAX_SUBSTEPS } from './types';
 
-export interface GameLoopCallbacks {
-  fixedUpdate(dt: number): void;
-  update(dt: number): void;
-  render(alpha: number): void;
-}
+export type FixedUpdateFn = (dt: number) => void;
+export type UpdateFn = (dt: number) => void;
+export type RenderFn = (alpha: number) => void;
 
 /**
- * Fixed-timestep game loop with variable render.
- * Uses a custom accumulator — NOT Three.js Clock.getDelta().
+ * Fixed-timestep game loop with variable-rate rendering.
+ * - fixedUpdate runs at 60Hz for deterministic physics/combat
+ * - update runs at frame rate for animation blending
+ * - render runs at frame rate with interpolation alpha
  */
-export function startGameLoop(callbacks: GameLoopCallbacks): void {
-  let previousTime = performance.now() / 1000;
-  let accumulator = 0;
+export class GameLoop {
+  private accumulator = 0;
+  private lastTime = 0;
+  private running = false;
+  private rafId = 0;
 
-  function loop(): void {
-    const currentTime = performance.now() / 1000;
-    let frameTime = currentTime - previousTime;
-    previousTime = currentTime;
+  public onFrameStart: () => void = () => {};
+  public fixedUpdate: FixedUpdateFn = () => {};
+  public update: UpdateFn = () => {};
+  public render: RenderFn = () => {};
+  public onFrameEnd: () => void = () => {};
 
-    if (frameTime > MAX_FRAME_TIME) {
-      frameTime = MAX_FRAME_TIME;
-    }
-
-    accumulator += frameTime;
-
-    // Fixed update at 60Hz
-    while (accumulator >= FIXED_DT) {
-      callbacks.fixedUpdate(FIXED_DT);
-      accumulator -= FIXED_DT;
-    }
-
-    // Variable-rate update
-    callbacks.update(frameTime);
-
-    // Render with interpolation alpha
-    const alpha = accumulator / FIXED_DT;
-    callbacks.render(alpha);
-
-    requestAnimationFrame(loop);
+  start(): void {
+    if (this.running) return;
+    this.running = true;
+    this.lastTime = performance.now() / 1000;
+    this.rafId = requestAnimationFrame((t) => this.tick(t));
   }
 
-  requestAnimationFrame(loop);
-}
+  stop(): void {
+    this.running = false;
+    cancelAnimationFrame(this.rafId);
+  }
 
-export { FIXED_DT };
+  private tick(nowMs: number): void {
+    if (!this.running) return;
+
+    const now = nowMs / 1000;
+    let frameTime = now - this.lastTime;
+    this.lastTime = now;
+
+    // Clamp large frame times (e.g. after tab switch)
+    if (frameTime > 0.25) frameTime = 0.25;
+
+    this.accumulator += frameTime;
+
+    // Process per-frame input before fixed updates (e.g. camera mouse delta)
+    this.onFrameStart();
+
+    let steps = 0;
+    while (this.accumulator >= FIXED_TIMESTEP && steps < MAX_SUBSTEPS) {
+      this.fixedUpdate(FIXED_TIMESTEP);
+      this.accumulator -= FIXED_TIMESTEP;
+      steps++;
+    }
+
+    this.update(frameTime);
+
+    const alpha = this.accumulator / FIXED_TIMESTEP;
+    this.render(alpha);
+
+    this.onFrameEnd();
+
+    this.rafId = requestAnimationFrame((t) => this.tick(t));
+  }
+}
