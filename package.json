@@ -1,0 +1,25 @@
+{
+  "name": "bladeboyz",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "three": "^0.170.0",
+    "@dimforge/rapier3d-compat": "^0.14.0",
+    "bitecs": "^0.3.40"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0",
+    "@types/three": "^0.170.0",
+    "vitest": "^3.0.0"
+  }
+}
