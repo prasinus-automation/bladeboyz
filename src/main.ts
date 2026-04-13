@@ -1,8 +1,15 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
+import { addComponent } from 'bitecs';
 import { World } from './core/World';
 import { GameLoop } from './core/GameLoop';
 import { PhysicsSystem } from './ecs/systems/PhysicsSystem';
+import { CombatSystem, combatFSMs } from './ecs/systems/CombatSystem';
+import { CombatState } from './ecs/components';
+import { CombatFSM } from './combat/CombatFSM';
+import { InputManager } from './input/InputManager';
+import { DebugOverlay } from './hud/DebugOverlay';
+import { longsword } from './weapons/longsword';
 
 /** Create the test arena scene: ground plane, scattered boxes, lights */
 function createTestArena(world: World): void {
@@ -80,6 +87,25 @@ function createTestArena(world: World): void {
   scene.add(ambientLight);
 }
 
+/**
+ * Create a player entity with a CombatState component and FSM.
+ * Returns the entity ID.
+ */
+function createPlayerEntity(world: World): number {
+  // For now, use entity ID 0 as the player (convention until entity factories are formalized)
+  const eid = 0;
+
+  // Add CombatState component to this entity
+  addComponent(world.ecs, CombatState, eid);
+  CombatState.weaponId[eid] = longsword.id;
+
+  // Create the FSM instance and store in side map
+  const fsm = new CombatFSM(longsword);
+  combatFSMs.set(eid, fsm);
+
+  return eid;
+}
+
 async function main(): Promise<void> {
   const container = document.getElementById('app');
   if (!container) throw new Error('Missing #app container');
@@ -91,13 +117,27 @@ async function main(): Promise<void> {
   // Build the test arena
   createTestArena(world);
 
+  // Input manager — handles keyboard/mouse and pointer lock
+  const inputManager = new InputManager(world.renderer.domElement);
+
+  // Create player entity with combat state
+  const playerEid = createPlayerEntity(world);
+  const playerFSM = combatFSMs.get(playerEid)!;
+
+  // Debug overlay (F4 toggle)
+  const debugOverlay = new DebugOverlay();
+  debugOverlay.setFSM(playerFSM);
+
   // Create and start the game loop
   const gameLoop = new GameLoop({
     fixedUpdate(dt: number) {
       PhysicsSystem(world, dt);
+      CombatSystem(world.ecs, inputManager);
+      inputManager.endFrame();
     },
-    update(_dt: number) {
+    update(dt: number) {
       // Variable-rate work (animation blending, etc.) — nothing yet
+      debugOverlay.update(dt);
     },
     render(_alpha: number) {
       world.renderer.render(world.scene, world.camera);
@@ -110,6 +150,9 @@ async function main(): Promise<void> {
   if (import.meta.hot) {
     import.meta.hot.dispose(() => {
       gameLoop.stop();
+      inputManager.dispose();
+      debugOverlay.dispose();
+      combatFSMs.clear();
       world.dispose();
     });
   }
