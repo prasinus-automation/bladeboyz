@@ -133,11 +133,12 @@ async function main(): Promise<void> {
     fixedUpdate(dt: number) {
       PhysicsSystem(world, dt);
       CombatSystem(world.ecs, inputManager);
-      inputManager.endFrame();
     },
     update(dt: number) {
       // Variable-rate work (animation blending, etc.) — nothing yet
       debugOverlay.update(dt);
+      // Clear per-frame input ONCE per frame, after all fixed ticks have consumed it
+      inputManager.endFrame();
     },
     render(_alpha: number) {
       world.renderer.render(world.scene, world.camera);

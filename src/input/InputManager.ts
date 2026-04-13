@@ -83,8 +83,15 @@ export class InputManager {
    * Vertical movement → Overhead (up) / Stab (down)
    */
   getAttackDirection(): AttackDirection {
-    const absX = Math.abs(this.mouseDeltaX);
-    const absY = Math.abs(this.mouseDeltaY);
+    const dx = this.mouseDeltaX;
+    const dy = this.mouseDeltaY;
+
+    // Reset delta after reading so direction is based on recent movement, not cumulative
+    this.mouseDeltaX = 0;
+    this.mouseDeltaY = 0;
+
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
 
     // Minimum delta threshold to determine direction
     const threshold = 2;
@@ -95,9 +102,9 @@ export class InputManager {
     }
 
     if (absX > absY) {
-      return this.mouseDeltaX > 0 ? AttackDirection.Right : AttackDirection.Left;
+      return dx > 0 ? AttackDirection.Right : AttackDirection.Left;
     } else {
-      return this.mouseDeltaY > 0 ? AttackDirection.Stab : AttackDirection.Overhead;
+      return dy > 0 ? AttackDirection.Stab : AttackDirection.Overhead;
     }
   }
 

@@ -33,6 +33,12 @@ export class CombatFSM {
   /** Whether this entity is currently holding block input */
   private blockHeld = false;
 
+  /** Whether a riposte is available (set on successful parry) */
+  private riposteAvailable = false;
+
+  /** Ticks remaining in riposte window (cleared when window expires) */
+  private riposteWindowTicks = 0;
+
   /** Stamina cost of the last transition (read by stamina system) */
   private lastStaminaCost = 0;
 
@@ -219,6 +225,14 @@ export class CombatFSM {
         this.onTimerExpired();
       }
     }
+
+    // Decrement riposte window independently of state timer
+    if (this.riposteWindowTicks > 0) {
+      this.riposteWindowTicks--;
+      if (this.riposteWindowTicks === 0) {
+        this.riposteAvailable = false;
+      }
+    }
   }
 
   // ── Force state (for external systems like networking) ──
@@ -233,6 +247,8 @@ export class CombatFSM {
     this.direction = dir;
     this.bufferedAttack = false;
     this.lastStaminaCost = 0;
+    this.riposteAvailable = false;
+    this.riposteWindowTicks = 0;
   }
 
   /** Swap weapon config (e.g., on weapon pickup) */
@@ -295,6 +311,13 @@ export class CombatFSM {
     switch (input) {
       case CombatInput.AttackStart:
         if (dir === AttackDirection.None) return false;
+        // If riposte is available from a successful parry, enter riposte instead of normal windup
+        if (this.riposteAvailable) {
+          this.riposteAvailable = false;
+          this.riposteWindowTicks = 0;
+          this.enterRiposte(dir);
+          return true;
+        }
         this.enterWindup(dir);
         return true;
 
@@ -365,6 +388,11 @@ export class CombatFSM {
         if (dir !== AttackDirection.None) {
           this.bufferedAttack = true;
           this.bufferedDirection = dir;
+          // Shorten recovery for combo — use comboRecoveryTicks if shorter than remaining
+          const comboTicks = this.weaponConfig.comboRecoveryTicks;
+          if (this.ticksRemaining > comboTicks) {
+            this.ticksRemaining = comboTicks;
+          }
         }
         return true;
 
@@ -402,9 +430,10 @@ export class CombatFSM {
   private handleParryWindowTransition(input: CombatInput): boolean {
     switch (input) {
       case CombatInput.ParryTriggered:
-        // Parry! Wait for attack input to riposte, or decay to block
-        // For simplicity, auto-transition to Idle with a brief parry stagger on the attacker (external)
-        // The player can then attack for a riposte
+        // Successful parry! Transition to Idle with riposte window active.
+        // Next AttackStart within the window will enter Riposte instead of normal Windup.
+        this.riposteAvailable = true;
+        this.riposteWindowTicks = 30; // ~0.5s window at 60Hz to initiate riposte
         this.enterState(CombatStateEnum.Idle, 0, AttackDirection.None);
         return true;
 
@@ -478,7 +507,8 @@ export class CombatFSM {
         break;
 
       case CombatStateEnum.Feint:
-        this.enterState(CombatStateEnum.Idle, 0, AttackDirection.None);
+        // Feint → Recovery (not Idle) — feinting must be punishable
+        this.enterRecovery(false);
         break;
 
       case CombatStateEnum.Clash:
