@@ -22,6 +22,27 @@ export const enum CombatState {
   HitStun = 10,
 }
 
+/**
+ * Human-readable labels for combat states.
+ * Indexed by CombatState numeric value.
+ */
+export const COMBAT_STATE_NAMES: Record<number, string> = {
+  0: 'Idle',
+  1: 'Windup',
+  2: 'Release',
+  3: 'Recovery',
+  4: 'Block',
+  5: 'ParryWindow',
+  6: 'Riposte',
+  7: 'Feint',
+  8: 'Clash',
+  9: 'Stunned',
+  10: 'HitStun',
+};
+
+/** Default stun duration when block breaks from stamina depletion (ticks) */
+export const BLOCK_BREAK_STUN_TICKS = 30;
+
 // ── Movement States ──────────────────────────────────────
 
 export const enum MovementState {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CombatState, MovementState } from './states';
+import { CombatState, MovementState, COMBAT_STATE_NAMES, BLOCK_BREAK_STUN_TICKS } from './states';
 
 describe('Combat States', () => {
   it('CombatState enum has all expected values', () => {
@@ -14,6 +14,16 @@ describe('Combat States', () => {
     expect(CombatState.Clash).toBe(8);
     expect(CombatState.Stunned).toBe(9);
     expect(CombatState.HitStun).toBe(10);
+  });
+
+  it('has human-readable names for all states', () => {
+    expect(COMBAT_STATE_NAMES[CombatState.Idle]).toBe('Idle');
+    expect(COMBAT_STATE_NAMES[CombatState.Stunned]).toBe('Stunned');
+    expect(COMBAT_STATE_NAMES[CombatState.HitStun]).toBe('HitStun');
+  });
+
+  it('sets block break stun to 30 ticks', () => {
+    expect(BLOCK_BREAK_STUN_TICKS).toBe(30);
   });
 
   it('MovementState enum has all expected values', () => {
