@@ -10,6 +10,7 @@ import {
   THIRD_PERSON_MIN_DISTANCE,
   THIRD_PERSON_MAX_DISTANCE,
 } from '../core/types';
+import { showNotification } from '../hud/DebugNotification';
 
 export const enum CameraMode {
   FirstPerson = 0,
@@ -94,6 +95,7 @@ export class CameraController {
     if (indicator) {
       indicator.textContent = this.mode === CameraMode.FirstPerson ? 'FPS' : '3RD';
     }
+    showNotification(`Camera: ${this.mode === CameraMode.FirstPerson ? 'First Person' : 'Third Person'}`);
   }
 
   private updateMeshVisibility(): void {
