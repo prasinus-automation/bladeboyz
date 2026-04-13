@@ -1,6 +1,6 @@
 # BladeBoyz
 
-Browser-based multiplayer melee combat game built with Three.js. Ultra-low-poly BattleBit-style aesthetic with Mordhau/Chivalry directional combat mechanics.
+Browser-based multiplayer melee combat game with ultra-low-poly BattleBit-style aesthetic and Mordhau/Chivalry directional combat mechanics. Built with Three.js, Rapier3D, and bitECS.
 
 ## Getting Started
 
@@ -19,21 +19,23 @@ npm run preview      # Preview production build locally
 - **Ctrl** — Crouch
 - **Space** — Jump
 - **F5** — Toggle first-person / third-person camera
+- **F3** — Toggle hitbox debug wireframes
 - **Click** — Lock mouse pointer (required for mouse look)
 
-## Testing
+## Testing & Checks
 
 ```bash
 npm test             # Run test suite
 npm run test:watch   # Run tests in watch mode
 npm run typecheck    # TypeScript type checking
+npm run lint         # ESLint
 ```
 
 ## Tech Stack
 
 - TypeScript (strict mode)
 - Three.js (renderer)
-- Rapier3D (physics)
+- Rapier3D WASM (physics)
 - bitECS (entity component system)
 - Vite (build tool)
 - Vitest (testing)

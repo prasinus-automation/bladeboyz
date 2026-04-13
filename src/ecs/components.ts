@@ -1,6 +1,9 @@
 import { defineComponent, Types } from 'bitecs';
+import type * as THREE from 'three';
 
-/** 3D position */
+/* ─── bitECS components (numbers only) ─── */
+
+/** World-space position */
 export const Position = defineComponent({
   x: Types.f32,
   y: Types.f32,
@@ -14,7 +17,7 @@ export const PreviousPosition = defineComponent({
   z: Types.f32,
 });
 
-/** Rotation (euler angles in radians) */
+/** Euler rotation (radians) */
 export const Rotation = defineComponent({
   x: Types.f32, // pitch
   y: Types.f32, // yaw
@@ -28,15 +31,18 @@ export const PreviousRotation = defineComponent({
   z: Types.f32,
 });
 
-/** Velocity */
+/** Velocity vector */
 export const Velocity = defineComponent({
   x: Types.f32,
   y: Types.f32,
   z: Types.f32,
 });
 
-/** Player tag — marks entity as the local player */
+/** Tag: entity is the local player */
 export const Player = defineComponent();
+
+/** Alias for Player tag (used by character model subsystem) */
+export const IsPlayer = Player;
 
 /** Physics body reference (index into lookup table) */
 export const PhysicsBody = defineComponent({
@@ -56,8 +62,65 @@ export const MovementState = defineComponent({
   speedFactor: Types.f32,
 });
 
-/** Health */
+/**
+ * CharacterModel — stores a numeric ID used to look up
+ * the Three.js Group in the meshRegistry.
+ */
+export const CharacterModel = defineComponent({
+  /** Key into meshRegistry */
+  id: Types.ui32,
+});
+
+/**
+ * Hitboxes — stores Rapier collider handles for each body region.
+ * Handles are u32 indices into the Rapier world.
+ * A value of 0xFFFFFFFF means "no collider".
+ */
+export const Hitboxes = defineComponent({
+  head: Types.ui32,
+  torso: Types.ui32,
+  armLeft: Types.ui32,
+  armRight: Types.ui32,
+  legLeft: Types.ui32,
+  legRight: Types.ui32,
+});
+
+/** Health component */
 export const Health = defineComponent({
   current: Types.f32,
   max: Types.f32,
 });
+
+/** Stamina component */
+export const Stamina = defineComponent({
+  current: Types.f32,
+  max: Types.f32,
+});
+
+/* ─── Lookup tables for non-numeric data ─── */
+
+export interface CharacterModelData {
+  group: THREE.Group;
+  skeleton: THREE.Skeleton;
+  bones: Record<string, THREE.Bone>;
+}
+
+/** Map<entityId, Three.js group + skeleton data> */
+export const meshRegistry = new Map<number, CharacterModelData>();
+
+/** Map<entityId, per-region Rapier collider refs> */
+export const hitboxColliderRegistry = new Map<
+  number,
+  Map<BodyRegion, import('@dimforge/rapier3d-compat').Collider>
+>();
+
+/* ─── Body region enum ─── */
+
+export const enum BodyRegion {
+  Head = 0,
+  Torso = 1,
+  ArmLeft = 2,
+  ArmRight = 3,
+  LegLeft = 4,
+  LegRight = 5,
+}

@@ -40,7 +40,7 @@ export async function createGameWorld(canvas?: HTMLCanvasElement): Promise<GameW
   const physicsWorld = new RAPIER.World(gravity);
 
   // Ambient + directional light
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
   scene.add(ambientLight);
   const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
   dirLight.position.set(10, 20, 10);
