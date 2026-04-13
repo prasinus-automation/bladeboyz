@@ -154,6 +154,43 @@ export const DamageEvent = defineComponent({
   processed: Types.ui8,
 });
 
+/**
+ * Combat state — mirrors the combat FSM's current state.
+ * Written by the CombatSystem (fixedUpdate), read by the AnimationSystem (update).
+ *
+ * - state: CombatState enum value
+ * - direction: AttackDirection or BlockDirection (context-dependent on state)
+ * - phaseElapsed: ticks elapsed in current phase
+ * - phaseTotal: total ticks for current phase (from weapon config)
+ * - weaponId: index into weaponRegistry for timing lookups
+ */
+export const CombatStateComp = defineComponent({
+  state: Types.ui8,
+  direction: Types.ui8,
+  phaseElapsed: Types.ui16,
+  phaseTotal: Types.ui16,
+  weaponId: Types.ui8,
+});
+
+/**
+ * Animation state — tracks blending progress for the animation system.
+ *
+ * - upperBlend: 0..1 progress of upper body blend to target pose
+ * - lowerBlend: 0..1 progress of lower body blend to target pose
+ * - movementState: MovementState enum value (derived from velocity)
+ * - walkCycle: accumulated walk cycle phase (radians, wraps at 2*PI)
+ * - prevCombatState: previous combat state for transition detection
+ * - prevDirection: previous direction for transition detection
+ */
+export const AnimationComp = defineComponent({
+  upperBlend: Types.f32,
+  lowerBlend: Types.f32,
+  movementState: Types.ui8,
+  walkCycle: Types.f32,
+  prevCombatState: Types.ui8,
+  prevDirection: Types.ui8,
+});
+
 /* ─── Lookup tables for non-numeric data ─── */
 
 export interface CharacterModelData {

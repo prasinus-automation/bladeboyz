@@ -2,9 +2,12 @@ import { addEntity, addComponent } from 'bitecs';
 import {
   Position,
   Rotation,
+  Velocity,
   CharacterModel,
   Health,
   Hitboxes,
+  CombatStateComp,
+  AnimationComp,
   meshRegistry,
 } from '../components';
 import { createCharacterModel } from '../../rendering/CharacterModel';
@@ -29,6 +32,9 @@ export function createDummy(
   addComponent(world.ecs, CharacterModel, eid);
   addComponent(world.ecs, Health, eid);
   addComponent(world.ecs, Hitboxes, eid);
+  addComponent(world.ecs, Velocity, eid);
+  addComponent(world.ecs, CombatStateComp, eid);
+  addComponent(world.ecs, AnimationComp, eid);
 
   Position.x[eid] = x;
   Position.y[eid] = y;

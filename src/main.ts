@@ -5,6 +5,7 @@ import { CameraController } from './rendering/CameraController';
 import { createMovementSystem } from './ecs/systems/MovementSystem';
 import { createPlayer } from './ecs/entities/createPlayer';
 import { createArena } from './ecs/entities/createArena';
+import { animationSystem } from './ecs/systems/AnimationSystem';
 import { DebugOverlay } from './hud/DebugOverlay';
 import { TracerSystem } from './ecs/systems/TracerSystem';
 import { DamageSystem } from './ecs/systems/DamageSystem';
@@ -84,6 +85,8 @@ async function main(): Promise<void> {
   };
 
   loop.update = (dt: number) => {
+    // Variable-rate updates: animation blending
+    animationSystem(world, dt);
     debugOverlay.update(dt, playerEid, cameraController);
   };
 
