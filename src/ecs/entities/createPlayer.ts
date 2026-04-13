@@ -17,6 +17,7 @@ import {
   AnimationComp,
 } from '../components';
 import { registerPhysicsBody } from '../systems/MovementSystem';
+import { CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS, SPAWN_HEIGHT } from '../../core/types';
 import type { GameWorld } from '../../core/types';
 
 /**
@@ -26,7 +27,7 @@ import type { GameWorld } from '../../core/types';
  */
 export function createPlayer(
   world: GameWorld,
-  spawnPos: { x: number; y: number; z: number } = { x: 0, y: 1, z: 0 },
+  spawnPos: { x: number; y: number; z: number } = { x: 0, y: SPAWN_HEIGHT, z: 0 },
 ): { eid: number; mesh: THREE.Group } {
   const eid = addEntity(world.ecs);
 
@@ -72,8 +73,8 @@ export function createPlayer(
     .setTranslation(spawnPos.x, spawnPos.y, spawnPos.z);
   const body = world.physicsWorld.createRigidBody(bodyDesc);
 
-  // Capsule collider (radius=0.3, half-height=0.7 -> total height ~2.0)
-  const colliderDesc = world.rapier.ColliderDesc.capsule(0.7, 0.3);
+  // Capsule collider (total height ~2.0)
+  const colliderDesc = world.rapier.ColliderDesc.capsule(CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS);
   const collider = world.physicsWorld.createCollider(colliderDesc, body);
 
   PhysicsBody.bodyHandle[eid] = body.handle;

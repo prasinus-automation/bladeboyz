@@ -24,6 +24,12 @@ export const CROUCH_SPEED = 2.0;
 export const SPRINT_MULTIPLIER = SPRINT_SPEED / WALK_SPEED;
 export const CROUCH_MULTIPLIER = CROUCH_SPEED / WALK_SPEED;
 
+/** Capsule collider dimensions */
+export const CAPSULE_HALF_HEIGHT = 0.7;
+export const CAPSULE_RADIUS = 0.3;
+/** Ground surface y + capsule center offset so bottom of capsule sits on ground */
+export const SPAWN_HEIGHT = 0.1 + CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS;
+
 /** Physics constants */
 export const GRAVITY = -20.0;
 export const JUMP_VELOCITY = 8.0;
