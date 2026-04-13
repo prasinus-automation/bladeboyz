@@ -6,6 +6,9 @@ import { createMovementSystem } from './ecs/systems/MovementSystem';
 import { createPlayer } from './ecs/entities/createPlayer';
 import { createArena } from './ecs/entities/createArena';
 import { DebugOverlay } from './hud/DebugOverlay';
+import { TracerSystem } from './ecs/systems/TracerSystem';
+import { DamageSystem } from './ecs/systems/DamageSystem';
+import { TracerDebugRenderer } from './rendering/TracerDebugRenderer';
 import { FIXED_TIMESTEP } from './core/types';
 import { Position } from './ecs/components';
 
@@ -33,6 +36,9 @@ async function main(): Promise<void> {
 
   // Debug overlay
   const debugOverlay = new DebugOverlay();
+
+  // Initialize debug renderers
+  const tracerDebugRenderer = new TracerDebugRenderer(world.scene);
 
   // Click-to-play handler
   const overlay = document.getElementById('click-to-play');
@@ -65,6 +71,10 @@ async function main(): Promise<void> {
     // Step physics
     world.physicsWorld.step();
 
+    // Tracer hit detection + damage resolution
+    TracerSystem(world, FIXED_TIMESTEP);
+    DamageSystem(world, FIXED_TIMESTEP);
+
     // Sync player mesh position with ECS
     playerMesh.position.set(
       Position.x[playerEid],
@@ -78,6 +88,7 @@ async function main(): Promise<void> {
   };
 
   loop.render = (alpha: number) => {
+    tracerDebugRenderer.update();
     cameraController.updateCamera(playerEid, alpha);
     world.renderer.render(world.scene, world.camera);
   };

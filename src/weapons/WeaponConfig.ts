@@ -63,6 +63,15 @@ export interface WeaponConfig {
 
   /** Maximum tracer extent from the weapon root (units) */
   range: number;
+
+  /** Stamina drained from blocker on successful block */
+  blockStaminaDrain: number;
+
+  /** Extra recovery ticks applied to attacker when parried */
+  parryStunTicks: number;
+
+  /** HitStun ticks applied to the target on unblocked hit */
+  hitStunTicks: number;
 }
 
 // ── Registry ──────────────────────────────────────────────

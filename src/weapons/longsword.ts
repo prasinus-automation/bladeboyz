@@ -123,6 +123,17 @@ export const longsword: WeaponConfig = {
   // Used for broad-phase culling before tracer checks.
 
   range: 1.4,
+
+  // ── Combat resolution values ──────────────────────────
+
+  /** Stamina drained from blocker on successful block */
+  blockStaminaDrain: 10,
+
+  /** Recovery ticks applied to attacker when parried */
+  parryStunTicks: 40,
+
+  /** HitStun ticks applied to target on unblocked hit */
+  hitStunTicks: 30,
 };
 
 // Auto-register on import so systems can look up by name
