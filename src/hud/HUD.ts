@@ -13,8 +13,17 @@
 
 import { Health, Stamina, CombatStateComponent } from '../ecs/components';
 import { COMBAT_STATE_NAMES } from '../combat/states';
+import { fsmRegistry } from '../combat/CombatFSM';
 import { HealthBar } from './HealthBar';
 import { StaminaBar } from './StaminaBar';
+
+/** Direction names for debug display */
+const ATTACK_DIR_NAMES: Record<number, string> = {
+  0: 'Left', 1: 'Right', 2: 'Overhead', 3: 'Underhand', 4: 'Stab',
+};
+const BLOCK_DIR_NAMES: Record<number, string> = {
+  0: 'Left', 1: 'Right', 2: 'Top', 3: 'Bottom',
+};
 
 export class HUD {
   private healthBar: HealthBar;
@@ -101,12 +110,23 @@ export class HUD {
       this.staminaBar.update(stam, stamMax);
     }
 
-    // Update FSM state label
+    // Update FSM state label (enhanced with turncap + direction)
     if (this.fsmVisible) {
       const stateNum = CombatStateComponent.state[playerEntity] ?? 0;
       const stateName = COMBAT_STATE_NAMES[stateNum] ?? 'Unknown';
       const ticksLeft = CombatStateComponent.ticksRemaining[playerEntity] ?? 0;
-      this.fsmLabel.textContent = `${stateName} [${ticksLeft}]`;
+      const atkDir = CombatStateComponent.attackDirection[playerEntity] ?? 0;
+      const blkDir = CombatStateComponent.blockDirection[playerEntity] ?? 0;
+
+      const fsm = fsmRegistry.get(playerEntity);
+      const turncap = fsm ? fsm.getCurrentTurncap() : Infinity;
+      const turncapStr = turncap === Infinity ? 'none' : `${(turncap * 60).toFixed(1)} rad/s`;
+      const dirStr = stateNum >= 4 && stateNum <= 5
+        ? `Block: ${BLOCK_DIR_NAMES[blkDir] ?? blkDir}`
+        : `Atk: ${ATTACK_DIR_NAMES[atkDir] ?? atkDir}`;
+
+      this.fsmLabel.textContent =
+        `${stateName} [${ticksLeft}] | ${dirStr} | Cap: ${turncapStr}`;
     }
 
     // Update FPS counter (exponential moving average)

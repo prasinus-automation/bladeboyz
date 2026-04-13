@@ -3,6 +3,7 @@ import { GameLoop } from './core/GameLoop';
 import { InputManager } from './input/InputManager';
 import { CameraController } from './rendering/CameraController';
 import { createMovementSystem } from './ecs/systems/MovementSystem';
+import { createCombatSystem } from './ecs/systems/CombatSystem';
 import { staminaSystemTick } from './ecs/systems/StaminaSystem';
 import { healthSystemTick } from './ecs/systems/HealthSystem';
 import { createPlayer } from './ecs/entities/createPlayer';
@@ -15,6 +16,8 @@ import { DamageSystem } from './ecs/systems/DamageSystem';
 import { TracerDebugRenderer } from './rendering/TracerDebugRenderer';
 import { FIXED_TIMESTEP } from './core/types';
 import { Position } from './ecs/components';
+import { createFSM } from './combat/CombatFSM';
+import { longsword } from './weapons/longsword';
 
 async function main(): Promise<void> {
   // Initialize game world
@@ -35,8 +38,14 @@ async function main(): Promise<void> {
   world.playerEntity = playerEid;
   cameraController.setPlayerMesh(playerMesh);
 
+  // Register combat FSM for the player entity
+  createFSM(playerEid, longsword);
+
   // Create movement system
   const movementSystem = createMovementSystem(world, input, cameraController);
+
+  // Create combat system (reads input, drives per-entity FSMs)
+  const combatSystem = createCombatSystem(world.ecs, input);
 
   // Debug overlay
   const debugOverlay = new DebugOverlay();
@@ -72,6 +81,9 @@ async function main(): Promise<void> {
   };
 
   loop.fixedUpdate = (_dt: number) => {
+    // Combat system (reads input, ticks FSMs, syncs ECS components)
+    combatSystem();
+
     // Movement system
     movementSystem(FIXED_TIMESTEP);
 
