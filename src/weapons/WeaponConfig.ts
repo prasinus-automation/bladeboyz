@@ -1,55 +1,85 @@
-import type { AttackDirection, BodyRegion } from '../combat/states';
+/**
+ * Data-driven weapon configuration.
+ *
+ * All timing values are in **ticks** (1 tick = 1/60th second at 60Hz fixed update).
+ * All turncap values are in **radians per tick**.
+ * Damage, stamina, and range values are unitless game values.
+ *
+ * Weapon behavior comes entirely from these config objects — no hardcoded
+ * weapon logic in systems. To add a new weapon, create a config and register it.
+ */
 
-/** A point in weapon-local space where tracer detection samples [x, y, z] */
-export type TracerPoint = [number, number, number];
+import { AttackDirection } from '../combat/directions';
 
-/** Per-direction timing (in ticks at 60Hz) */
-export interface DirectionTiming {
-  windupTicks: number;
-  releaseTicks: number;
-  recoveryTicks: number;
-  comboRecoveryTicks: number;
-  feintWindowTicks: number;
-  morphWindowTicks: number;
-}
+// ── Vector3 tuple for tracer points (avoids Three.js import) ──
 
-/** Damage values keyed by body region */
-export type RegionDamage = Partial<Record<BodyRegion, number>>;
+/** Local-space position along the weapon mesh [x, y, z] */
+export type TracerPoint = [x: number, y: number, z: number];
 
-/** Per-direction damage values */
-export type DirectionDamage = Partial<Record<AttackDirection, RegionDamage>>;
+// ── Main interface ────────────────────────────────────────
 
-/** Full weapon configuration — all combat behavior is data-driven from this */
 export interface WeaponConfig {
+  /** Display name */
   name: string;
 
-  /** Tracer sample points along the blade in weapon-local space */
+  /**
+   * Damage values per attack direction per body zone.
+   * head/torso/limb let us reward skillful strikes (headshots).
+   */
+  damage: Record<AttackDirection, { head: number; torso: number; limb: number }>;
+
+  /** Windup duration before the blade becomes active (ticks) */
+  windup: Record<AttackDirection, number>;
+
+  /** Release / active swing duration (ticks) */
+  release: Record<AttackDirection, number>;
+
+  /** Full recovery after a swing completes (ticks) */
+  recovery: Record<AttackDirection, number>;
+
+  /** Shorter recovery when chaining a combo (ticks) */
+  comboRecovery: Record<AttackDirection, number>;
+
+  /** Parry window duration at the start of a block (ticks) */
+  parryWindow: number;
+
+  /** Stamina costs for different combat actions */
+  staminaCost: Record<'attack' | 'block' | 'parry' | 'feint', number>;
+
+  /**
+   * Turn-rate caps during different combat phases (radians per tick).
+   * Lower values restrict mouse look more, creating the drag/accel feel.
+   *
+   * Reference: 0.03 rad/tick at 60Hz ≈ 1.8 rad/s ≈ 103°/s
+   */
+  turncap: Record<'windup' | 'release' | 'recovery', number>;
+
+  /**
+   * Local-space tracer points along the blade.
+   * During Release, swept-volume checks run between consecutive tick
+   * positions of these points against enemy hitbox sensors.
+   */
   tracerPoints: TracerPoint[];
 
-  /** Timing per attack direction */
-  timing: Partial<Record<AttackDirection, DirectionTiming>>;
+  /** Maximum tracer extent from the weapon root (units) */
+  range: number;
 
-  /** Damage per attack direction per body region */
-  damage: DirectionDamage;
-
-  /** Base stamina cost to swing */
-  staminaCost: number;
-
-  /** Stamina drained from blocker on hit */
+  /** Stamina drained from blocker on successful block */
   blockStaminaDrain: number;
 
-  /** Extra recovery ticks applied to attacker on parry */
+  /** Extra recovery ticks applied to attacker when parried */
   parryStunTicks: number;
 
   /** HitStun ticks applied to the target on unblocked hit */
   hitStunTicks: number;
-
-  /** Turn-rate cap multipliers per state (1.0 = normal) */
-  turncaps: Partial<Record<number, number>>;
-
-  /** Length of weapon (used for debug viz) */
-  length: number;
 }
 
-/** Global weapon config registry by weapon name */
-export const weaponConfigs = new Map<string, WeaponConfig>();
+// ── Registry ──────────────────────────────────────────────
+
+/** All registered weapon configs, keyed by name */
+export const weaponConfigs: Record<string, WeaponConfig> = {};
+
+/** Register a weapon config so systems can look it up by name */
+export function registerWeapon(config: WeaponConfig): void {
+  weaponConfigs[config.name] = config;
+}

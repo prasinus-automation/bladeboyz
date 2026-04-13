@@ -1,72 +1,68 @@
-import type { GameLoopCallbacks } from './types';
+import { FIXED_TIMESTEP, MAX_SUBSTEPS } from './types';
 
-/** Fixed tick rate in Hz */
-export const TICK_RATE = 60;
+export type FixedUpdateFn = (dt: number) => void;
+export type UpdateFn = (dt: number) => void;
+export type RenderFn = (alpha: number) => void;
 
-/** Duration of one fixed tick in seconds */
-export const TICK_DURATION = 1 / TICK_RATE;
-
-/** Duration of one fixed tick in milliseconds */
-const TICK_DURATION_MS = 1000 / TICK_RATE;
-
-/** Maximum accumulated time before clamping (spiral-of-death protection) */
-const MAX_ACCUMULATOR_MS = TICK_DURATION_MS * 8;
-
+/**
+ * Fixed-timestep game loop with variable-rate rendering.
+ * - fixedUpdate runs at 60Hz for deterministic physics/combat
+ * - update runs at frame rate for animation blending
+ * - render runs at frame rate with interpolation alpha
+ */
 export class GameLoop {
   private accumulator = 0;
   private lastTime = 0;
-  private rafId = 0;
   private running = false;
-  private callbacks: GameLoopCallbacks;
+  private rafId = 0;
 
-  constructor(callbacks: GameLoopCallbacks) {
-    this.callbacks = callbacks;
-  }
+  public onFrameStart: () => void = () => {};
+  public fixedUpdate: FixedUpdateFn = () => {};
+  public update: UpdateFn = () => {};
+  public render: RenderFn = () => {};
+  public onFrameEnd: () => void = () => {};
 
   start(): void {
     if (this.running) return;
     this.running = true;
-    this.lastTime = performance.now();
-    this.accumulator = 0;
-    this.rafId = requestAnimationFrame((t) => this.loop(t));
+    this.lastTime = performance.now() / 1000;
+    this.rafId = requestAnimationFrame((t) => this.tick(t));
   }
 
   stop(): void {
     this.running = false;
-    if (this.rafId) {
-      cancelAnimationFrame(this.rafId);
-      this.rafId = 0;
-    }
+    cancelAnimationFrame(this.rafId);
   }
 
-  private loop(timestamp: number): void {
+  private tick(nowMs: number): void {
     if (!this.running) return;
 
-    let frameTime = timestamp - this.lastTime;
-    this.lastTime = timestamp;
+    const now = nowMs / 1000;
+    let frameTime = now - this.lastTime;
+    this.lastTime = now;
 
-    // Spiral-of-death protection: clamp max accumulated time
-    if (frameTime > MAX_ACCUMULATOR_MS) {
-      frameTime = MAX_ACCUMULATOR_MS;
-    }
+    // Clamp large frame times (e.g. after tab switch)
+    if (frameTime > 0.25) frameTime = 0.25;
 
     this.accumulator += frameTime;
 
-    // Fixed timestep updates at 60Hz
-    while (this.accumulator >= TICK_DURATION_MS) {
-      this.callbacks.fixedUpdate(TICK_DURATION);
-      this.accumulator -= TICK_DURATION_MS;
+    // Process per-frame input before fixed updates (e.g. camera mouse delta)
+    this.onFrameStart();
+
+    let steps = 0;
+    while (this.accumulator >= FIXED_TIMESTEP && steps < MAX_SUBSTEPS) {
+      this.fixedUpdate(FIXED_TIMESTEP);
+      this.accumulator -= FIXED_TIMESTEP;
+      steps++;
     }
 
-    // Interpolation factor for smooth rendering
-    const alpha = this.accumulator / TICK_DURATION_MS;
+    this.update(frameTime);
 
-    // Variable-rate update
-    this.callbacks.update(frameTime / 1000);
+    const alpha = this.accumulator / FIXED_TIMESTEP;
+    this.render(alpha);
 
-    // Render with interpolation
-    this.callbacks.render(alpha);
+    this.onFrameEnd();
 
-    this.rafId = requestAnimationFrame((t) => this.loop(t));
+    this.rafId = requestAnimationFrame((t) => this.tick(t));
   }
 }

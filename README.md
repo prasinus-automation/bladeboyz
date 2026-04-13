@@ -1,49 +1,41 @@
 # BladeBoyz
 
-Browser-based multiplayer melee combat game with ultra-low-poly aesthetics and directional combat mechanics. Built with Three.js, Rapier3D physics, and bitECS.
+Browser-based multiplayer melee combat game with ultra-low-poly BattleBit-style aesthetic and Mordhau/Chivalry directional combat mechanics. Built with Three.js, Rapier3D, and bitECS.
 
-## Prerequisites
-
-- Node.js 20+
-- npm
-
-## Install
+## Getting Started
 
 ```bash
-npm install
+npm install          # Install dependencies
+npm run dev          # Start Vite dev server with HMR (http://localhost:3000)
+npm run build        # Production build
+npm run preview      # Preview production build locally
 ```
 
-## Development
+## Controls
+
+- **WASD** — Move
+- **Mouse** — Look around (requires pointer lock)
+- **Shift** — Sprint
+- **Ctrl** — Crouch
+- **Space** — Jump
+- **F5** — Toggle first-person / third-person camera
+- **F3** — Toggle hitbox debug wireframes
+- **Click** — Lock mouse pointer (required for mouse look)
+
+## Testing & Checks
 
 ```bash
-npm run dev        # Start Vite dev server with HMR (port 3000)
-```
-
-## Build
-
-```bash
-npm run build      # Type-check + production build → dist/
-npm run preview    # Preview production build locally
-```
-
-## Type Checking & Linting
-
-```bash
-npm run typecheck  # Run tsc --noEmit
-npm run lint       # Run ESLint
-```
-
-## Docker
-
-```bash
-docker build -t bladeboyz .
-docker run -p 3000:3000 bladeboyz
+npm test             # Run test suite
+npm run test:watch   # Run tests in watch mode
+npm run typecheck    # TypeScript type checking
+npm run lint         # ESLint
 ```
 
 ## Tech Stack
 
-- **TypeScript** (strict mode)
-- **Three.js** — 3D rendering
-- **Rapier3D** — WASM physics engine
-- **bitECS** — Entity Component System
-- **Vite** — Build tool with HMR
+- TypeScript (strict mode)
+- Three.js (renderer)
+- Rapier3D WASM (physics)
+- bitECS (entity component system)
+- Vite (build tool)
+- Vitest (testing)

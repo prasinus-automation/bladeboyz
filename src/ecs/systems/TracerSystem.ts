@@ -1,14 +1,16 @@
 import { defineQuery, addEntity, addComponent } from 'bitecs';
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
-import type { World } from '../../core/World';
+import type { GameWorld } from '../../core/types';
 import {
   CombatStateComponent,
   TracerTag,
   DamageEvent,
   Hitbox,
 } from '../components';
-import { CombatState, BodyRegion } from '../../combat/states';
+import { CombatState } from '../../combat/states';
+import { BodyRegion } from '../components';
+import type { AttackDirection } from '../../combat/directions';
 import type { WeaponConfig, TracerPoint } from '../../weapons/WeaponConfig';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -105,7 +107,7 @@ const _up = new THREE.Vector3(0, 1, 0);
  *
  * On hit: creates a DamageEvent entity for same-tick processing.
  */
-export function TracerSystem(world: World, _dt: number): void {
+export function TracerSystem(world: GameWorld, _dt: number): void {
   currentTick++;
 
   // Prune old debug segments
@@ -131,7 +133,7 @@ export function TracerSystem(world: World, _dt: number): void {
 /**
  * Process tracer detection for a single entity in Release state.
  */
-function processReleaseEntity(world: World, eid: number): void {
+function processReleaseEntity(world: GameWorld, eid: number): void {
   const weaponId = CombatStateComponent.weaponId[eid];
   const config = weaponConfigMap.get(weaponId);
   if (!config) return;
@@ -217,7 +219,7 @@ function transformTracerPoints(
  * Uses intersectionsWithShape at the midpoint with a thin cuboid oriented along the sweep.
  */
 function sweepTracerSegment(
-  world: World,
+  world: GameWorld,
   attackerEid: number,
   prevPos: TracerWorldPos,
   currPos: TracerWorldPos,
@@ -275,7 +277,7 @@ function sweepTracerSegment(
   );
 
   // Query intersections with sensor colliders
-  world.rapierWorld.intersectionsWithShape(
+  world.physicsWorld.intersectionsWithShape(
     shapePos,
     shapeRot,
     shape,
@@ -312,19 +314,32 @@ function sweepTracerSegment(
 }
 
 /**
+ * Map BodyRegion enum to the damage zone key in WeaponConfig.
+ * Head → 'head', Torso → 'torso', all limbs → 'limb'.
+ */
+function bodyRegionToDamageZone(region: BodyRegion): 'head' | 'torso' | 'limb' {
+  switch (region) {
+    case BodyRegion.Head: return 'head';
+    case BodyRegion.Torso: return 'torso';
+    default: return 'limb';
+  }
+}
+
+/**
  * Create a DamageEvent ECS entity for same-tick processing by DamageSystem.
  */
 function emitDamageEvent(
-  world: World,
+  world: GameWorld,
   targetEid: number,
   attackerEid: number,
   config: WeaponConfig,
   attackDir: number,
   bodyRegion: BodyRegion,
 ): void {
-  // Look up damage from weapon config
-  const directionDamage = config.damage[attackDir as keyof typeof config.damage];
-  const damage = directionDamage?.[bodyRegion] ?? 0;
+  // Look up damage from weapon config using direction + body zone
+  const directionDamage = config.damage[attackDir as AttackDirection];
+  const zone = bodyRegionToDamageZone(bodyRegion);
+  const damage = directionDamage?.[zone] ?? 0;
 
   if (damage <= 0) return;
 

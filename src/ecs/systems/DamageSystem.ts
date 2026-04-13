@@ -1,12 +1,13 @@
 import { defineQuery, removeEntity } from 'bitecs';
-import type { World } from '../../core/World';
+import type { GameWorld } from '../../core/types';
 import {
   DamageEvent,
   CombatStateComponent,
   Health,
   Stamina,
 } from '../components';
-import { CombatState, BlockDirection, AttackDirection } from '../../combat/states';
+import { CombatState } from '../../combat/states';
+import { AttackDirection, BlockDirection } from '../../combat/directions';
 import { weaponConfigMap } from './TracerSystem';
 
 // ─── Queries ─────────────────────────────────────────────────────────────────
@@ -18,7 +19,7 @@ const damageEventQuery = defineQuery([DamageEvent]);
 /**
  * Check if the target's block direction counters the attack direction.
  * Left attacks are blocked by Right blocks and vice versa.
- * Overhead is blocked by Up, Underhand by Down, Stab by any.
+ * Overhead is blocked by Top, Underhand by Bottom, Stab by any.
  */
 function doesBlockCounter(
   attackDir: AttackDirection,
@@ -30,12 +31,12 @@ function doesBlockCounter(
     case AttackDirection.Right:
       return blockDir === BlockDirection.Left;
     case AttackDirection.Overhead:
-      return blockDir === BlockDirection.Up;
+      return blockDir === BlockDirection.Top;
     case AttackDirection.Underhand:
-      return blockDir === BlockDirection.Down;
+      return blockDir === BlockDirection.Bottom;
     case AttackDirection.Stab:
       // Stab can be blocked by any active block direction
-      return blockDir !== BlockDirection.None;
+      return true;
     default:
       return false;
   }
@@ -51,7 +52,7 @@ function doesBlockCounter(
  * - Otherwise applies damage and pushes target into HitStun
  * - Removes processed DamageEvent entities
  */
-export function DamageSystem(world: World, _dt: number): void {
+export function DamageSystem(world: GameWorld, _dt: number): void {
   const events = damageEventQuery(world.ecs);
 
   for (let i = 0; i < events.length; i++) {
@@ -76,14 +77,14 @@ export function DamageSystem(world: World, _dt: number): void {
       targetState === CombatState.ParryWindow &&
       doesBlockCounter(attackDir, targetBlockDir)
     ) {
-      handleParry(world, targetEid, attackerEid);
+      handleParry(attackerEid);
     }
     // Check for block (Block state + correct direction)
     else if (
       targetState === CombatState.Block &&
       doesBlockCounter(attackDir, targetBlockDir)
     ) {
-      handleBlock(world, targetEid, attackerEid);
+      handleBlock(targetEid, attackerEid);
     }
     // Unblocked hit — apply damage
     else {
@@ -99,7 +100,7 @@ export function DamageSystem(world: World, _dt: number): void {
 /**
  * Successful parry — no damage, attacker enters longer Stunned recovery.
  */
-function handleParry(_world: World, _targetEid: number, attackerEid: number): void {
+function handleParry(attackerEid: number): void {
   const weaponId = CombatStateComponent.weaponId[attackerEid];
   const config = weaponConfigMap.get(weaponId);
   const stunTicks = config?.parryStunTicks ?? 40;
@@ -112,7 +113,7 @@ function handleParry(_world: World, _targetEid: number, attackerEid: number): vo
 /**
  * Successful block — no damage, drain target stamina, attacker → Recovery.
  */
-function handleBlock(_world: World, targetEid: number, attackerEid: number): void {
+function handleBlock(targetEid: number, attackerEid: number): void {
   const weaponId = CombatStateComponent.weaponId[attackerEid];
   const config = weaponConfigMap.get(weaponId);
   const staminaDrain = config?.blockStaminaDrain ?? 25;
@@ -125,9 +126,9 @@ function handleBlock(_world: World, targetEid: number, attackerEid: number): voi
 
   // Attacker bounces into Recovery
   CombatStateComponent.state[attackerEid] = CombatState.Recovery;
-  const attackDir = CombatStateComponent.attackDirection[attackerEid];
-  const timing = config?.timing[attackDir as keyof typeof config.timing];
-  CombatStateComponent.ticksRemaining[attackerEid] = timing?.recoveryTicks ?? 25;
+  const attackDir = CombatStateComponent.attackDirection[attackerEid] as AttackDirection;
+  const recoveryTicks = config?.recovery[attackDir] ?? 25;
+  CombatStateComponent.ticksRemaining[attackerEid] = recoveryTicks;
 }
 
 /**
