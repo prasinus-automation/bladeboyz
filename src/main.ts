@@ -3,9 +3,12 @@ import { GameLoop } from './core/GameLoop';
 import { InputManager } from './input/InputManager';
 import { CameraController } from './rendering/CameraController';
 import { createMovementSystem } from './ecs/systems/MovementSystem';
+import { staminaSystemTick } from './ecs/systems/StaminaSystem';
+import { healthSystemTick } from './ecs/systems/HealthSystem';
 import { createPlayer } from './ecs/entities/createPlayer';
 import { createArena } from './ecs/entities/createArena';
 import { DebugOverlay } from './hud/DebugOverlay';
+import { HUD } from './hud/HUD';
 import { FIXED_TIMESTEP } from './core/types';
 import { Position } from './ecs/components';
 
@@ -33,6 +36,9 @@ async function main(): Promise<void> {
 
   // Debug overlay
   const debugOverlay = new DebugOverlay();
+
+  // HUD (health bar, stamina bar, FSM state label, FPS counter)
+  const hud = new HUD();
 
   // Click-to-play handler
   const overlay = document.getElementById('click-to-play');
@@ -62,6 +68,12 @@ async function main(): Promise<void> {
     // Movement system
     movementSystem(FIXED_TIMESTEP);
 
+    // Stamina system (reads combat state, handles regen/costs)
+    staminaSystemTick(world.ecs);
+
+    // Health system (processes damage, handles death/respawn)
+    healthSystemTick(world.ecs);
+
     // Step physics
     world.physicsWorld.step();
 
@@ -75,6 +87,7 @@ async function main(): Promise<void> {
 
   loop.update = (dt: number) => {
     debugOverlay.update(dt, playerEid, cameraController);
+    hud.update(dt, playerEid);
   };
 
   loop.render = (alpha: number) => {

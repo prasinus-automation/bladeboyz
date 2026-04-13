@@ -97,6 +97,18 @@ export const Stamina = defineComponent({
   max: Types.f32,
 });
 
+/**
+ * Combat state component — tracks per-entity FSM state.
+ * `state` is a CombatState enum value.
+ * `ticksRemaining` counts down to 0 for timed states (windup, release, recovery, stun).
+ * `weaponId` is an index into a weapon lookup (0 = no weapon / default).
+ */
+export const CombatStateComp = defineComponent({
+  state: Types.ui8,
+  ticksRemaining: Types.ui16,
+  weaponId: Types.ui8,
+});
+
 /* ─── Lookup tables for non-numeric data ─── */
 
 export interface CharacterModelData {
