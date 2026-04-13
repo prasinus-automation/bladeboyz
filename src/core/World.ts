@@ -1,92 +1,39 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { createWorld, type IWorld } from 'bitecs';
-import type { WorldState } from './types';
+import { createWorld } from 'bitecs';
+import type { GameWorld } from './types';
 
-let instance: World | null = null;
+/**
+ * Initialize and return the GameWorld singleton.
+ * Must be called after Rapier WASM is initialized.
+ */
+export function createGameWorld(): GameWorld {
+  const ecs = createWorld();
 
-export class World implements WorldState {
-  ecs!: IWorld;
-  scene!: THREE.Scene;
-  renderer!: THREE.WebGLRenderer;
-  camera!: THREE.PerspectiveCamera;
-  rapierWorld!: RAPIER.World;
-  assetRegistry: Map<string, unknown> = new Map();
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x87ceeb);
 
-  private constructor() {
-    // Use async init() instead
-  }
+  // Ambient + directional light for flat-shaded look
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  dirLight.position.set(5, 10, 5);
+  scene.add(dirLight);
 
-  static getInstance(): World {
-    if (!instance) {
-      instance = new World();
-    }
-    return instance;
-  }
+  const gravity = new RAPIER.Vector3(0.0, -9.81, 0.0);
+  const physicsWorld = new RAPIER.World(gravity);
 
-  async init(container: HTMLElement): Promise<void> {
-    // Initialize Rapier WASM first — must happen before any physics usage
-    await RAPIER.init();
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
 
-    // bitECS world
-    this.ecs = createWorld();
+  const camera = new THREE.PerspectiveCamera(
+    75,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    1000,
+  );
+  camera.position.set(0, 2, 5);
+  camera.lookAt(0, 1, 0);
 
-    // Three.js scene
-    this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x1a1a2e);
-
-    // Camera
-    this.camera = new THREE.PerspectiveCamera(
-      75,
-      window.innerWidth / window.innerHeight,
-      0.1,
-      1000
-    );
-    this.camera.position.set(0, 10, 20);
-    this.camera.lookAt(0, 0, 0);
-
-    // Renderer
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(window.devicePixelRatio);
-    container.appendChild(this.renderer.domElement);
-
-    // Resize handler
-    window.addEventListener('resize', this.onResize);
-
-    // Rapier physics world with gravity
-    const gravity = new RAPIER.Vector3(0.0, -9.81, 0.0);
-    this.rapierWorld = new RAPIER.World(gravity);
-  }
-
-  private onResize = (): void => {
-    this.camera.aspect = window.innerWidth / window.innerHeight;
-    this.camera.updateProjectionMatrix();
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-  };
-
-  /** Clean disposal for HMR compatibility */
-  dispose(): void {
-    window.removeEventListener('resize', this.onResize);
-
-    // Dispose all Three.js objects in the scene
-    this.scene.traverse((obj) => {
-      if (obj instanceof THREE.Mesh) {
-        obj.geometry.dispose();
-        if (Array.isArray(obj.material)) {
-          obj.material.forEach((m) => m.dispose());
-        } else {
-          obj.material.dispose();
-        }
-      }
-    });
-
-    this.renderer.dispose();
-    this.renderer.domElement.remove();
-
-    // Free Rapier world
-    this.rapierWorld.free();
-
-    instance = null;
-  }
+  return { ecs, scene, rapier: RAPIER, physicsWorld, renderer, camera };
 }

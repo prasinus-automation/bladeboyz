@@ -1,72 +1,48 @@
-import type { GameLoopCallbacks } from './types';
+const FIXED_DT = 1 / 60; // 60 Hz fixed timestep
+const MAX_FRAME_TIME = 0.25; // clamp to prevent spiral of death
 
-/** Fixed tick rate in Hz */
-export const TICK_RATE = 60;
+export interface GameLoopCallbacks {
+  fixedUpdate(dt: number): void;
+  update(dt: number): void;
+  render(alpha: number): void;
+}
 
-/** Duration of one fixed tick in seconds */
-export const TICK_DURATION = 1 / TICK_RATE;
+/**
+ * Fixed-timestep game loop with variable render.
+ * Uses a custom accumulator — NOT Three.js Clock.getDelta().
+ */
+export function startGameLoop(callbacks: GameLoopCallbacks): void {
+  let previousTime = performance.now() / 1000;
+  let accumulator = 0;
 
-/** Duration of one fixed tick in milliseconds */
-const TICK_DURATION_MS = 1000 / TICK_RATE;
+  function loop(): void {
+    const currentTime = performance.now() / 1000;
+    let frameTime = currentTime - previousTime;
+    previousTime = currentTime;
 
-/** Maximum accumulated time before clamping (spiral-of-death protection) */
-const MAX_ACCUMULATOR_MS = TICK_DURATION_MS * 8;
-
-export class GameLoop {
-  private accumulator = 0;
-  private lastTime = 0;
-  private rafId = 0;
-  private running = false;
-  private callbacks: GameLoopCallbacks;
-
-  constructor(callbacks: GameLoopCallbacks) {
-    this.callbacks = callbacks;
-  }
-
-  start(): void {
-    if (this.running) return;
-    this.running = true;
-    this.lastTime = performance.now();
-    this.accumulator = 0;
-    this.rafId = requestAnimationFrame((t) => this.loop(t));
-  }
-
-  stop(): void {
-    this.running = false;
-    if (this.rafId) {
-      cancelAnimationFrame(this.rafId);
-      this.rafId = 0;
-    }
-  }
-
-  private loop(timestamp: number): void {
-    if (!this.running) return;
-
-    let frameTime = timestamp - this.lastTime;
-    this.lastTime = timestamp;
-
-    // Spiral-of-death protection: clamp max accumulated time
-    if (frameTime > MAX_ACCUMULATOR_MS) {
-      frameTime = MAX_ACCUMULATOR_MS;
+    if (frameTime > MAX_FRAME_TIME) {
+      frameTime = MAX_FRAME_TIME;
     }
 
-    this.accumulator += frameTime;
+    accumulator += frameTime;
 
-    // Fixed timestep updates at 60Hz
-    while (this.accumulator >= TICK_DURATION_MS) {
-      this.callbacks.fixedUpdate(TICK_DURATION);
-      this.accumulator -= TICK_DURATION_MS;
+    // Fixed update at 60Hz
+    while (accumulator >= FIXED_DT) {
+      callbacks.fixedUpdate(FIXED_DT);
+      accumulator -= FIXED_DT;
     }
-
-    // Interpolation factor for smooth rendering
-    const alpha = this.accumulator / TICK_DURATION_MS;
 
     // Variable-rate update
-    this.callbacks.update(frameTime / 1000);
+    callbacks.update(frameTime);
 
-    // Render with interpolation
-    this.callbacks.render(alpha);
+    // Render with interpolation alpha
+    const alpha = accumulator / FIXED_DT;
+    callbacks.render(alpha);
 
-    this.rafId = requestAnimationFrame((t) => this.loop(t));
+    requestAnimationFrame(loop);
   }
+
+  requestAnimationFrame(loop);
 }
+
+export { FIXED_DT };

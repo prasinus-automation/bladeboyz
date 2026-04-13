@@ -1,49 +1,33 @@
 # BladeBoyz
 
-Browser-based multiplayer melee combat game with ultra-low-poly aesthetics and directional combat mechanics. Built with Three.js, Rapier3D physics, and bitECS.
+Browser-based multiplayer melee combat game with ultra-low-poly BattleBit-style aesthetic and Mordhau/Chivalry directional combat mechanics. Built with Three.js, Rapier3D, and bitECS.
 
-## Prerequisites
-
-- Node.js 20+
-- npm
-
-## Install
+## Getting Started
 
 ```bash
-npm install
+npm install          # Install dependencies
+npm run dev          # Start Vite dev server with HMR (http://localhost:3000)
+npm run build        # Production build
+npm run preview      # Preview production build locally
 ```
 
-## Development
+## Testing & Checks
 
 ```bash
-npm run dev        # Start Vite dev server with HMR (port 3000)
+npm run test         # Run unit tests (vitest)
+npm run typecheck    # TypeScript type checking
+npm run lint         # ESLint
 ```
 
-## Build
+## Controls
 
-```bash
-npm run build      # Type-check + production build → dist/
-npm run preview    # Preview production build locally
-```
-
-## Type Checking & Linting
-
-```bash
-npm run typecheck  # Run tsc --noEmit
-npm run lint       # Run ESLint
-```
-
-## Docker
-
-```bash
-docker build -t bladeboyz .
-docker run -p 3000:3000 bladeboyz
-```
+- **Click** to capture pointer lock
+- **F3** to toggle hitbox debug wireframes
 
 ## Tech Stack
 
-- **TypeScript** (strict mode)
-- **Three.js** — 3D rendering
-- **Rapier3D** — WASM physics engine
-- **bitECS** — Entity Component System
-- **Vite** — Build tool with HMR
+- TypeScript (strict mode)
+- Three.js (renderer)
+- Rapier3D WASM (physics)
+- bitECS (entity component system)
+- Vite (build tool)
