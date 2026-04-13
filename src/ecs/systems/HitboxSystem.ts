@@ -78,15 +78,16 @@ export function createHitboxes(
   const colliderMap = new Map<BodyRegion, RAPIER.Collider>();
   const RAPIER = world.rapier;
 
-  // We need a kinematic rigid body to parent all sensor colliders
-  const rbDesc = RAPIER.RigidBodyDesc.kinematicPositionBased();
-  const rigidBody = world.physicsWorld.createRigidBody(rbDesc);
-
+  // Each hitbox region gets its own kinematic rigid body so it can be
+  // positioned independently to track its corresponding bone.
   for (const def of HITBOX_DEFS) {
     const bone = bones[def.boneName];
     if (!bone) continue;
 
-    // Create sensor collider
+    const rbDesc = RAPIER.RigidBodyDesc.kinematicPositionBased();
+    const rigidBody = world.physicsWorld.createRigidBody(rbDesc);
+
+    // Create sensor collider parented to this region's rigid body
     const colliderDesc = RAPIER.ColliderDesc.cuboid(
       def.halfExtents[0],
       def.halfExtents[1],
