@@ -1,0 +1,53 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: false
+
+env:
+  PROJECT_NAME: bladeboyz
+  HOST_PORT: "3010"
+  CONTAINER_PORT: "3000"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t ${{ env.PROJECT_NAME }}:latest .
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Transfer and deploy
+        run: |
+          docker save ${{ env.PROJECT_NAME }}:latest | gzip > /tmp/image.tar.gz
+          scp -i ~/.ssh/deploy_key \
+            /tmp/image.tar.gz \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/${{ env.PROJECT_NAME }}.tar.gz
+
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << DEPLOY_SCRIPT
+            set -euo pipefail
+            docker load < /tmp/${{ env.PROJECT_NAME }}.tar.gz
+            rm /tmp/${{ env.PROJECT_NAME }}.tar.gz
+            docker stop ${{ env.PROJECT_NAME }} 2>/dev/null || true
+            docker rm ${{ env.PROJECT_NAME }} 2>/dev/null || true
+            docker run -d \
+              --name ${{ env.PROJECT_NAME }} \
+              --restart unless-stopped \
+              -p ${{ env.HOST_PORT }}:${{ env.CONTAINER_PORT }} \
+              ${{ env.PROJECT_NAME }}:latest
+            docker image prune -f
+            echo "Deployed ${{ env.PROJECT_NAME }} on port ${{ env.HOST_PORT }}"
+          DEPLOY_SCRIPT
