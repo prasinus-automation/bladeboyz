@@ -36,6 +36,15 @@ const bodyMap = new Map<number, RAPIER.RigidBody>();
 const colliderMap = new Map<number, RAPIER.Collider>();
 
 /**
+ * Reset module-level state. Used by tests to ensure clean isolation.
+ */
+export function resetMovementState(): void {
+  characterController = null;
+  bodyMap.clear();
+  colliderMap.clear();
+}
+
+/**
  * Register a physics body/collider pair for an entity.
  * Called from entity factories after creating Rapier bodies.
  */
