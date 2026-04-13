@@ -5,6 +5,7 @@ import { createPlayer } from './ecs/entities/createPlayer';
 import { createDummy } from './ecs/entities/createDummy';
 import { hitboxSystem } from './ecs/systems/HitboxSystem';
 import { DebugRenderer } from './rendering/DebugRenderer';
+import { PhysicsSystem } from './ecs/systems/PhysicsSystem';
 
 async function main(): Promise<void> {
   // Rapier WASM must be initialized before anything else
@@ -42,8 +43,8 @@ async function main(): Promise<void> {
 
   // Start game loop
   startGameLoop({
-    fixedUpdate(_dt: number) {
-      world.physicsWorld.step();
+    fixedUpdate(dt: number) {
+      PhysicsSystem(world, dt);
       hitboxSystem(world);
     },
     update(_dt: number) {

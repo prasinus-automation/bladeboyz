@@ -1,6 +1,6 @@
 import { defineQuery } from 'bitecs';
 import { Position, Rotation, Velocity } from '../components';
-import type { World } from '../../core/World';
+import type { GameWorld } from '../../core/types';
 
 /**
  * Query for entities that have physics-relevant components.
@@ -14,9 +14,9 @@ const physicsQuery = defineQuery([Position, Rotation, Velocity]);
  *
  * Stub implementation for scaffolding phase.
  */
-export function PhysicsSystem(world: World, dt: number): void {
+export function PhysicsSystem(world: GameWorld, dt: number): void {
   // Step the physics simulation
-  world.rapierWorld.step();
+  world.physicsWorld.step();
 
   // TODO: Sync Rapier rigid body positions → ECS Position/Rotation components
   // TODO: Sync ECS Velocity → Rapier rigid body velocities (for player-controlled entities)
