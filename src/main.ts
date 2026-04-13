@@ -3,6 +3,8 @@ import { GameLoop } from './core/GameLoop';
 import { InputManager } from './input/InputManager';
 import { CameraController } from './rendering/CameraController';
 import { createMovementSystem } from './ecs/systems/MovementSystem';
+import { staminaSystemTick } from './ecs/systems/StaminaSystem';
+import { healthSystemTick } from './ecs/systems/HealthSystem';
 import { createPlayer } from './ecs/entities/createPlayer';
 import { createArena } from './ecs/entities/createArena';
 import {
@@ -14,7 +16,9 @@ import {
   tickDummyHealthReset,
   activeDummies,
 } from './ecs/entities/createDummy';
+import { animationSystem } from './ecs/systems/AnimationSystem';
 import { DebugOverlay } from './hud/DebugOverlay';
+import { HUD } from './hud/HUD';
 import { DebugRenderer } from './rendering/DebugRenderer';
 import { TracerSystem } from './ecs/systems/TracerSystem';
 import { DamageSystem } from './ecs/systems/DamageSystem';
@@ -83,6 +87,11 @@ async function main(): Promise<void> {
   // HUD & debug
   const debugOverlay = new DebugOverlay();
   const debugRenderer = new DebugRenderer(world);
+
+  // HUD (health bar, stamina bar, FSM state label, FPS counter)
+  const hud = new HUD();
+
+  // Initialize debug renderers
   const tracerDebugRenderer = new TracerDebugRenderer(world.scene);
   const floatingDamage = new FloatingDamage(world.camera);
   const dummyHealthBar = new DummyHealthBar(world.camera);
@@ -150,6 +159,12 @@ async function main(): Promise<void> {
     // Movement system
     movementSystem(FIXED_TIMESTEP);
 
+    // Stamina system (reads combat state, handles regen/costs)
+    staminaSystemTick(world.ecs);
+
+    // Health system (processes damage, handles death/respawn)
+    healthSystemTick(world.ecs);
+
     // Step physics
     world.physicsWorld.step();
 
@@ -187,7 +202,10 @@ async function main(): Promise<void> {
   };
 
   loop.update = (dt: number) => {
+    // Variable-rate updates: animation blending
+    animationSystem(world, dt);
     debugOverlay.update(dt, playerEid, cameraController);
+    hud.update(dt, playerEid);
   };
 
   loop.render = (alpha: number) => {
