@@ -29,6 +29,8 @@ import { FloatingDamage } from './hud/FloatingDamage';
 import { DummyHealthBar } from './hud/DummyHealthBar';
 import { createDummyDamageObserver } from './ecs/systems/DummyDamageObserver';
 import { showNotification } from './hud/DebugNotification';
+import { InventoryPanel } from './hud/InventoryPanel';
+import { initInventory } from './inventory/InventoryData';
 import { FIXED_TIMESTEP, SPAWN_HEIGHT } from './core/types';
 import { Position, meshRegistry } from './ecs/components';
 import { createFSM, fsmRegistry } from './combat/CombatFSM';
@@ -82,6 +84,9 @@ async function main(): Promise<void> {
   // Register combat FSM for the player entity (uses auto-registered longsword config)
   createFSM(playerEid, weaponConfigs['Longsword']);
 
+  // Initialize player inventory with default weapon
+  initInventory(playerEid, 'Longsword');
+
   // Spawn initial training dummy
   createDummy(world, 0, SPAWN_HEIGHT, -4, 0xcc4444);
   dummySpawnIdx = 1;
@@ -98,6 +103,11 @@ async function main(): Promise<void> {
 
   // HUD (health bar, stamina bar, FSM state label, FPS counter)
   const hud = new HUD();
+
+  // Inventory panel (I key to toggle)
+  const inventoryPanel = new InventoryPanel(input, playerEid);
+  // Suppress click-to-play overlay while inventory is open
+  input._suppressClickToPlay = () => inventoryPanel.isOpen;
 
   // Initialize debug renderers
   const tracerDebugRenderer = new TracerDebugRenderer(world.scene);
