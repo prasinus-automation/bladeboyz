@@ -43,12 +43,16 @@ bladeboyz/
 │   │   └── directions.ts        # Attack/block direction detection from mouse input
 │   ├── weapons/
 │   │   ├── WeaponConfig.ts      # WeaponConfig type + registry (weaponConfigs, registerWeapon)
-│   │   └── longsword.ts         # Longsword weapon data (auto-registers on import)
+│   │   ├── longsword.ts         # Longsword weapon data (auto-registers on import)
+│   │   ├── mace.ts              # Mace weapon data (auto-registers on import)
+│   │   ├── dagger.ts            # Dagger weapon data (auto-registers on import)
+│   │   └── battleaxe.ts         # Battleaxe weapon data (auto-registers on import)
 │   ├── input/
 │   │   └── InputManager.ts      # Raw input capture, pointer lock, mouse delta tracking
 │   ├── rendering/
 │   │   ├── CameraController.ts  # FPS + debug third-person camera
 │   │   ├── CharacterModel.ts    # Procedural low-poly character mesh + skeleton
+│   │   ├── WeaponModels.ts      # Procedural weapon models (Mace, Dagger, Battleaxe) + factory registry
 │   │   └── DebugRenderer.ts     # Wireframe, hitbox, physics debug drawing
 │   ├── inventory/
 │   │   └── InventoryData.ts     # Inventory side-table (inventoryRegistry Map<eid, InventoryData>)
@@ -122,6 +126,12 @@ npm run lint         # Run ESLint
 
 ### Two Combat State Components (SYNCED — no longer broken)
 Two ECS components track combat state: `CombatStateComponent` (authoritative — synced from FSM by CombatSystem, used by HUD/StaminaSystem/DamageSystem) and `CombatStateComp` (animation mirror — has `phaseElapsed`/`phaseTotal`, used by AnimationSystem). **Both are now synced by CombatSystem** after FSM tick (fixed in PR #36). `computePhaseTotal()` in CombatSystem.ts derives phase duration from FSM state + weapon config. Long-term, these should be unified into a single component.
+
+### Two Disconnected Inventory Modules (NEEDS FIX)
+`src/inventory/InventoryData.ts` is a lightweight UI-only side-table used by `InventoryPanel.ts`. `src/ecs/systems/InventorySystem.ts` is the real system with full equip logic (3D model swap, FSM update, ECS sync). **They maintain separate data stores.** `InventoryData.ts` is never initialized in `main.ts`, so the UI weapons grid is always empty. The UI's `equipWeapon()` only updates the InventoryData side-table — it does NOT swap 3D models, update FSM, or sync `CombatStateComponent.weaponId`. Fix: wire `InventoryPanel.ts` to import from `InventorySystem.ts` instead.
+
+### Only Longsword Model Factory Registered (NEEDS FIX)
+`main.ts` (line 98) only registers `createLongswordModel` with `InventorySystem.registerWeaponModelFactory()`. `WeaponModels.ts` has all 4 factories in its own local registry but InventorySystem doesn't use it. Equipping Mace/Dagger/Battleaxe via InventorySystem clears the old model but attaches nothing. Fix: register all 4 factories in `main.ts`.
 
 ### Module-Level Singletons
 `fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName`, `inventoryRegistry`, `weaponModelFactories` are all module-level Maps/arrays/objects. Works for single-world but won't scale to multiple worlds.
