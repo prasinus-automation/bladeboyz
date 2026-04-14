@@ -3,10 +3,10 @@ import { InventoryPanel } from './InventoryPanel';
 import { InputManager } from '../input/InputManager';
 import {
   initInventory,
-  addWeapon,
+  addWeaponToInventory,
   getInventory,
-  clearAllInventories,
-} from '../inventory/InventoryData';
+  resetInventorySystem,
+} from '../ecs/systems/InventorySystem';
 import { registerWeapon, weaponConfigs } from '../weapons/WeaponConfig';
 import { AttackDirection } from '../combat/directions';
 
@@ -74,9 +74,9 @@ describe('InventoryPanel', () => {
   const playerEid = 42;
 
   beforeEach(() => {
-    clearAllInventories();
+    resetInventorySystem();
     ensureTestWeapons();
-    initInventory(playerEid, 'TestSword');
+    initInventory(playerEid, ['TestSword'], 'TestSword');
     input = createMockInput();
     panel = new InventoryPanel(input, playerEid);
   });
@@ -179,7 +179,7 @@ describe('InventoryPanel', () => {
     });
 
     it('shows multiple weapons after adding one', () => {
-      addWeapon(playerEid, 'TestMace');
+      addWeaponToInventory(playerEid, 'TestMace');
       panel.open();
       const grid = document.getElementById('inventory-weapons-grid')!;
       const cards = grid.querySelectorAll('.inventory-weapon-card');
@@ -187,7 +187,7 @@ describe('InventoryPanel', () => {
     });
 
     it('highlights equipped weapon differently from unequipped', () => {
-      addWeapon(playerEid, 'TestMace');
+      addWeaponToInventory(playerEid, 'TestMace');
       panel.open();
       const grid = document.getElementById('inventory-weapons-grid')!;
       const cards = grid.querySelectorAll('.inventory-weapon-card') as NodeListOf<HTMLElement>;
@@ -200,7 +200,7 @@ describe('InventoryPanel', () => {
 
   describe('equip click handler', () => {
     it('equips weapon on click', () => {
-      addWeapon(playerEid, 'TestMace');
+      addWeaponToInventory(playerEid, 'TestMace');
       panel.open();
       const grid = document.getElementById('inventory-weapons-grid')!;
       const cards = grid.querySelectorAll('.inventory-weapon-card') as NodeListOf<HTMLElement>;
@@ -211,7 +211,7 @@ describe('InventoryPanel', () => {
     });
 
     it('refreshes display after equip', () => {
-      addWeapon(playerEid, 'TestMace');
+      addWeaponToInventory(playerEid, 'TestMace');
       panel.open();
       const grid = document.getElementById('inventory-weapons-grid')!;
       let cards = grid.querySelectorAll('.inventory-weapon-card') as NodeListOf<HTMLElement>;
