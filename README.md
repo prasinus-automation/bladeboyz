@@ -60,8 +60,7 @@ npm run preview      # Preview production build locally
 ### Console Commands
 Open the browser dev console (`F12`) and use:
 ```js
-window.setWeapon('Longsword')   // Swap weapon by name
-window.setWeapon('Mace')        // Available: Longsword, Mace, Dagger, Battleaxe
+window.setWeapon('Longsword')   // Swap weapon by name (currently only Longsword available)
 ```
 
 ## Weapons
@@ -71,9 +70,6 @@ All weapons are data-driven via `WeaponConfig` objects — damage, timing, turnc
 | Weapon | Style | Description |
 |--------|-------|-------------|
 | **Longsword** | Balanced | The baseline weapon. Good reach, moderate speed, and reliable damage across all attack directions. Versatile for both beginners and experienced players. |
-| **Mace** | Heavy | Slow but devastating. High damage output with strong stamina drain on block. Punishes mistimed blocks and rewards patience. |
-| **Dagger** | Fast | Lightning-quick attacks with short reach. Low damage per hit but rapid combos and minimal stamina cost. Excels at close range. |
-| **Battleaxe** | Power | The heaviest hitter. Massive windup and recovery windows leave you vulnerable, but a clean overhead can end a fight in one or two strikes. |
 
 ## Testing
 
@@ -119,10 +115,7 @@ src/
 │   └── directions.ts        # Attack/block direction detection from mouse input
 ├── weapons/
 │   ├── WeaponConfig.ts      # WeaponConfig type + registry
-│   ├── longsword.ts         # Longsword weapon data (auto-registers on import)
-│   ├── mace.ts              # Mace weapon data
-│   ├── dagger.ts            # Dagger weapon data
-│   └── battleaxe.ts         # Battleaxe weapon data
+│   └── longsword.ts         # Longsword weapon data (auto-registers on import)
 ├── input/
 │   └── InputManager.ts      # Keyboard, mouse, pointer lock, rolling delta buffer
 ├── rendering/
