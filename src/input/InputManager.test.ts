@@ -56,20 +56,20 @@ describe('InputManager', () => {
   describe('keyboard input', () => {
     it('tracks key down state', () => {
       expect(input.isKeyDown('KeyW')).toBe(false);
-      fireEvent('window', 'keydown', { code: 'KeyW' });
+      fireEvent('document', 'keydown', { code: 'KeyW' });
       expect(input.isKeyDown('KeyW')).toBe(true);
     });
 
     it('tracks key up state', () => {
-      fireEvent('window', 'keydown', { code: 'KeyW' });
+      fireEvent('document', 'keydown', { code: 'KeyW' });
       expect(input.isKeyDown('KeyW')).toBe(true);
-      fireEvent('window', 'keyup', { code: 'KeyW' });
+      fireEvent('document', 'keyup', { code: 'KeyW' });
       expect(input.isKeyDown('KeyW')).toBe(false);
     });
 
     it('tracks multiple keys simultaneously', () => {
-      fireEvent('window', 'keydown', { code: 'KeyW' });
-      fireEvent('window', 'keydown', { code: 'ShiftLeft' });
+      fireEvent('document', 'keydown', { code: 'KeyW' });
+      fireEvent('document', 'keydown', { code: 'ShiftLeft' });
       expect(input.isKeyDown('KeyW')).toBe(true);
       expect(input.isKeyDown('ShiftLeft')).toBe(true);
       expect(input.isKeyDown('KeyA')).toBe(false);
@@ -79,14 +79,14 @@ describe('InputManager', () => {
   describe('mouse buttons', () => {
     it('tracks mouse button down', () => {
       expect(input.isMouseButtonDown(0)).toBe(false);
-      fireEvent('window', 'mousedown', { button: 0 });
+      fireEvent('document', 'mousedown', { button: 0 });
       expect(input.isMouseButtonDown(0)).toBe(true);
     });
 
     it('tracks mouse button up', () => {
-      fireEvent('window', 'mousedown', { button: 2 });
+      fireEvent('document', 'mousedown', { button: 2 });
       expect(input.isMouseButtonDown(2)).toBe(true);
-      fireEvent('window', 'mouseup', { button: 2 });
+      fireEvent('document', 'mouseup', { button: 2 });
       expect(input.isMouseButtonDown(2)).toBe(false);
     });
   });

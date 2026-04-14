@@ -4,11 +4,11 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createWorld, addEntity, addComponent, type IWorld } from 'bitecs';
-import { CombatStateComponent, Player } from '../components';
+import { CombatStateComponent, CombatStateComp, Player } from '../components';
 import { CombatState } from '../../combat/states';
-import { AttackDirection } from '../../combat/directions';
+import { AttackDirection, BlockDirection } from '../../combat/directions';
 import { CombatFSM, CombatInput, fsmRegistry, createFSM } from '../../combat/CombatFSM';
-import { createCombatSystem, resetCombatInputState } from './CombatSystem';
+import { createCombatSystem, resetCombatInputState, computePhaseTotal } from './CombatSystem';
 import type { WeaponConfig } from '../../weapons/WeaponConfig';
 
 // ── Mock InputManager ────────────────────────────────────
@@ -125,6 +125,7 @@ describe('CombatSystem', () => {
     // Create player entity with combat components
     playerEid = addEntity(ecsWorld);
     addComponent(ecsWorld, CombatStateComponent, playerEid);
+    addComponent(ecsWorld, CombatStateComp, playerEid);
     addComponent(ecsWorld, Player, playerEid);
     CombatStateComponent.state[playerEid] = CombatState.Idle;
     CombatStateComponent.ticksRemaining[playerEid] = 0;
@@ -232,5 +233,138 @@ describe('CombatSystem', () => {
     const recovery = weapon.recovery[AttackDirection.Stab];
     for (let i = 0; i < recovery; i++) tick();
     expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Idle);
+  });
+
+  // ── CombatStateComp sync tests ────────────────────────
+
+  describe('CombatStateComp sync', () => {
+    it('syncs state to CombatStateComp on attack', () => {
+      input.pressMouseButton(0);
+      tick(); // → Windup
+      expect(CombatStateComp.state[playerEid]).toBe(CombatState.Windup);
+    });
+
+    it('syncs direction to CombatStateComp (attack direction)', () => {
+      input.pressMouseButton(0);
+      tick();
+      // No mouse movement → Stab direction
+      expect(CombatStateComp.direction[playerEid]).toBe(AttackDirection.Stab);
+    });
+
+    it('syncs phaseTotal for windup state', () => {
+      input.pressMouseButton(0);
+      tick();
+      expect(CombatStateComp.phaseTotal[playerEid]).toBe(weapon.windup[AttackDirection.Stab]);
+    });
+
+    it('syncs phaseElapsed correctly during windup', () => {
+      input.pressMouseButton(0);
+      tick(); // 1st tick in Windup
+      // After tick: phaseElapsed = phaseTotal - ticksRemaining
+      const phaseTotal = weapon.windup[AttackDirection.Stab];
+      const ticksRemaining = CombatStateComponent.ticksRemaining[playerEid];
+      expect(CombatStateComp.phaseElapsed[playerEid]).toBe(phaseTotal - ticksRemaining);
+    });
+
+    it('syncs phaseTotal for release state', () => {
+      input.pressMouseButton(0);
+      tick(); // → Windup
+      input.releaseMouseButton(0);
+      // Tick through windup
+      const windup = weapon.windup[AttackDirection.Stab];
+      for (let i = 1; i < windup; i++) tick();
+      tick(); // → Release (timer expired, auto-transition)
+      expect(CombatStateComp.state[playerEid]).toBe(CombatState.Release);
+      expect(CombatStateComp.phaseTotal[playerEid]).toBe(weapon.release[AttackDirection.Stab]);
+    });
+
+    it('syncs block direction for ParryWindow state', () => {
+      input.pressMouseButton(2);
+      tick(); // → ParryWindow
+      expect(CombatStateComp.state[playerEid]).toBe(CombatState.ParryWindow);
+      // Block direction defaults to Top when no mouse movement
+      expect(CombatStateComp.direction[playerEid]).toBe(BlockDirection.Top);
+    });
+
+    it('phaseElapsed progresses each tick', () => {
+      input.pressMouseButton(0);
+      tick(); // Tick 1 of Windup
+      const elapsed1 = CombatStateComp.phaseElapsed[playerEid];
+
+      input.releaseMouseButton(0);
+      tick(); // Tick 2 of Windup
+      const elapsed2 = CombatStateComp.phaseElapsed[playerEid];
+
+      expect(elapsed2).toBe(elapsed1 + 1);
+    });
+
+    it('Idle state has phaseTotal = 0 and phaseElapsed = 0', () => {
+      tick(); // stays Idle
+      expect(CombatStateComp.state[playerEid]).toBe(CombatState.Idle);
+      expect(CombatStateComp.phaseTotal[playerEid]).toBe(0);
+      expect(CombatStateComp.phaseElapsed[playerEid]).toBe(0);
+    });
+  });
+
+  // ── computePhaseTotal unit tests ──────────────────────
+
+  describe('computePhaseTotal', () => {
+    it('returns windup ticks for Windup state', () => {
+      const fsm = new CombatFSM(weapon);
+      fsm.transition(CombatInput.Attack, AttackDirection.Left);
+      fsm.tick();
+      expect(computePhaseTotal(CombatState.Windup, fsm)).toBe(weapon.windup[AttackDirection.Left]);
+    });
+
+    it('returns release ticks for Release state', () => {
+      const fsm = new CombatFSM(weapon);
+      fsm.transition(CombatInput.Attack, AttackDirection.Stab);
+      // Tick through windup
+      for (let i = 0; i < weapon.windup[AttackDirection.Stab]; i++) fsm.tick();
+      expect(fsm.state).toBe(CombatState.Release);
+      expect(computePhaseTotal(CombatState.Release, fsm)).toBe(weapon.release[AttackDirection.Stab]);
+    });
+
+    it('returns recovery ticks for Recovery state', () => {
+      const fsm = new CombatFSM(weapon);
+      fsm.transition(CombatInput.Attack, AttackDirection.Stab);
+      // Through windup
+      for (let i = 0; i < weapon.windup[AttackDirection.Stab]; i++) fsm.tick();
+      // Through release
+      for (let i = 0; i < weapon.release[AttackDirection.Stab]; i++) fsm.tick();
+      expect(fsm.state).toBe(CombatState.Recovery);
+      expect(computePhaseTotal(CombatState.Recovery, fsm)).toBe(weapon.recovery[AttackDirection.Stab]);
+    });
+
+    it('returns 3 for Feint state', () => {
+      const fsm = new CombatFSM(weapon);
+      fsm.transition(CombatInput.Attack, AttackDirection.Left);
+      fsm.tick();
+      fsm.transition(CombatInput.Feint);
+      fsm.tick();
+      expect(fsm.state).toBe(CombatState.Feint);
+      expect(computePhaseTotal(CombatState.Feint, fsm)).toBe(3);
+    });
+
+    it('returns 0 for Idle state', () => {
+      const fsm = new CombatFSM(weapon);
+      expect(computePhaseTotal(CombatState.Idle, fsm)).toBe(0);
+    });
+
+    it('returns parryWindow for ParryWindow state', () => {
+      const fsm = new CombatFSM(weapon);
+      fsm.transition(CombatInput.Block, undefined, BlockDirection.Top);
+      fsm.tick();
+      expect(fsm.state).toBe(CombatState.ParryWindow);
+      expect(computePhaseTotal(CombatState.ParryWindow, fsm)).toBe(weapon.parryWindow);
+    });
+
+    it('returns hitStunTicks for HitStun state', () => {
+      const fsm = new CombatFSM(weapon);
+      fsm.transition(CombatInput.HitReceived);
+      fsm.tick();
+      expect(fsm.state).toBe(CombatState.HitStun);
+      expect(computePhaseTotal(CombatState.HitStun, fsm)).toBe(weapon.hitStunTicks);
+    });
   });
 });
