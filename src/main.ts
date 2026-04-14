@@ -42,6 +42,7 @@ import {
   registerWeaponModelFactory,
 } from './ecs/systems/InventorySystem';
 import { createLongswordModel } from './rendering/CharacterModel';
+import { createMaceModel, createDaggerModel, createBattleaxeModel } from './rendering/WeaponModels';
 import type { GameWorld } from './core/types';
 
 // Import weapon configs so they auto-register
@@ -91,15 +92,18 @@ async function main(): Promise<void> {
   world.playerEntity = playerEid;
   cameraController.setPlayerMesh(playerMesh);
 
-  // Register combat FSM for the player entity (uses auto-registered longsword config)
-  createFSM(playerEid, weaponConfigs['Longsword']);
+  // Register combat FSM for the player entity (uses auto-registered dagger config)
+  createFSM(playerEid, weaponConfigs['Dagger']);
 
   // Register weapon model factories
   registerWeaponModelFactory('Longsword', createLongswordModel);
+  registerWeaponModelFactory('Mace', createMaceModel);
+  registerWeaponModelFactory('Dagger', createDaggerModel);
+  registerWeaponModelFactory('Battleaxe', createBattleaxeModel);
 
-  // Initialize player inventory with available weapons, Longsword equipped
+  // Initialize player inventory with available weapons, Dagger equipped
   const availableWeapons = Object.keys(weaponConfigs);
-  initInventory(playerEid, availableWeapons, 'Longsword');
+  initInventory(playerEid, availableWeapons, 'Dagger');
 
   // Listen for equip events to show HUD notifications
   onEquip((event) => {
