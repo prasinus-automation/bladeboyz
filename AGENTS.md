@@ -49,10 +49,13 @@ bladeboyz/
 │   │   ├── CameraController.ts  # FPS + debug third-person camera
 │   │   ├── CharacterModel.ts    # Procedural low-poly character mesh + skeleton
 │   │   └── DebugRenderer.ts     # Wireframe, hitbox, physics debug drawing
+│   ├── inventory/
+│   │   └── InventoryData.ts     # Inventory side-table (inventoryRegistry Map<eid, InventoryData>)
 │   ├── hud/
 │   │   ├── HUD.ts               # HUD manager
 │   │   ├── HealthBar.ts
 │   │   ├── StaminaBar.ts
+│   │   ├── InventoryPanel.ts    # Tab inventory UI overlay (HTML/CSS, pointer lock toggle)
 │   │   └── DebugOverlay.ts      # FSM state, FPS counter
 │   └── utils/
 │       └── math.ts              # Vector utilities, interpolation helpers
@@ -116,17 +119,11 @@ npm run lint         # Run ESLint
 
 ## Known Issues / Architectural Debt
 
-### Two Combat State Components
-Two ECS components track combat state: `CombatStateComponent` (authoritative — synced from FSM by CombatSystem, used by HUD/StaminaSystem/DamageSystem) and `CombatStateComp` (animation mirror — has `phaseElapsed`/`phaseTotal`, used by AnimationSystem). **CombatSystem currently only syncs `CombatStateComponent`** — `CombatStateComp` is NOT being updated, so AnimationSystem reads stale/zero values. Any work touching animations must fix this sync gap.
-
-### Placeholder Player Mesh
-`createPlayer.ts` builds a simple non-skinned box-limb mesh instead of using the full skeletal model from `createCharacterModel()` in `CharacterModel.ts`. The skeleton model exists with full bone hierarchy including a `weapon_attach` bone on `hand_R`, but it is NOT wired into player creation. AnimationSystem bone-pose logic has no effect on the player until this is fixed.
-
-### Weapon Model Not Attached
-`createLongswordModel()` exists in `CharacterModel.ts` and returns a `THREE.Group` + tracer points, but no code attaches it to the `weapon_attach` bone at runtime.
+### Two Combat State Components (SYNCED — no longer broken)
+Two ECS components track combat state: `CombatStateComponent` (authoritative — synced from FSM by CombatSystem, used by HUD/StaminaSystem/DamageSystem) and `CombatStateComp` (animation mirror — has `phaseElapsed`/`phaseTotal`, used by AnimationSystem). **Both are now synced by CombatSystem** after FSM tick (fixed in PR #36). `computePhaseTotal()` in CombatSystem.ts derives phase duration from FSM state + weapon config. Long-term, these should be unified into a single component.
 
 ### Module-Level Singletons
-`fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName` are all module-level Maps/arrays. Works for single-world but won't scale to multiple worlds.
+`fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName`, `inventoryRegistry` are all module-level Maps/arrays. Works for single-world but won't scale to multiple worlds.
 
 ## Gotchas
 - **Rapier3D WASM must be initialized async** before creating the physics world — use `import RAPIER from '@dimforge/rapier3d-compat'` then `await RAPIER.init()`
@@ -136,7 +133,7 @@ Two ECS components track combat state: `CombatStateComponent` (authoritative —
 - **Vite HMR** with Three.js requires careful disposal of scenes/renderers to avoid memory leaks on hot reload
 - **Rapier debug renderer** needs `@dimforge/rapier3d-compat` not `@dimforge/rapier3d` for browser compatibility
 - The deploy workflow (`.github/workflows/deploy-staging.yml`) expects a `Dockerfile` and maps port 3000 internally → 3010 externally
-- **CombatSystem only syncs `CombatStateComponent`**, not `CombatStateComp`** — see "Known Issues" above. AnimationSystem depends on `CombatStateComp` fields (`phaseElapsed`, `phaseTotal`, `state`, `direction`).
+- **CombatSystem syncs both `CombatStateComponent` and `CombatStateComp`** — `computePhaseTotal()` derives phase duration. AnimationSystem reads from `CombatStateComp` (`phaseElapsed`, `phaseTotal`, `state`, `direction`).
 - **`weaponIdToName` in CombatSystem.ts (line 28) is a hardcoded array** — when adding new weapons, update this array AND ensure the weapon's numeric index matches `CombatStateComponent.weaponId[eid]`
 - **Pointer Lock must be released** when showing any UI overlay (inventory, menus) — call `document.exitPointerLock()`. Re-request on close via user gesture (click on canvas).
 - **Side-table pattern** for non-numeric data: `meshRegistry` (Map<number, CharacterModelData>), `fsmRegistry` (Map<number, CombatFSM>), `hitboxColliderRegistry` — use the same pattern for inventory/equipment data
