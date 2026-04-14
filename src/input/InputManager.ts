@@ -34,6 +34,19 @@ export class InputManager {
   // Scroll wheel delta (for third-person zoom)
   private frameScrollDelta = 0;
 
+  /**
+   * When true, input capture is paused (e.g. inventory overlay is open).
+   * Mouse move, keyboard, and mouse button events are ignored.
+   */
+  paused = false;
+
+  /**
+   * Optional callback to suppress the #click-to-play overlay.
+   * When this returns true, the overlay stays hidden even without pointer lock.
+   * Used by InventoryPanel to prevent overlay stacking.
+   */
+  _suppressClickToPlay: (() => boolean) | null = null;
+
   constructor(canvas: HTMLElement) {
     this.canvas = canvas;
     this.bindEvents();
@@ -42,15 +55,17 @@ export class InputManager {
   private bindEvents(): void {
     // Keyboard — use document so events fire reliably under pointer lock
     document.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (this.paused) return;
       this.keysDown.add(e.code);
     });
     document.addEventListener('keyup', (e: KeyboardEvent) => {
+      if (this.paused) return;
       this.keysDown.delete(e.code);
     });
 
     // Mouse move (only useful when pointer-locked)
     document.addEventListener('mousemove', (e: MouseEvent) => {
-      if (!this._isPointerLocked) return;
+      if (this.paused || !this._isPointerLocked) return;
       this.frameDeltaX += e.movementX;
       this.frameDeltaY += e.movementY;
 
@@ -63,9 +78,11 @@ export class InputManager {
 
     // Mouse buttons — use document for pointer lock compatibility
     document.addEventListener('mousedown', (e: MouseEvent) => {
+      if (this.paused) return;
       this.mouseButtons.add(e.button);
     });
     document.addEventListener('mouseup', (e: MouseEvent) => {
+      if (this.paused) return;
       this.mouseButtons.delete(e.button);
     });
 
@@ -80,7 +97,9 @@ export class InputManager {
 
       const overlay = document.getElementById('click-to-play');
       if (overlay) {
-        overlay.classList.toggle('hidden', this._isPointerLocked);
+        // Suppress click-to-play when an overlay (e.g. inventory) handles its own flow
+        const suppress = this._suppressClickToPlay ? this._suppressClickToPlay() : false;
+        overlay.classList.toggle('hidden', this._isPointerLocked || suppress);
       }
     });
 
