@@ -300,7 +300,7 @@ describe('InventoryPanel', () => {
     });
 
     it('weapon gear slot updates when a different weapon is equipped', () => {
-      addWeapon(playerEid, 'TestMace');
+      addWeaponToInventory(playerEid, 'TestMace');
       panel.open();
       // Equip TestMace via the weapons grid
       const grid = document.getElementById('inventory-weapons-grid')!;
@@ -312,7 +312,7 @@ describe('InventoryPanel', () => {
     });
 
     it('weapon gear slot shows "None" when no inventory exists', () => {
-      clearAllInventories();
+      resetInventorySystem();
       panel.open();
       const slot = document.getElementById('gear-slot-weapon')!;
       expect(slot.textContent).toContain('None');
