@@ -8,9 +8,9 @@
  */
 
 import { InputManager } from '../input/InputManager';
-import { getInventory, equipWeapon } from '../inventory/InventoryData';
+import { getInventory, equipWeapon } from '../ecs/systems/InventorySystem';
 import { weaponConfigs } from '../weapons/WeaponConfig';
-import { showNotification } from './DebugNotification';
+
 
 /** Gear slot placeholder names */
 const GEAR_SLOTS = ['Head', 'Chest', 'Legs', 'Boots'] as const;
@@ -376,7 +376,6 @@ export class InventoryPanel {
   private handleEquip(weaponName: string): void {
     const success = equipWeapon(this.playerEid, weaponName);
     if (success) {
-      showNotification(`Equipped: ${weaponName}`);
       this.refresh();
     }
   }

@@ -19,21 +19,34 @@ import {
   meshRegistry,
 } from '../components';
 import { registerPhysicsBody } from '../systems/MovementSystem';
-import { createCharacterModel, createLongswordModel } from '../../rendering/CharacterModel';
+import { createCharacterModel } from '../../rendering/CharacterModel';
+import { weaponModelFactories } from '../../rendering/WeaponModels';
+import { weaponIdToName } from '../systems/CombatSystem';
 import { CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS, SPAWN_HEIGHT } from '../../core/types';
 import type { GameWorld } from '../../core/types';
+
+/** Options for creating a player entity */
+export interface CreatePlayerOptions {
+  x?: number;
+  y?: number;
+  z?: number;
+  /** Starting weapon name (default: 'Dagger') */
+  startingWeapon?: string;
+}
 
 /**
  * Create the player entity with physics body and skeletal character model.
  *
  * Returns entity ID and the Three.js group for camera attachment.
  * Uses the full procedural skeletal model with bone hierarchy and
- * attaches a longsword model to the weapon_attach bone.
+ * attaches the starting weapon model to the weapon_attach bone.
  */
 export function createPlayer(
   world: GameWorld,
   spawnPos: { x: number; y: number; z: number } = { x: 0, y: SPAWN_HEIGHT, z: 0 },
+  options: CreatePlayerOptions = {},
 ): { eid: number; mesh: THREE.Group } {
+  const startingWeapon = options.startingWeapon ?? 'Dagger';
   const eid = addEntity(world.ecs);
 
   // Add components
@@ -71,7 +84,8 @@ export function createPlayer(
   Stamina.max[eid] = 100;
   CombatStateComponent.state[eid] = 0; // Idle
   CombatStateComponent.ticksRemaining[eid] = 0;
-  CombatStateComponent.weaponId[eid] = 0;
+  const weaponIndex = weaponIdToName.indexOf(startingWeapon);
+  CombatStateComponent.weaponId[eid] = weaponIndex >= 0 ? weaponIndex : 0;
 
   // Create Rapier kinematic body
   const bodyDesc = world.rapier.RigidBodyDesc.kinematicPositionBased()
@@ -95,11 +109,14 @@ export function createPlayer(
   CharacterModel.id[eid] = eid;
   meshRegistry.set(eid, characterModelData);
 
-  // Attach longsword model to the weapon_attach bone on hand_R
+  // Attach starting weapon model to the weapon_attach bone on hand_R
   const weaponAttachBone = bones['weapon_attach'];
   if (weaponAttachBone) {
-    const weaponModel = createLongswordModel();
-    weaponAttachBone.add(weaponModel.group);
+    const factory = weaponModelFactories[startingWeapon];
+    if (factory) {
+      const weaponModel = factory();
+      weaponAttachBone.add(weaponModel.group);
+    }
   }
 
   group.position.set(spawnPos.x, spawnPos.y, spawnPos.z);
