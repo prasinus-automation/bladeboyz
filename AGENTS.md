@@ -41,8 +41,8 @@ bladeboyz/
 │   │   ├── states.ts            # State enum and transition logic
 │   │   └── directions.ts        # Attack/block direction detection from mouse input
 │   ├── weapons/
-│   │   ├── WeaponConfig.ts      # WeaponConfig type definition
-│   │   └── longsword.ts         # Longsword weapon data
+│   │   ├── WeaponConfig.ts      # WeaponConfig type + registry (weaponConfigs, registerWeapon)
+│   │   └── longsword.ts         # Longsword weapon data (auto-registers on import)
 │   ├── input/
 │   │   └── InputManager.ts      # Raw input capture, pointer lock, mouse delta tracking
 │   ├── rendering/
@@ -114,6 +114,20 @@ npm run lint         # Run ESLint
 - Rapier colliders for hitboxes are **sensors** (no physics response)
 - Character skeletons use Three.js `Bone` / `Skeleton` — procedurally generated, not imported from glTF for scaffolding phase
 
+## Known Issues / Architectural Debt
+
+### Two Combat State Components
+Two ECS components track combat state: `CombatStateComponent` (authoritative — synced from FSM by CombatSystem, used by HUD/StaminaSystem/DamageSystem) and `CombatStateComp` (animation mirror — has `phaseElapsed`/`phaseTotal`, used by AnimationSystem). **CombatSystem currently only syncs `CombatStateComponent`** — `CombatStateComp` is NOT being updated, so AnimationSystem reads stale/zero values. Any work touching animations must fix this sync gap.
+
+### Placeholder Player Mesh
+`createPlayer.ts` builds a simple non-skinned box-limb mesh instead of using the full skeletal model from `createCharacterModel()` in `CharacterModel.ts`. The skeleton model exists with full bone hierarchy including a `weapon_attach` bone on `hand_R`, but it is NOT wired into player creation. AnimationSystem bone-pose logic has no effect on the player until this is fixed.
+
+### Weapon Model Not Attached
+`createLongswordModel()` exists in `CharacterModel.ts` and returns a `THREE.Group` + tracer points, but no code attaches it to the `weapon_attach` bone at runtime.
+
+### Module-Level Singletons
+`fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName` are all module-level Maps/arrays. Works for single-world but won't scale to multiple worlds.
+
 ## Gotchas
 - **Rapier3D WASM must be initialized async** before creating the physics world — use `import RAPIER from '@dimforge/rapier3d-compat'` then `await RAPIER.init()`
 - **bitECS uses ArrayBuffer-backed components** — component values are numbers only (no strings, no objects). Use lookup tables/maps for complex data.
@@ -122,3 +136,7 @@ npm run lint         # Run ESLint
 - **Vite HMR** with Three.js requires careful disposal of scenes/renderers to avoid memory leaks on hot reload
 - **Rapier debug renderer** needs `@dimforge/rapier3d-compat` not `@dimforge/rapier3d` for browser compatibility
 - The deploy workflow (`.github/workflows/deploy-staging.yml`) expects a `Dockerfile` and maps port 3000 internally → 3010 externally
+- **CombatSystem only syncs `CombatStateComponent`**, not `CombatStateComp`** — see "Known Issues" above. AnimationSystem depends on `CombatStateComp` fields (`phaseElapsed`, `phaseTotal`, `state`, `direction`).
+- **`weaponIdToName` in CombatSystem.ts (line 28) is a hardcoded array** — when adding new weapons, update this array AND ensure the weapon's numeric index matches `CombatStateComponent.weaponId[eid]`
+- **Pointer Lock must be released** when showing any UI overlay (inventory, menus) — call `document.exitPointerLock()`. Re-request on close via user gesture (click on canvas).
+- **Side-table pattern** for non-numeric data: `meshRegistry` (Map<number, CharacterModelData>), `fsmRegistry` (Map<number, CombatFSM>), `hitboxColliderRegistry` — use the same pattern for inventory/equipment data
