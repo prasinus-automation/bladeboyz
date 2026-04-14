@@ -25,7 +25,7 @@ const playerQuery = defineQuery([CombatStateComponent, Player]);
 
 // ── Weapon ID → name mapping ─────────────────────────────
 
-const weaponIdToName: string[] = ['Longsword'];
+export const weaponIdToName: string[] = ['Longsword'];
 
 /** Look up weapon config by numeric ID */
 function getWeaponConfigById(id: number) {

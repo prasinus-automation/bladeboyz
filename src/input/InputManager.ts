@@ -14,6 +14,9 @@ export interface MouseDeltaEntry {
 const DELTA_BUFFER_WINDOW_MS = 100;
 
 export class InputManager {
+  /** When true, isKeyDown() and isMouseButtonDown() return false (gameplay input suppressed) */
+  public paused = false;
+
   // Keyboard state
   private keysDown: Set<string> = new Set();
 
@@ -95,14 +98,14 @@ export class InputManager {
     this.canvas.requestPointerLock();
   }
 
-  /** Check if a key is currently held */
+  /** Check if a key is currently held (returns false when paused) */
   isKeyDown(code: string): boolean {
-    return this.keysDown.has(code);
+    return !this.paused && this.keysDown.has(code);
   }
 
-  /** Check if a mouse button is currently held (0=left, 1=middle, 2=right) */
+  /** Check if a mouse button is currently held (returns false when paused; 0=left, 1=middle, 2=right) */
   isMouseButtonDown(button: number): boolean {
-    return this.mouseButtons.has(button);
+    return !this.paused && this.mouseButtons.has(button);
   }
 
   /** Get accumulated mouse delta since last reset */

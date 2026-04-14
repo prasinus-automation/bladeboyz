@@ -33,6 +33,14 @@ import { FIXED_TIMESTEP, SPAWN_HEIGHT } from './core/types';
 import { Position, meshRegistry } from './ecs/components';
 import { createFSM, fsmRegistry } from './combat/CombatFSM';
 import { weaponConfigs } from './weapons/WeaponConfig';
+import {
+  initInventory,
+  equipWeapon,
+  getInventory,
+  onEquip,
+  registerWeaponModelFactory,
+} from './ecs/systems/InventorySystem';
+import { createLongswordModel } from './rendering/CharacterModel';
 import type { GameWorld } from './core/types';
 
 // Import weapon configs so they auto-register
@@ -81,6 +89,18 @@ async function main(): Promise<void> {
 
   // Register combat FSM for the player entity (uses auto-registered longsword config)
   createFSM(playerEid, weaponConfigs['Longsword']);
+
+  // Register weapon model factories
+  registerWeaponModelFactory('Longsword', createLongswordModel);
+
+  // Initialize player inventory with available weapons, Longsword equipped
+  const availableWeapons = Object.keys(weaponConfigs);
+  initInventory(playerEid, availableWeapons, 'Longsword');
+
+  // Listen for equip events to show HUD notifications
+  onEquip((event) => {
+    showNotification(`Equipped: ${event.weaponName}`);
+  });
 
   // Spawn initial training dummy
   createDummy(world, 0, SPAWN_HEIGHT, -4, 0xcc4444);
@@ -137,14 +157,16 @@ async function main(): Promise<void> {
       );
       return;
     }
-    console.log(`Weapon set to: ${config.name}`);
-    showNotification(`Weapon: ${config.name}`);
-    // Update the player's FSM weapon config
-    const playerFsm = fsmRegistry.get(world.playerEntity);
-    if (playerFsm) {
-      playerFsm.setWeaponConfig(config);
+    const success = equipWeapon(world.playerEntity, name);
+    if (success) {
+      console.log(`Weapon set to: ${config.name}`);
+    } else {
+      console.warn(`Could not equip "${name}" — player may not be idle or weapon not in inventory`);
     }
   };
+
+  // ─── Expose inventory query for debugging ───
+  (window as any).getInventory = () => getInventory(world.playerEntity);
 
   // ─── Click-to-play handler ───
   const overlay = document.getElementById('click-to-play');
