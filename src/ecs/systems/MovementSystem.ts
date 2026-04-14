@@ -30,32 +30,34 @@ const playerQuery = defineQuery([Player, Position, Velocity, PhysicsBody, Moveme
 // Rapier character controller (created once)
 let characterController: RAPIER.KinematicCharacterController | null = null;
 
-/** Lookup: body handle -> Rapier RigidBody */
-const bodyMap = new Map<number, RAPIER.RigidBody>();
-/** Lookup: collider handle -> Rapier Collider */
-const colliderMap = new Map<number, RAPIER.Collider>();
+/** Lookup: entity ID -> Rapier RigidBody */
+const bodyByEid = new Map<number, RAPIER.RigidBody>();
+/** Lookup: entity ID -> Rapier Collider */
+const colliderByEid = new Map<number, RAPIER.Collider>();
 
 /**
  * Reset module-level state. Used by tests to ensure clean isolation.
  */
 export function resetMovementState(): void {
   characterController = null;
-  bodyMap.clear();
-  colliderMap.clear();
+  bodyByEid.clear();
+  colliderByEid.clear();
 }
 
 /**
  * Register a physics body/collider pair for an entity.
  * Called from entity factories after creating Rapier bodies.
+ *
+ * Keyed by ECS entity ID instead of Rapier handles, because Rapier
+ * handles are non-integer floats that get truncated in bitECS ui32 arrays.
  */
 export function registerPhysicsBody(
-  handle: number,
+  eid: number,
   body: RAPIER.RigidBody,
-  colliderHandle: number,
   collider: RAPIER.Collider,
 ): void {
-  bodyMap.set(handle, body);
-  colliderMap.set(colliderHandle, collider);
+  bodyByEid.set(eid, body);
+  colliderByEid.set(eid, collider);
 }
 
 /**
@@ -83,25 +85,12 @@ export function createMovementSystem(
   return function movementSystem(_dt: number): void {
     const entities = playerQuery(world.ecs);
 
-    if ((window as any).__debugMovement) {
-      console.log('movement tick — entities:', entities.length,
-        'bodyMap:', bodyMap.size, 'colliderMap:', colliderMap.size,
-        'charCtrl:', !!characterController);
-    }
-
     for (let i = 0; i < entities.length; i++) {
       const eid = entities[i];
-      const bodyHandle = PhysicsBody.bodyHandle[eid];
-      const colliderHandle = PhysicsBody.colliderHandle[eid];
-      const body = bodyMap.get(bodyHandle);
-      const collider = colliderMap.get(colliderHandle);
+      const body = bodyByEid.get(eid);
+      const collider = colliderByEid.get(eid);
 
-      if (!body || !collider || !characterController) {
-        if ((window as any).__debugMovement) {
-          console.log('SKIP eid', eid, 'body:', !!body, 'collider:', !!collider, 'handle:', bodyHandle, colliderHandle);
-        }
-        continue;
-      }
+      if (!body || !collider || !characterController) continue;
 
       // Save previous position for interpolation
       PreviousPosition.x[eid] = Position.x[eid];
@@ -117,10 +106,6 @@ export function createMovementSystem(
       const wantSprint = input.isKeyDown('ShiftLeft') || input.isKeyDown('ShiftRight');
       const wantCrouch = input.isKeyDown('ControlLeft') || input.isKeyDown('ControlRight');
       const wantJump = input.isKeyDown('Space');
-
-      if ((window as any).__debugMovement && (forward !== 0 || strafe !== 0)) {
-        console.log('INPUT fwd:', forward, 'strafe:', strafe, 'pos:', Position.x[eid].toFixed(2), Position.y[eid].toFixed(2), Position.z[eid].toFixed(2));
-      }
 
       // Update movement state
       MovementState.sprinting[eid] = (wantSprint && !wantCrouch && forward > 0) ? 1 : 0;

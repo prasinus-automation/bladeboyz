@@ -79,7 +79,7 @@ export function createPlayer(
 
   PhysicsBody.bodyHandle[eid] = body.handle;
   PhysicsBody.colliderHandle[eid] = collider.handle;
-  registerPhysicsBody(body.handle, body, collider.handle, collider);
+  registerPhysicsBody(eid, body, collider);
 
   // Simple placeholder mesh (low-poly character)
   const group = new THREE.Group();

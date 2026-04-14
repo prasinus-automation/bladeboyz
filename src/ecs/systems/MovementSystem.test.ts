@@ -138,7 +138,7 @@ describe('MovementSystem', () => {
 
     const eid = createTestEntity(ecsWorld, entityOpts);
 
-    registerPhysicsBody(BODY_HANDLE, mockBody as any, COLLIDER_HANDLE, mockCollider as any);
+    registerPhysicsBody(eid, mockBody as any, mockCollider as any);
     movementSystem = createMovementSystem(gameWorld, mockInput, mockCamera);
     enablePassthroughMovement();
 
