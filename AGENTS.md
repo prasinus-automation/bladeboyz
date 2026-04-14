@@ -27,6 +27,7 @@ bladeboyz/
 │   │   ├── systems/             # ECS systems (one file per system)
 │   │   │   ├── MovementSystem.ts
 │   │   │   ├── CombatSystem.ts
+│   │   │   ├── InventorySystem.ts
 │   │   │   ├── TracerSystem.ts
 │   │   │   ├── HitboxSystem.ts
 │   │   │   ├── StaminaSystem.ts
@@ -123,7 +124,7 @@ npm run lint         # Run ESLint
 Two ECS components track combat state: `CombatStateComponent` (authoritative — synced from FSM by CombatSystem, used by HUD/StaminaSystem/DamageSystem) and `CombatStateComp` (animation mirror — has `phaseElapsed`/`phaseTotal`, used by AnimationSystem). **Both are now synced by CombatSystem** after FSM tick (fixed in PR #36). `computePhaseTotal()` in CombatSystem.ts derives phase duration from FSM state + weapon config. Long-term, these should be unified into a single component.
 
 ### Module-Level Singletons
-`fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName`, `inventoryRegistry` are all module-level Maps/arrays. Works for single-world but won't scale to multiple worlds.
+`fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName`, `inventoryRegistry`, `weaponModelFactories` are all module-level Maps/arrays/objects. Works for single-world but won't scale to multiple worlds.
 
 ## Gotchas
 - **Rapier3D WASM must be initialized async** before creating the physics world — use `import RAPIER from '@dimforge/rapier3d-compat'` then `await RAPIER.init()`
