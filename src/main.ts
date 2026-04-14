@@ -195,12 +195,15 @@ async function main(): Promise<void> {
     // Dummy health reset timer
     tickDummyHealthReset();
 
-    // Sync player mesh position with ECS
-    playerMesh.position.set(
-      Position.x[playerEid],
-      Position.y[playerEid],
-      Position.z[playerEid],
-    );
+    // Sync player mesh position with ECS (skeletal model group)
+    const playerModelData = meshRegistry.get(playerEid);
+    if (playerModelData) {
+      playerModelData.group.position.set(
+        Position.x[playerEid],
+        Position.y[playerEid],
+        Position.z[playerEid],
+      );
+    }
 
     // Sync dummy meshes
     for (const deid of activeDummies) {

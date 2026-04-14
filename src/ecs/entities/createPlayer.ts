@@ -15,15 +15,20 @@ import {
   CombatStateComp,
   CombatStateComponent,
   AnimationComp,
+  CharacterModel,
+  meshRegistry,
 } from '../components';
 import { registerPhysicsBody } from '../systems/MovementSystem';
+import { createCharacterModel, createLongswordModel } from '../../rendering/CharacterModel';
 import { CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS, SPAWN_HEIGHT } from '../../core/types';
 import type { GameWorld } from '../../core/types';
 
 /**
- * Create the player entity with physics body and basic mesh.
+ * Create the player entity with physics body and skeletal character model.
  *
- * Returns entity ID. The character mesh is a simple low-poly placeholder.
+ * Returns entity ID and the Three.js group for camera attachment.
+ * Uses the full procedural skeletal model with bone hierarchy and
+ * attaches a longsword model to the weapon_attach bone.
  */
 export function createPlayer(
   world: GameWorld,
@@ -81,42 +86,21 @@ export function createPlayer(
   PhysicsBody.colliderHandle[eid] = collider.handle;
   registerPhysicsBody(eid, body, collider);
 
-  // Simple placeholder mesh (low-poly character)
-  const group = new THREE.Group();
+  // Skeletal character model (procedural low-poly with full bone hierarchy)
+  const characterModelData = createCharacterModel(0x4488aa);
+  const { group, bones } = characterModelData;
 
-  // Body (box)
-  const torsoGeo = new THREE.BoxGeometry(0.5, 0.7, 0.3);
-  const torsoMat = new THREE.MeshStandardMaterial({ color: 0x4488aa });
-  const torso = new THREE.Mesh(torsoGeo, torsoMat);
-  torso.position.y = 1.05;
-  group.add(torso);
+  // Register CharacterModel component so AnimationSystem can find this entity
+  addComponent(world.ecs, CharacterModel, eid);
+  CharacterModel.id[eid] = eid;
+  meshRegistry.set(eid, characterModelData);
 
-  // Head (box)
-  const headGeo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
-  const headMat = new THREE.MeshStandardMaterial({ color: 0xeebb88 });
-  const head = new THREE.Mesh(headGeo, headMat);
-  head.position.y = 1.6;
-  group.add(head);
-
-  // Legs (cylinders)
-  const legGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.7, 6);
-  const legMat = new THREE.MeshStandardMaterial({ color: 0x333366 });
-  const leftLeg = new THREE.Mesh(legGeo, legMat);
-  leftLeg.position.set(-0.12, 0.35, 0);
-  group.add(leftLeg);
-  const rightLeg = new THREE.Mesh(legGeo, legMat);
-  rightLeg.position.set(0.12, 0.35, 0);
-  group.add(rightLeg);
-
-  // Arms (cylinders)
-  const armGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.6, 6);
-  const armMat = new THREE.MeshStandardMaterial({ color: 0x4488aa });
-  const leftArm = new THREE.Mesh(armGeo, armMat);
-  leftArm.position.set(-0.35, 1.05, 0);
-  group.add(leftArm);
-  const rightArm = new THREE.Mesh(armGeo, armMat);
-  rightArm.position.set(0.35, 1.05, 0);
-  group.add(rightArm);
+  // Attach longsword model to the weapon_attach bone on hand_R
+  const weaponAttachBone = bones['weapon_attach'];
+  if (weaponAttachBone) {
+    const weaponModel = createLongswordModel();
+    weaponAttachBone.add(weaponModel.group);
+  }
 
   group.position.set(spawnPos.x, spawnPos.y, spawnPos.z);
   world.scene.add(group);
