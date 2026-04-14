@@ -402,7 +402,6 @@ export const UPPER_BODY_BONES: ReadonlySet<string> = new Set([
   'spine', 'chest', 'neck', 'head',
   'shoulder_L', 'upper_arm_L', 'forearm_L', 'hand_L',
   'shoulder_R', 'upper_arm_R', 'forearm_R', 'hand_R',
-  'weapon_attach',
 ]);
 
 /** Bones controlled by movement (lower body) animations */

@@ -208,7 +208,9 @@ describe('AnimationData', () => {
       expect(UPPER_BODY_BONES.has('upper_arm_R')).toBe(true);
       expect(UPPER_BODY_BONES.has('forearm_R')).toBe(true);
       expect(UPPER_BODY_BONES.has('hand_R')).toBe(true);
-      expect(UPPER_BODY_BONES.has('weapon_attach')).toBe(true);
+      // weapon_attach is intentionally excluded — it's a leaf bone whose
+      // rotation is set at construction time and must not be overwritten by animation
+      expect(UPPER_BODY_BONES.has('weapon_attach')).toBe(false);
     });
 
     it('lower body bones include leg bones', () => {
