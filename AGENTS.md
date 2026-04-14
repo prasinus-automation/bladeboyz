@@ -130,8 +130,17 @@ Two ECS components track combat state: `CombatStateComponent` (authoritative —
 ### Two Disconnected Inventory Modules (NEEDS FIX)
 `src/inventory/InventoryData.ts` is a lightweight UI-only side-table used by `InventoryPanel.ts`. `src/ecs/systems/InventorySystem.ts` is the real system with full equip logic (3D model swap, FSM update, ECS sync). **They maintain separate data stores.** `InventoryData.ts` is never initialized in `main.ts`, so the UI weapons grid is always empty. The UI's `equipWeapon()` only updates the InventoryData side-table — it does NOT swap 3D models, update FSM, or sync `CombatStateComponent.weaponId`. Fix: wire `InventoryPanel.ts` to import from `InventorySystem.ts` instead.
 
-### Only Longsword Model Factory Registered (NEEDS FIX)
-`main.ts` (line 98) only registers `createLongswordModel` with `InventorySystem.registerWeaponModelFactory()`. `WeaponModels.ts` has all 4 factories in its own local registry but InventorySystem doesn't use it. Equipping Mace/Dagger/Battleaxe via InventorySystem clears the old model but attaches nothing. Fix: register all 4 factories in `main.ts`.
+### Damage Pipeline Completely Unwired (CRITICAL — NEEDS FIX)
+The tracer-based hit detection pipeline (`TracerSystem` → `DamageSystem` → `HealthSystem`) is fully coded but **never connected**. Four missing wiring points:
+1. **`TracerTag` never added** — `tracerQuery` in TracerSystem.ts:87 requires `[CombatStateComponent, TracerTag]`, but neither `createPlayer.ts` nor `createDummy.ts` adds `TracerTag`. The query returns empty.
+2. **`weaponBoneMap` never populated** — TracerSystem.ts:62 exports it but nobody calls `.set()`. TracerSystem needs this to find the weapon_attach bone for world-space tracer transforms.
+3. **`weaponConfigMap` never populated** — TracerSystem.ts:55 exports it but nobody calls `.set()`. TracerSystem needs this to look up tracer points and damage values.
+4. **`colliderToHitbox` never populated** — TracerSystem.ts:68 exports it but nobody calls `.set()`. `createHitboxes()` in HitboxSystem.ts populates `hitboxColliderRegistry` (Map<eid, Map<region, Collider>>) but never writes to `colliderToHitbox` (Map<colliderHandle, {ownerEid, bodyRegion}>).
+5. **Player has no hitboxes** — `createHitboxes()` is called for dummies (createDummy.ts:85) but not for the player.
+Fix: Add TracerTag + populate all three side-maps in entity factories and InventorySystem.equipWeapon(). Add colliderToHitbox population in createHitboxes(). Create hitboxes for the player.
+
+### No First-Person Viewmodel (NEEDS IMPLEMENTATION)
+In FPS mode (`CameraMode.FirstPerson`), `CameraController.ts:103` hides the entire player mesh including the weapon. The player swings weapons they cannot see. No separate first-person arms/weapon rendering exists. Classic FPS games use a separate viewmodel rendered on a different camera/layer with a higher near clip to prevent world clipping.
 
 ### Module-Level Singletons
 `fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName`, `inventoryRegistry`, `weaponModelFactories` are all module-level Maps/arrays/objects. Works for single-world but won't scale to multiple worlds.
