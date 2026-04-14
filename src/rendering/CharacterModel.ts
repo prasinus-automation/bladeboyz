@@ -118,6 +118,7 @@ export function createCharacterModel(
   // Weapon attach point on right hand
   const weaponAttach = makeBone('weapon_attach', handR);
   weaponAttach.position.set(0, -HAND_SIZE / 2, 0);
+  weaponAttach.rotation.x = Math.PI; // Flip +Y to point outward from hand
 
   // Left leg chain
   const thighL = makeBone('thigh_L', spine);
