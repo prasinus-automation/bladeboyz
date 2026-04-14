@@ -37,6 +37,9 @@ import type { GameWorld } from './core/types';
 
 // Import weapon configs so they auto-register
 import './weapons/longsword';
+import './weapons/mace';
+import './weapons/dagger';
+import './weapons/battleaxe';
 
 /** Next dummy spawn index for position cycling */
 let dummySpawnIdx = 0;
