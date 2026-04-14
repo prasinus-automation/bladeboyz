@@ -2,7 +2,7 @@
 
 Browser-based multiplayer melee combat game with an ultra-low-poly BattleBit-style aesthetic and Mordhau/Chivalry-inspired directional combat mechanics. Built with Three.js, Rapier3D physics, and a bitECS entity-component-system architecture.
 
-Currently in the scaffolding phase: single player, test arena with training dummies, no networking yet. The combat system features tracer-based hit detection (swept-volume collision along the blade), directional attacks and blocks, a parry/riposte system, and data-driven weapon configurations.
+Currently in the scaffolding phase: single player, test arena with training dummies, no networking yet. The combat system features tracer-based hit detection (swept-volume collision along the blade), directional attacks and blocks, a parry/riposte system, and data-driven weapon configurations. Players can open an inventory overlay to swap between unlocked weapons mid-session.
 
 ## Getting Started
 
@@ -32,6 +32,13 @@ npm run preview      # Preview production build locally
 | **Space** | Jump |
 | **Click** | Lock mouse pointer (required for mouse look) |
 
+### Inventory
+| Key | Action |
+|-----|--------|
+| **I** | Toggle inventory overlay (weapon selection & equipment) |
+
+> While the inventory is open, mouse look and combat inputs are paused. Close with **I** or **Escape** to resume gameplay.
+
 ### Training Dummy Controls
 | Key | Action |
 |-----|--------|
@@ -53,8 +60,16 @@ npm run preview      # Preview production build locally
 ### Console Commands
 Open the browser dev console (`F12`) and use:
 ```js
-window.setWeapon('Longsword')  // Swap weapon config at runtime
+window.setWeapon('Longsword')   // Swap weapon by name (currently only Longsword available)
 ```
+
+## Weapons
+
+All weapons are data-driven via `WeaponConfig` objects — damage, timing, turncaps, and tracer geometry are defined in config, not hardcoded in systems. Swap weapons at runtime through the inventory overlay (**I** key).
+
+| Weapon | Style | Description |
+|--------|-------|-------------|
+| **Longsword** | Balanced | The baseline weapon. Good reach, moderate speed, and reliable damage across all attack directions. Versatile for both beginners and experienced players. |
 
 ## Testing
 
@@ -108,7 +123,10 @@ src/
 │   ├── CharacterModel.ts    # Procedural low-poly character mesh + bone skeleton
 │   ├── DebugRenderer.ts     # F1-F4 debug toggles (wireframe, physics, hitboxes, FSM)
 │   └── TracerDebugRenderer.ts  # Tracer sweep line visualization
+├── inventory/
+│   └── InventoryData.ts     # Weapon ownership & equipment side-table
 ├── hud/
+│   ├── InventoryPanel.ts    # Inventory overlay UI (weapon selection & gear slots)
 │   ├── DebugOverlay.ts      # FPS counter, position, movement state (top-left)
 │   ├── FloatingDamage.ts    # Floating damage numbers (3D→2D projected HTML)
 │   ├── DummyHealthBar.ts    # Floating health bars above training dummies
