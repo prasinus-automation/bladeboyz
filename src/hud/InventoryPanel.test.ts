@@ -251,7 +251,7 @@ describe('InventoryPanel', () => {
   });
 
   describe('gear slots', () => {
-    it('displays 4 gear slot placeholders', () => {
+    it('displays 4 armor slot placeholders', () => {
       panel.open();
       const container = document.getElementById('inventory-panel')!;
       expect(container.textContent).toContain('Head');
@@ -259,6 +259,78 @@ describe('InventoryPanel', () => {
       expect(container.textContent).toContain('Legs');
       expect(container.textContent).toContain('Boots');
       expect(container.textContent).toContain('Coming Soon');
+    });
+
+    it('displays weapon gear slot with equipped weapon name', () => {
+      panel.open();
+      const slot = document.getElementById('gear-slot-weapon')!;
+      expect(slot).not.toBeNull();
+      expect(slot.textContent).toContain('Weapon');
+      expect(slot.textContent).toContain('TestSword');
+    });
+
+    it('weapon gear slot has gold border when equipped', () => {
+      panel.open();
+      const slot = document.getElementById('gear-slot-weapon')! as HTMLElement;
+      expect(slot.style.borderColor).toContain('rgb(255, 204, 0)');
+    });
+
+    it('weapon gear slot has full opacity when equipped', () => {
+      panel.open();
+      const slot = document.getElementById('gear-slot-weapon')! as HTMLElement;
+      expect(slot.style.opacity).toBe('1');
+    });
+
+    it('weapon gear slot is visually distinct from placeholder slots', () => {
+      panel.open();
+      const slot = document.getElementById('gear-slot-weapon')! as HTMLElement;
+      // Gold border, not the grey #333 of placeholders
+      expect(slot.style.borderColor).toContain('rgb(255, 204, 0)');
+      // Full opacity, not the 0.5 of placeholders
+      expect(slot.style.opacity).not.toBe('0.5');
+    });
+
+    it('weapon gear slot appears before armor slots in the DOM', () => {
+      panel.open();
+      const container = document.getElementById('inventory-panel')!;
+      const text = container.textContent!;
+      const weaponIdx = text.indexOf('Weapon');
+      const headIdx = text.indexOf('Head');
+      expect(weaponIdx).toBeLessThan(headIdx);
+    });
+
+    it('weapon gear slot updates when a different weapon is equipped', () => {
+      addWeapon(playerEid, 'TestMace');
+      panel.open();
+      // Equip TestMace via the weapons grid
+      const grid = document.getElementById('inventory-weapons-grid')!;
+      const cards = grid.querySelectorAll('.inventory-weapon-card') as NodeListOf<HTMLElement>;
+      cards[1].click(); // TestMace
+      // Check gear slot now shows TestMace
+      const slot = document.getElementById('gear-slot-weapon')!;
+      expect(slot.textContent).toContain('TestMace');
+    });
+
+    it('weapon gear slot shows "None" when no inventory exists', () => {
+      clearAllInventories();
+      panel.open();
+      const slot = document.getElementById('gear-slot-weapon')!;
+      expect(slot.textContent).toContain('None');
+    });
+
+    it('weapon gear slot shows range stat when config exists', () => {
+      panel.open();
+      const slot = document.getElementById('gear-slot-weapon')!;
+      expect(slot.textContent).toContain('Range: 2');
+    });
+
+    it('weapon gear slot contains a weapon icon element', () => {
+      panel.open();
+      const slot = document.getElementById('gear-slot-weapon')!;
+      // The gear-weapon-name class element should exist
+      const nameEl = slot.querySelector('.gear-weapon-name');
+      expect(nameEl).not.toBeNull();
+      expect(nameEl!.textContent).toBe('TestSword');
     });
   });
 

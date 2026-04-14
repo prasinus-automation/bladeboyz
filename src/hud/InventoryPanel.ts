@@ -19,6 +19,7 @@ export class InventoryPanel {
   private container: HTMLDivElement;
   private backdrop: HTMLDivElement;
   private weaponsGrid: HTMLDivElement;
+  private weaponGearSlot: HTMLDivElement;
   private _isOpen = false;
   private _onKeyDown: (e: KeyboardEvent) => void;
 
@@ -145,6 +146,20 @@ export class InventoryPanel {
       grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
       gap: 8px;
     `;
+
+    // Functional weapon gear slot (displays currently equipped weapon)
+    this.weaponGearSlot = document.createElement('div');
+    this.weaponGearSlot.id = 'gear-slot-weapon';
+    this.weaponGearSlot.style.cssText = `
+      border: 2px solid #ffcc00;
+      padding: 12px;
+      text-align: center;
+      background: rgba(255, 204, 0, 0.1);
+    `;
+    this.buildWeaponGearSlotContent(null);
+    gearGrid.appendChild(this.weaponGearSlot);
+
+    // Placeholder armor slots
     for (const slot of GEAR_SLOTS) {
       const slotEl = document.createElement('div');
       slotEl.style.cssText = `
@@ -226,11 +241,67 @@ export class InventoryPanel {
     this.input.paused = false;
   }
 
+  /** Update the weapon gear slot content based on the equipped weapon */
+  private buildWeaponGearSlotContent(equippedWeapon: string | null): void {
+    this.weaponGearSlot.innerHTML = '';
+
+    const label = document.createElement('div');
+    label.textContent = 'Weapon';
+    label.style.cssText = `font-size: 11px; color: #ffcc00; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px;`;
+    this.weaponGearSlot.appendChild(label);
+
+    if (equippedWeapon) {
+      // Weapon icon (rotated rectangle, same style as weapons grid)
+      const icon = document.createElement('div');
+      icon.style.cssText = `
+        width: 40px; height: 8px;
+        background: #ffcc00;
+        margin: 0 auto 8px;
+        transform: rotate(-30deg);
+      `;
+      this.weaponGearSlot.appendChild(icon);
+
+      const nameEl = document.createElement('div');
+      nameEl.className = 'gear-weapon-name';
+      nameEl.textContent = equippedWeapon;
+      nameEl.style.cssText = `font-size: 14px; font-weight: bold; color: #ffcc00;`;
+      this.weaponGearSlot.appendChild(nameEl);
+
+      // Stats summary if config exists
+      const config = weaponConfigs[equippedWeapon];
+      if (config) {
+        const stats = document.createElement('div');
+        stats.style.cssText = `font-size: 10px; color: #999; margin-top: 4px;`;
+        stats.textContent = `Range: ${config.range}`;
+        this.weaponGearSlot.appendChild(stats);
+      }
+
+      this.weaponGearSlot.style.borderColor = '#ffcc00';
+      this.weaponGearSlot.style.background = 'rgba(255, 204, 0, 0.1)';
+      this.weaponGearSlot.style.opacity = '1';
+    } else {
+      const empty = document.createElement('div');
+      empty.textContent = 'None';
+      empty.style.cssText = `font-size: 12px; color: #666; font-style: italic;`;
+      this.weaponGearSlot.appendChild(empty);
+
+      this.weaponGearSlot.style.borderColor = '#555';
+      this.weaponGearSlot.style.background = 'rgba(40, 40, 50, 0.6)';
+      this.weaponGearSlot.style.opacity = '0.7';
+    }
+  }
+
   /** Refresh the weapons grid from current inventory data */
   refresh(): void {
     this.weaponsGrid.innerHTML = '';
     const inv = getInventory(this.playerEid);
-    if (!inv) return;
+    if (!inv) {
+      this.buildWeaponGearSlotContent(null);
+      return;
+    }
+
+    // Update weapon gear slot
+    this.buildWeaponGearSlotContent(inv.equippedWeapon ?? null);
 
     for (const weaponName of inv.weapons) {
       const config = weaponConfigs[weaponName];
