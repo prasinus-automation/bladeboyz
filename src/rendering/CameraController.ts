@@ -11,6 +11,7 @@ import {
   THIRD_PERSON_MAX_DISTANCE,
 } from '../core/types';
 import { showNotification } from '../hud/DebugNotification';
+import type { ViewmodelRenderer } from './ViewmodelRenderer';
 
 export const enum CameraMode {
   FirstPerson = 0,
@@ -49,6 +50,9 @@ export class CameraController {
   // Player mesh reference (to toggle visibility)
   private playerMesh: THREE.Object3D | null = null;
 
+  // Viewmodel renderer reference (to toggle visibility and sync camera)
+  private viewmodel: ViewmodelRenderer | null = null;
+
   constructor(camera: THREE.PerspectiveCamera, input: InputManager) {
     this.camera = camera;
     this.input = input;
@@ -65,6 +69,12 @@ export class CameraController {
   /** Set the player mesh for first/third person visibility toggling */
   setPlayerMesh(mesh: THREE.Object3D): void {
     this.playerMesh = mesh;
+    this.updateMeshVisibility();
+  }
+
+  /** Set the viewmodel renderer for FPS/third-person visibility toggling */
+  setViewmodel(viewmodel: ViewmodelRenderer): void {
+    this.viewmodel = viewmodel;
     this.updateMeshVisibility();
   }
 
@@ -101,6 +111,9 @@ export class CameraController {
   private updateMeshVisibility(): void {
     if (this.playerMesh) {
       this.playerMesh.visible = this.mode === CameraMode.ThirdPerson;
+    }
+    if (this.viewmodel) {
+      this.viewmodel.visible = this.mode === CameraMode.FirstPerson;
     }
   }
 
