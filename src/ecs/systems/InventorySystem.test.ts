@@ -450,8 +450,9 @@ describe('InputManager paused flag', () => {
     inputMgr.paused = true;
     expect(inputMgr.isKeyDown('KeyW')).toBe(false);
 
+    // Setting paused = true clears keysDown as a safety net (fixes stuck key bug #72)
     inputMgr.paused = false;
-    expect(inputMgr.isKeyDown('KeyW')).toBe(true);
+    expect(inputMgr.isKeyDown('KeyW')).toBe(false);
 
     // Restore
     document.addEventListener = originalAddEventListener;
@@ -483,8 +484,9 @@ describe('InputManager paused flag', () => {
     inputMgr.paused = true;
     expect(inputMgr.isMouseButtonDown(0)).toBe(false);
 
+    // Setting paused = true clears mouseButtons as a safety net (fixes stuck key bug #72)
     inputMgr.paused = false;
-    expect(inputMgr.isMouseButtonDown(0)).toBe(true);
+    expect(inputMgr.isMouseButtonDown(0)).toBe(false);
 
     // Restore
     document.addEventListener = originalAddEventListener;

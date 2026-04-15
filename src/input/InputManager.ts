@@ -36,9 +36,23 @@ export class InputManager {
 
   /**
    * When true, input capture is paused (e.g. inventory overlay is open).
-   * Mouse move, keyboard, and mouse button events are ignored.
+   * Mouse move, keyboard, and mouse button events are ignored for reads.
+   * Key-up and mouse-up events are still processed to prevent stuck keys.
    */
-  paused = false;
+  private _paused = false;
+
+  get paused(): boolean {
+    return this._paused;
+  }
+
+  set paused(value: boolean) {
+    this._paused = value;
+    if (value) {
+      // Safety net: clear accumulated state so nothing stays "stuck"
+      this.keysDown.clear();
+      this.mouseButtons.clear();
+    }
+  }
 
   /**
    * Optional callback to suppress the #click-to-play overlay.
@@ -59,8 +73,7 @@ export class InputManager {
       this.keysDown.add(e.code);
     });
     document.addEventListener('keyup', (e: KeyboardEvent) => {
-      if (this.paused) return;
-      this.keysDown.delete(e.code);
+      this.keysDown.delete(e.code); // Always remove — paused only gates reads, not writes
     });
 
     // Mouse move (only useful when pointer-locked)
@@ -82,8 +95,7 @@ export class InputManager {
       this.mouseButtons.add(e.button);
     });
     document.addEventListener('mouseup', (e: MouseEvent) => {
-      if (this.paused) return;
-      this.mouseButtons.delete(e.button);
+      this.mouseButtons.delete(e.button); // Always remove — paused only gates reads, not writes
     });
 
     // Scroll wheel

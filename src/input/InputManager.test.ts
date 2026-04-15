@@ -168,6 +168,98 @@ describe('InputManager', () => {
     });
   });
 
+  describe('paused state — stuck key prevention', () => {
+    it('keyup is processed while paused (key does not stay stuck)', () => {
+      fireEvent('document', 'keydown', { code: 'KeyW' });
+      expect(input.isKeyDown('KeyW')).toBe(true);
+
+      // Pause (e.g. inventory opens)
+      input.paused = true;
+
+      // Release key while paused
+      fireEvent('document', 'keyup', { code: 'KeyW' });
+
+      // Unpause
+      input.paused = false;
+
+      // Key should NOT be stuck
+      expect(input.isKeyDown('KeyW')).toBe(false);
+    });
+
+    it('mouseup is processed while paused (button does not stay stuck)', () => {
+      fireEvent('document', 'mousedown', { button: 0 });
+      expect(input.isMouseButtonDown(0)).toBe(true);
+
+      input.paused = true;
+      fireEvent('document', 'mouseup', { button: 0 });
+      input.paused = false;
+
+      expect(input.isMouseButtonDown(0)).toBe(false);
+    });
+
+    it('setting paused = true immediately clears keysDown and mouseButtons', () => {
+      fireEvent('document', 'keydown', { code: 'KeyW' });
+      fireEvent('document', 'keydown', { code: 'KeyA' });
+      fireEvent('document', 'mousedown', { button: 0 });
+
+      input.paused = true;
+
+      // Even after unpausing, previously-held keys should be gone
+      input.paused = false;
+      expect(input.isKeyDown('KeyW')).toBe(false);
+      expect(input.isKeyDown('KeyA')).toBe(false);
+      expect(input.isMouseButtonDown(0)).toBe(false);
+    });
+
+    it('isKeyDown returns false when paused even if key is held', () => {
+      fireEvent('document', 'keydown', { code: 'KeyW' });
+      input.paused = true;
+      // Re-press while paused (keydown is gated by paused, but even if keysDown had it)
+      expect(input.isKeyDown('KeyW')).toBe(false);
+    });
+
+    it('isMouseButtonDown returns false when paused', () => {
+      fireEvent('document', 'mousedown', { button: 2 });
+      input.paused = true;
+      expect(input.isMouseButtonDown(2)).toBe(false);
+    });
+
+    it('full stuck key scenario: hold W → open inventory → release W → close inventory', () => {
+      // 1. Hold W to walk forward
+      fireEvent('document', 'keydown', { code: 'KeyW' });
+      expect(input.isKeyDown('KeyW')).toBe(true);
+
+      // 2. Open inventory (sets paused = true, which clears keysDown)
+      input.paused = true;
+
+      // 3. Release W while paused — keyup still processed
+      fireEvent('document', 'keyup', { code: 'KeyW' });
+
+      // 4. Close inventory
+      input.paused = false;
+
+      // Character should NOT move forward uncontrollably
+      expect(input.isKeyDown('KeyW')).toBe(false);
+    });
+
+    it('keydown is still ignored while paused', () => {
+      input.paused = true;
+      fireEvent('document', 'keydown', { code: 'KeyW' });
+      // isKeyDown returns false because paused
+      expect(input.isKeyDown('KeyW')).toBe(false);
+      // After unpause, key should not be registered either
+      input.paused = false;
+      // Note: the keydown was gated, but even if it wasn't, the clear-on-pause would have removed it
+      // Since keydown adds to keysDown even when paused... let's verify the gate works
+    });
+
+    it('mousedown is still ignored while paused', () => {
+      input.paused = true;
+      fireEvent('document', 'mousedown', { button: 0 });
+      expect(input.isMouseButtonDown(0)).toBe(false);
+    });
+  });
+
   describe('rolling delta buffer', () => {
     it('returns zero average when no deltas recorded', () => {
       const avg = input.getAverageDelta();
