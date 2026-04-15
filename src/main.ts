@@ -145,7 +145,7 @@ async function main(): Promise<void> {
   const movementSystem = createMovementSystem(world, input, cameraController);
 
   // Create combat system (reads input, drives per-entity FSMs)
-  const combatSystem = createCombatSystem(world.ecs, input);
+  const combatSystem = createCombatSystem(world.ecs, input, cameraController);
 
   // HUD & debug
   const debugOverlay = new DebugOverlay();

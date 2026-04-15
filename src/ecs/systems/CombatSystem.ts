@@ -15,6 +15,7 @@ import { CombatState } from '../../combat/states';
 import { CombatInput, fsmRegistry, type CombatFSM } from '../../combat/CombatFSM';
 import { detectAttackDirection, detectBlockDirection } from '../../combat/directions';
 import type { InputManager, MouseDeltaEntry } from '../../input/InputManager';
+import type { CameraController } from '../../rendering/CameraController';
 import { queueStaminaCost } from './StaminaSystem';
 import { weaponConfigs } from '../../weapons/WeaponConfig';
 
@@ -103,6 +104,7 @@ export function computePhaseTotal(state: CombatState, fsm: CombatFSM): number {
 export function createCombatSystem(
   ecsWorld: IWorld,
   input: InputManager,
+  cameraController?: CameraController,
 ): () => void {
   return function combatSystemTick(): void {
     const playerEntities = playerQuery(ecsWorld);
@@ -194,6 +196,16 @@ export function createCombatSystem(
           type: evt.type,
           weaponConfig,
         });
+      }
+    }
+
+    // Update turncap for player entities (drag/accel mechanic)
+    if (cameraController) {
+      for (const eid of playerEntities) {
+        const fsm = fsmRegistry.get(eid);
+        if (fsm) {
+          cameraController.maxTurnRate = fsm.getCurrentTurncap();
+        }
       }
     }
   };
