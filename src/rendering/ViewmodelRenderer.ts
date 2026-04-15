@@ -11,6 +11,15 @@
  *   1. Render world scene (Layer 0) with world camera
  *   2. Clear depth only, render viewmodel (Layer 1) with viewmodel camera
  * This ensures the viewmodel always renders on top of world geometry.
+ *
+ * The arm is built from a THREE.Bone hierarchy with SkinnedMesh parts,
+ * enabling bone-driven pose animation.
+ *
+ * Bone hierarchy:
+ *   vm_upper_arm_R
+ *   └── vm_forearm_R
+ *       └── vm_hand_R
+ *           └── vm_weapon_attach  (pre-rotated Math.PI on X)
  */
 
 import * as THREE from 'three';
@@ -27,6 +36,9 @@ const VIEWMODEL_FAR = 5;
 const ARM_OFFSET = new THREE.Vector3(0.3, -0.3, -0.5);
 
 /** Arm proportions */
+const UPPER_ARM_W = 0.12;
+const UPPER_ARM_H = 0.28;
+const UPPER_ARM_D = 0.12;
 const FOREARM_W = 0.12;
 const FOREARM_H = 0.35;
 const FOREARM_D = 0.12;
@@ -62,14 +74,21 @@ export class ViewmodelRenderer {
   /** Root group containing arm + weapon, added to scene on Layer 1 */
   public readonly group: THREE.Group;
 
+  /**
+   * Exposed bone references keyed by canonical name (without vm_ prefix).
+   * Keys: 'upper_arm_R', 'forearm_R', 'hand_R', 'weapon_attach'
+   * Animation systems can use these directly — names match AnimationData.ts.
+   */
+  public readonly bones: Record<string, THREE.Bone>;
+
   /** Whether the viewmodel is currently visible (FPS mode) */
   private _visible = true;
 
-  /** Reference to the current weapon group (child of hand) */
+  /** Reference to the current weapon group (child of weapon_attach bone) */
   private weaponGroup: THREE.Group | null = null;
 
-  /** Hand mesh group (weapon attaches here) */
-  private handGroup: THREE.Group;
+  /** The weapon_attach bone — weapon models attach here */
+  private weaponAttachBone: THREE.Bone;
 
   /** Weapon factory registry */
   private weaponFactories: Record<string, () => { group: THREE.Group }>;
@@ -91,33 +110,122 @@ export class ViewmodelRenderer {
     // Only render Layer 1
     this.camera.layers.set(VIEWMODEL_LAYER);
 
-    // ── Build arm meshes ──
+    // ── Build bone hierarchy ──
     this.group = new THREE.Group();
     this.group.name = 'viewmodel_root';
 
     const skinMat = new THREE.MeshBasicMaterial({ color: SKIN_COLOR });
 
+    // Bone chain: upper_arm_R -> forearm_R -> hand_R -> weapon_attach
+    // Root bone is positioned so forearm mesh center remains at (0, 0, 0)
+    // in group space, preserving the original arm visual placement.
+    const upperArmBone = new THREE.Bone();
+    upperArmBone.name = 'vm_upper_arm_R';
+    upperArmBone.position.set(0, UPPER_ARM_H + FOREARM_H / 2, 0);
+
+    const forearmBone = new THREE.Bone();
+    forearmBone.name = 'vm_forearm_R';
+    forearmBone.position.set(0, -UPPER_ARM_H, 0);
+    upperArmBone.add(forearmBone);
+
+    const handBone = new THREE.Bone();
+    handBone.name = 'vm_hand_R';
+    handBone.position.set(0, -FOREARM_H, 0);
+    forearmBone.add(handBone);
+
+    const weaponAttachBone = new THREE.Bone();
+    weaponAttachBone.name = 'vm_weapon_attach';
+    weaponAttachBone.position.set(0, -HAND_H, 0);
+    weaponAttachBone.rotation.x = Math.PI; // Flip +Y to point outward from hand
+    handBone.add(weaponAttachBone);
+
+    this.weaponAttachBone = weaponAttachBone;
+
+    // Expose bones without vm_ prefix (matches AnimationData.ts bone names)
+    this.bones = {
+      upper_arm_R: upperArmBone,
+      forearm_R: forearmBone,
+      hand_R: handBone,
+      weapon_attach: weaponAttachBone,
+    };
+
+    // ── Create skeleton ──
+    const boneArray = [upperArmBone, forearmBone, handBone, weaponAttachBone];
+    const skeleton = new THREE.Skeleton(boneArray);
+
+    // Helper: create a SkinnedMesh bound 100% to a single bone
+    // (same pattern as CharacterModel.ts createPart)
+    const createPart = (
+      geom: THREE.BufferGeometry,
+      material: THREE.Material,
+      bone: THREE.Bone,
+      offset: THREE.Vector3,
+    ): THREE.SkinnedMesh => {
+      const mesh = new THREE.SkinnedMesh(geom, material);
+
+      // Skinning: every vertex weighted 100% to this one bone
+      const posAttr = geom.getAttribute('position');
+      const count = posAttr.count;
+      const boneIndex = boneArray.indexOf(bone);
+      const skinIndices: number[] = [];
+      const skinWeights: number[] = [];
+      for (let i = 0; i < count; i++) {
+        skinIndices.push(boneIndex, 0, 0, 0);
+        skinWeights.push(1, 0, 0, 0);
+      }
+      geom.setAttribute(
+        'skinIndex',
+        new THREE.Uint16BufferAttribute(skinIndices, 4),
+      );
+      geom.setAttribute(
+        'skinWeight',
+        new THREE.Float32BufferAttribute(skinWeights, 4),
+      );
+
+      // Translate geometry so bone is the pivot
+      geom.translate(offset.x, offset.y, offset.z);
+
+      // Need a root bone in the mesh for skeleton binding
+      mesh.add(upperArmBone.clone(false));
+      mesh.bind(skeleton);
+
+      return mesh;
+    };
+
+    // ── Create skinned mesh parts ──
+
+    // Upper arm
+    const upperArmMesh = createPart(
+      new THREE.BoxGeometry(UPPER_ARM_W, UPPER_ARM_H, UPPER_ARM_D),
+      skinMat,
+      upperArmBone,
+      new THREE.Vector3(0, -UPPER_ARM_H / 2, 0),
+    );
+    upperArmMesh.name = 'viewmodel_upper_arm';
+    this.group.add(upperArmMesh);
+
     // Forearm
-    const forearm = new THREE.Mesh(
+    const forearmMesh = createPart(
       new THREE.BoxGeometry(FOREARM_W, FOREARM_H, FOREARM_D),
       skinMat,
+      forearmBone,
+      new THREE.Vector3(0, -FOREARM_H / 2, 0),
     );
-    forearm.name = 'viewmodel_forearm';
-    forearm.position.set(0, 0, 0);
-    this.group.add(forearm);
+    forearmMesh.name = 'viewmodel_forearm';
+    this.group.add(forearmMesh);
 
-    // Hand (positioned at the end of forearm)
-    this.handGroup = new THREE.Group();
-    this.handGroup.name = 'viewmodel_hand';
-    this.handGroup.position.set(0, -FOREARM_H / 2 - HAND_H / 2, 0);
-
-    const handMesh = new THREE.Mesh(
+    // Hand
+    const handMesh = createPart(
       new THREE.BoxGeometry(HAND_W, HAND_H, HAND_D),
       skinMat,
+      handBone,
+      new THREE.Vector3(0, -HAND_H / 2, 0),
     );
-    handMesh.name = 'viewmodel_hand_mesh';
-    this.handGroup.add(handMesh);
-    this.group.add(this.handGroup);
+    handMesh.name = 'viewmodel_hand';
+    this.group.add(handMesh);
+
+    // Add root bone to group so skeleton transforms propagate
+    this.group.add(upperArmBone);
 
     // Set all viewmodel meshes to Layer 1
     setLayerRecursive(this.group, VIEWMODEL_LAYER);
@@ -146,6 +254,7 @@ export class ViewmodelRenderer {
   /**
    * Swap the weapon model on the viewmodel.
    * Removes the old weapon, creates a new one from the factory, and sets layers.
+   * Weapon is attached to the weapon_attach bone.
    */
   swapWeapon(weaponName: string): boolean {
     const factory = this.weaponFactories[weaponName];
@@ -156,7 +265,7 @@ export class ViewmodelRenderer {
 
     // Remove old weapon
     if (this.weaponGroup) {
-      this.handGroup.remove(this.weaponGroup);
+      this.weaponAttachBone.remove(this.weaponGroup);
       this.weaponGroup = null;
     }
 
@@ -164,15 +273,13 @@ export class ViewmodelRenderer {
     const { group: newWeapon } = factory();
     newWeapon.name = `viewmodel_weapon_${weaponName}`;
 
-    // Position weapon extending from hand
-    newWeapon.position.set(0, -HAND_H / 2, 0);
-    // Flip weapon to point outward (same as weapon_attach bone rotation)
-    newWeapon.rotation.x = Math.PI;
+    // No position/rotation needed — weapon_attach bone provides both
+    // (bone is pre-positioned at hand bottom, pre-rotated Math.PI on X)
 
     // Set layer on all weapon meshes
     setLayerRecursive(newWeapon, VIEWMODEL_LAYER);
 
-    this.handGroup.add(newWeapon);
+    this.weaponAttachBone.add(newWeapon);
     this.weaponGroup = newWeapon;
 
     return true;
