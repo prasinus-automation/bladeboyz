@@ -21,7 +21,7 @@ import { animationSystem } from './ecs/systems/AnimationSystem';
 import { DebugOverlay } from './hud/DebugOverlay';
 import { HUD } from './hud/HUD';
 import { DebugRenderer } from './rendering/DebugRenderer';
-import { TracerSystem } from './ecs/systems/TracerSystem';
+import { TracerSystem, weaponConfigMap } from './ecs/systems/TracerSystem';
 import { DamageSystem } from './ecs/systems/DamageSystem';
 import { hitboxSystem } from './ecs/systems/HitboxSystem';
 import { TracerDebugRenderer } from './rendering/TracerDebugRenderer';
@@ -34,6 +34,7 @@ import { FIXED_TIMESTEP, SPAWN_HEIGHT } from './core/types';
 import { Position, meshRegistry } from './ecs/components';
 import { createFSM, fsmRegistry } from './combat/CombatFSM';
 import { weaponConfigs } from './weapons/WeaponConfig';
+import { weaponIdToName } from './ecs/systems/CombatSystem';
 import {
   initInventory,
   equipWeapon,
@@ -51,6 +52,12 @@ import './weapons/longsword';
 import './weapons/mace';
 import './weapons/dagger';
 import './weapons/battleaxe';
+
+// Populate weaponConfigMap for TracerSystem — maps numeric weapon IDs to configs
+for (const [name, config] of Object.entries(weaponConfigs)) {
+  const idx = weaponIdToName.indexOf(name);
+  if (idx >= 0) weaponConfigMap.set(idx, config);
+}
 
 /** Next dummy spawn index for position cycling */
 let dummySpawnIdx = 0;
