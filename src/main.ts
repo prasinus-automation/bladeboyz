@@ -300,7 +300,14 @@ async function main(): Promise<void> {
     viewmodel.syncWithCamera(world.camera);
     world.renderer.autoClear = false;
     world.renderer.clearDepth();
+    // Null scene.background during Pass 2 to prevent Three.js from rendering
+    // a full-screen background quad that overwrites Pass 1's world geometry.
+    // scene.background is rendered independently of autoClear, so we must
+    // suppress it manually for correct multi-pass compositing.
+    const savedBackground = world.scene.background;
+    world.scene.background = null;
     world.renderer.render(world.scene, viewmodel.camera);
+    world.scene.background = savedBackground;
     world.renderer.autoClear = true;
   };
 
