@@ -306,6 +306,136 @@ describe('CombatSystem', () => {
     });
   });
 
+  // ── Turncap wiring tests ──────────────────────────────
+
+  describe('turncap wiring', () => {
+    let mockCamera: { maxTurnRate: number };
+    let turncapTick: () => void;
+
+    beforeEach(() => {
+      fsmRegistry.clear();
+      resetCombatInputState();
+
+      ecsWorld = createWorld();
+      input = new MockInputManager();
+      weapon = createTestWeapon();
+
+      playerEid = addEntity(ecsWorld);
+      addComponent(ecsWorld, CombatStateComponent, playerEid);
+      addComponent(ecsWorld, CombatStateComp, playerEid);
+      addComponent(ecsWorld, Player, playerEid);
+      CombatStateComponent.state[playerEid] = CombatState.Idle;
+      CombatStateComponent.ticksRemaining[playerEid] = 0;
+      CombatStateComponent.weaponId[playerEid] = 0;
+
+      createFSM(playerEid, weapon);
+
+      mockCamera = { maxTurnRate: Infinity };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      turncapTick = createCombatSystem(ecsWorld, input as any, mockCamera as any);
+    });
+
+    it('maxTurnRate stays Infinity during Idle', () => {
+      turncapTick();
+      expect(mockCamera.maxTurnRate).toBe(Infinity);
+    });
+
+    it('maxTurnRate is set to windup turncap during Windup', () => {
+      input.pressMouseButton(0);
+      turncapTick();
+      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Windup);
+      expect(mockCamera.maxTurnRate).toBe(weapon.turncap.windup);
+    });
+
+    it('maxTurnRate is set to release turncap during Release', () => {
+      input.pressMouseButton(0);
+      turncapTick(); // → Windup
+      input.releaseMouseButton(0);
+      const windup = weapon.windup[AttackDirection.Stab];
+      for (let i = 1; i < windup; i++) turncapTick();
+      turncapTick(); // → Release
+      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Release);
+      expect(mockCamera.maxTurnRate).toBe(weapon.turncap.release);
+    });
+
+    it('maxTurnRate is set to recovery turncap during Recovery', () => {
+      input.pressMouseButton(0);
+      turncapTick(); // → Windup
+      input.releaseMouseButton(0);
+      const windup = weapon.windup[AttackDirection.Stab];
+      for (let i = 1; i < windup; i++) turncapTick();
+      turncapTick(); // → Release
+      const release = weapon.release[AttackDirection.Stab];
+      for (let i = 0; i < release; i++) turncapTick();
+      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Recovery);
+      expect(mockCamera.maxTurnRate).toBe(weapon.turncap.recovery);
+    });
+
+    it('maxTurnRate returns to Infinity after full attack chain', () => {
+      input.pressMouseButton(0);
+      turncapTick(); // → Windup
+      input.releaseMouseButton(0);
+      const windup = weapon.windup[AttackDirection.Stab];
+      for (let i = 1; i < windup; i++) turncapTick();
+      turncapTick(); // → Release
+      const release = weapon.release[AttackDirection.Stab];
+      for (let i = 0; i < release; i++) turncapTick();
+      const recovery = weapon.recovery[AttackDirection.Stab];
+      for (let i = 0; i < recovery; i++) turncapTick();
+      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Idle);
+      expect(mockCamera.maxTurnRate).toBe(Infinity);
+    });
+
+    it('maxTurnRate stays Infinity during Block', () => {
+      input.pressMouseButton(2);
+      turncapTick(); // → ParryWindow
+      // Tick through parry window to Block
+      for (let i = 0; i < weapon.parryWindow; i++) turncapTick();
+      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Block);
+      expect(mockCamera.maxTurnRate).toBe(Infinity);
+    });
+
+    it('maxTurnRate stays Infinity during ParryWindow', () => {
+      input.pressMouseButton(2);
+      turncapTick(); // → ParryWindow
+      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.ParryWindow);
+      expect(mockCamera.maxTurnRate).toBe(Infinity);
+    });
+
+    it('maxTurnRate uses recovery turncap during Feint', () => {
+      input.pressMouseButton(0);
+      turncapTick(); // → Windup
+      input.releaseMouseButton(0);
+      turncapTick();
+      input.pressMouseButton(2);
+      turncapTick(); // → Feint
+      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Feint);
+      expect(mockCamera.maxTurnRate).toBe(weapon.turncap.recovery);
+    });
+
+    it('turncap updates correctly after weapon swap', () => {
+      // Create a different weapon config with different turncap
+      const heavyWeapon = createTestWeapon();
+      heavyWeapon.turncap = { windup: 0.04, release: 0.015, recovery: 0.025 };
+
+      // Swap weapon on the FSM
+      const fsm = fsmRegistry.get(playerEid)!;
+      fsm.setWeaponConfig(heavyWeapon);
+
+      // Attack and verify new turncap is used
+      input.pressMouseButton(0);
+      turncapTick();
+      expect(mockCamera.maxTurnRate).toBe(0.04); // heavyWeapon windup cap
+    });
+
+    it('does not crash without cameraController (optional param)', () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const noCameraTick = createCombatSystem(ecsWorld, input as any);
+      input.pressMouseButton(0);
+      expect(() => noCameraTick()).not.toThrow();
+    });
+  });
+
   // ── computePhaseTotal unit tests ──────────────────────
 
   describe('computePhaseTotal', () => {
