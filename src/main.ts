@@ -43,6 +43,7 @@ import {
 } from './ecs/systems/InventorySystem';
 import { createLongswordModel } from './rendering/CharacterModel';
 import { createMaceModel, createDaggerModel, createBattleaxeModel } from './rendering/WeaponModels';
+import { ViewmodelRenderer } from './rendering/ViewmodelRenderer';
 import type { GameWorld } from './core/types';
 
 // Import weapon configs so they auto-register
@@ -105,9 +106,27 @@ async function main(): Promise<void> {
   const availableWeapons = Object.keys(weaponConfigs);
   initInventory(playerEid, availableWeapons, 'Dagger');
 
-  // Listen for equip events to show HUD notifications
+  // ─── First-person viewmodel ───
+  const viewmodel = new ViewmodelRenderer(world.scene, world.camera.aspect, {
+    initialWeapon: 'Dagger',
+    weaponFactories: {
+      Longsword: createLongswordModel,
+      Mace: createMaceModel,
+      Dagger: createDaggerModel,
+      Battleaxe: createBattleaxeModel,
+    },
+  });
+  cameraController.setViewmodel(viewmodel);
+
+  // Keep viewmodel camera aspect ratio in sync on resize
+  window.addEventListener('resize', () => {
+    viewmodel.updateAspect(window.innerWidth / window.innerHeight);
+  });
+
+  // Listen for equip events to show HUD notifications and swap viewmodel weapon
   onEquip((event) => {
     showNotification(`Equipped: ${event.weaponName}`);
+    viewmodel.swapWeapon(event.weaponName);
   });
 
   // Spawn initial training dummy
@@ -266,7 +285,16 @@ async function main(): Promise<void> {
     floatingDamage.update();
     dummyHealthBar.update();
     cameraController.updateCamera(playerEid, alpha);
+
+    // Pass 1: Render world scene (Layer 0) with world camera
     world.renderer.render(world.scene, world.camera);
+
+    // Pass 2: Sync viewmodel camera, clear depth, render viewmodel (Layer 1)
+    viewmodel.syncWithCamera(world.camera);
+    world.renderer.autoClear = false;
+    world.renderer.clearDepth();
+    world.renderer.render(world.scene, viewmodel.camera);
+    world.renderer.autoClear = true;
   };
 
   loop.onFrameEnd = () => {
