@@ -16,6 +16,7 @@ import { COMBAT_STATE_NAMES } from '../combat/states';
 import { fsmRegistry } from '../combat/CombatFSM';
 import { HealthBar } from './HealthBar';
 import { StaminaBar } from './StaminaBar';
+import { DirectionIndicator } from './DirectionIndicator';
 
 /** Direction names for debug display */
 const ATTACK_DIR_NAMES: Record<number, string> = {
@@ -28,6 +29,7 @@ const BLOCK_DIR_NAMES: Record<number, string> = {
 export class HUD {
   private healthBar: HealthBar;
   private staminaBar: StaminaBar;
+  private dirIndicator: DirectionIndicator;
 
   // FSM state label
   private fsmLabel: HTMLElement;
@@ -43,6 +45,7 @@ export class HUD {
   constructor() {
     this.healthBar = new HealthBar();
     this.staminaBar = new StaminaBar();
+    this.dirIndicator = new DirectionIndicator();
 
     // FSM state label (toggled with F4)
     this.fsmLabel = document.createElement('div');
@@ -110,6 +113,9 @@ export class HUD {
       this.staminaBar.update(stam, stamMax);
     }
 
+    // Update directional crosshair indicator
+    this.dirIndicator.update(playerEntity);
+
     // Update FSM state label (enhanced with turncap + direction)
     if (this.fsmVisible) {
       const stateNum = CombatStateComponent.state[playerEntity] ?? 0;
@@ -151,6 +157,7 @@ export class HUD {
     document.removeEventListener('keydown', this._onKeyDown);
     this.healthBar.dispose();
     this.staminaBar.dispose();
+    this.dirIndicator.dispose();
     this.fsmLabel.remove();
     this.fpsEl.remove();
   }
