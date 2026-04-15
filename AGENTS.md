@@ -94,7 +94,7 @@ Everything is an entity with composable components. No god-objects. Systems oper
 - All combat timing is in **fixed-update ticks**, not wall-clock time
 
 ### Combat State Machine
-Each combatant has a per-entity FSM. States: `Idle`, `Windup`, `Release`, `Recovery`, `Block`, `ParryWindow`, `Riposte`, `Feint`, `Clash`, `Stunned`, `HitStun`. Transitions are data-driven from weapon config.
+Each combatant has a per-entity FSM. States: `Idle`, `Windup`, `Release`, `Recovery`, `Block`, `ParryWindow`, `Riposte`, `Feint`, `Clash`, `Stunned`, `HitStun`. Transitions are data-driven from weapon config. **Turncap wiring** (PR #78): `CombatSystem` syncs `CameraController.maxTurnRate` from `FSM.getCurrentTurncap()` every fixed tick. Camera turn rate is capped during Windup/Release/Recovery/Feint per weapon config turncap values; uncapped (Infinity) during Idle/Block/ParryWindow/HitStun/Stunned.
 
 ### Data-Driven Weapons
 Weapon behavior comes entirely from `WeaponConfig` objects — no hardcoded weapon logic in systems.
