@@ -53,6 +53,7 @@ bladeboyz/
 │   │   ├── CameraController.ts  # FPS + debug third-person camera
 │   │   ├── CharacterModel.ts    # Procedural low-poly character mesh + skeleton
 │   │   ├── WeaponModels.ts      # Procedural weapon models (Mace, Dagger, Battleaxe) + factory registry
+│   │   ├── ViewmodelRenderer.ts # First-person viewmodel (right arm + weapon, Layer 1, separate camera)
 │   │   └── DebugRenderer.ts     # Wireframe, hitbox, physics debug drawing
 │   ├── inventory/
 │   │   └── InventoryData.ts     # Inventory side-table (inventoryRegistry Map<eid, InventoryData>)
@@ -139,8 +140,8 @@ The tracer-based hit detection pipeline (`TracerSystem` → `DamageSystem` → `
 5. **Player has no hitboxes** — `createHitboxes()` is called for dummies (createDummy.ts:85) but not for the player.
 Fix: Add TracerTag + populate all three side-maps in entity factories and InventorySystem.equipWeapon(). Add colliderToHitbox population in createHitboxes(). Create hitboxes for the player.
 
-### No First-Person Viewmodel (NEEDS IMPLEMENTATION)
-In FPS mode (`CameraMode.FirstPerson`), `CameraController.ts:103` hides the entire player mesh including the weapon. The player swings weapons they cannot see. No separate first-person arms/weapon rendering exists. Classic FPS games use a separate viewmodel rendered on a different camera/layer with a higher near clip to prevent world clipping.
+### First-Person Viewmodel (IMPLEMENTED — PR #57)
+`ViewmodelRenderer` (`src/rendering/ViewmodelRenderer.ts`) renders a procedural right arm + weapon in FPS mode using Two-pass Layer architecture: Layer 0 = world, Layer 1 = viewmodel. Separate `PerspectiveCamera` (FOV 70, near 0.01). Weapon swaps automatically via `onEquip` listener. `CameraController.setViewmodel()` toggles visibility on F5 camera mode switch. Minor optimization opportunity: `ARM_OFFSET.clone()` allocates every frame in `syncWithCamera()`.
 
 ### Module-Level Singletons
 `fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName`, `inventoryRegistry`, `weaponModelFactories` are all module-level Maps/arrays/objects. Works for single-world but won't scale to multiple worlds.
