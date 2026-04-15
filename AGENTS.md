@@ -37,6 +37,9 @@ bladeboyz/
 │   │       ├── createPlayer.ts
 │   │       ├── createDummy.ts
 │   │       └── ...
+│   ├── animation/
+│   │   ├── AnimationData.ts     # Third-person combat animation poses (per-direction, per-phase)
+│   │   └── ViewmodelAnimationData.ts # First-person viewmodel poses — per-weapon × per-direction × per-phase
 │   ├── combat/
 │   │   ├── CombatFSM.ts         # Combat state machine definition
 │   │   ├── states.ts            # State enum and transition logic
