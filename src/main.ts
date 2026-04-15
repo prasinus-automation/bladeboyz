@@ -45,6 +45,7 @@ import {
 import { createLongswordModel } from './rendering/CharacterModel';
 import { createMaceModel, createDaggerModel, createBattleaxeModel } from './rendering/WeaponModels';
 import { ViewmodelRenderer } from './rendering/ViewmodelRenderer';
+import { viewmodelAnimationSystem } from './rendering/ViewmodelAnimationSystem';
 import type { GameWorld } from './core/types';
 
 // Import weapon configs so they auto-register
@@ -282,6 +283,7 @@ async function main(): Promise<void> {
   loop.update = (dt: number) => {
     // Variable-rate updates: animation blending
     animationSystem(world, dt);
+    viewmodelAnimationSystem(viewmodel, playerEid, dt, weaponIdToName);
     debugOverlay.update(dt, playerEid, cameraController);
     hud.update(dt, playerEid);
   };
