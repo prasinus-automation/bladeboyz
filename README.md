@@ -43,7 +43,7 @@ Attacks deal damage to enemies on hit. Floating damage numbers appear above the 
 
 A **directional crosshair indicator** surrounds the center of the screen, previewing your current attack/block direction in real time as you move the mouse. It turns **red** during attacks (Windup/Release) and **blue** while blocking. A center ring indicates a stab direction.
 
-In first-person mode, a **viewmodel** renders your right arm and equipped weapon in front of the camera, giving visual feedback on your current weapon and combat state.
+In first-person mode, a **viewmodel** renders your right arm and equipped weapon in front of the camera, giving visual feedback on your current weapon and combat state. The viewmodel arm is **bone-driven** (skeletal hierarchy: upper arm → forearm → hand → weapon attach) and animated by the **ViewmodelAnimationSystem**, which reads the player's `CombatStateComp` each frame. Every weapon has unique first-person poses for all attack directions (left, right, overhead, underhand, stab × windup/release/recovery), all block directions, parry, stunned, and hit-stun states. Pose transitions use **quaternion slerp crossfade** (~80ms blend duration), matching the world animation system's blending approach. A subtle idle sway (sinusoidal bob on the hand bone) adds life when no combat action is active.
 
 ### Inventory
 | Key | Action |
@@ -172,10 +172,12 @@ src/
 │   ├── CharacterModel.ts    # Procedural low-poly character mesh + bone skeleton
 │   ├── WeaponModels.ts      # Procedural weapon mesh factories (per-weapon geometry)
 │   ├── ViewmodelRenderer.ts # First-person viewmodel (right arm + weapon, Layer 1)
+│   ├── ViewmodelAnimationSystem.ts # Viewmodel bone animation (reads CombatStateComp)
 │   ├── DebugRenderer.ts     # F1-F4 debug toggles (wireframe, physics, hitboxes, FSM)
 │   └── TracerDebugRenderer.ts  # Tracer sweep line visualization
 ├── animation/
 │   ├── AnimationData.ts     # Combat pose definitions + bone sets
+│   ├── ViewmodelAnimationData.ts # Per-weapon first-person viewmodel poses
 │   └── AnimationData.test.ts
 ├── inventory/
 │   └── InventoryData.ts     # Weapon ownership & equipment side-table
@@ -199,5 +201,5 @@ src/
 - **Data-driven weapons**: all weapon behavior (damage, timing, turncaps) comes from `WeaponConfig` objects.
 - **Tracer-based hits**: no simple raycasts. Weapons have tracer points swept between ticks.
 - **Damage pipeline**: TracerSystem detects hits → DamageSystem resolves block/parry/damage → HealthSystem applies HP changes.
-- **First-person viewmodel**: two-pass render layer architecture (Layer 0 = world, Layer 1 = viewmodel) with a dedicated camera for depth-correct weapon rendering.
+- **First-person viewmodel**: two-pass render layer architecture (Layer 0 = world, Layer 1 = viewmodel) with a dedicated camera for depth-correct weapon rendering. Bone-driven animation via `ViewmodelAnimationSystem` — per-weapon unique poses, quaternion slerp crossfade blending matching the world animation system.
 - **bitECS components are numbers-only**: complex data (meshes, skeletons) lives in `Map<number, ...>` side-tables.
