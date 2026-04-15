@@ -19,7 +19,7 @@
  *   vm_upper_arm_R
  *   └── vm_forearm_R
  *       └── vm_hand_R
- *           └── vm_weapon_attach  (pre-rotated Math.PI on X)
+ *           └── vm_weapon_attach  (pre-rotated Math.PI * 0.85 on X)
  */
 
 import * as THREE from 'three';
@@ -33,7 +33,10 @@ const VIEWMODEL_NEAR = 0.01;
 const VIEWMODEL_FAR = 5;
 
 /** Arm offset from camera in camera-local space (lower-right of view) */
-const ARM_OFFSET = new THREE.Vector3(0.3, -0.3, -0.5);
+const ARM_OFFSET = new THREE.Vector3(0.25, -0.25, -0.4);
+
+/** Pre-allocated vector for syncWithCamera (avoids per-frame allocation) */
+const _worldOffset = new THREE.Vector3();
 
 /** Arm proportions */
 const UPPER_ARM_W = 0.12;
@@ -136,7 +139,7 @@ export class ViewmodelRenderer {
     const weaponAttachBone = new THREE.Bone();
     weaponAttachBone.name = 'vm_weapon_attach';
     weaponAttachBone.position.set(0, -HAND_H, 0);
-    weaponAttachBone.rotation.x = Math.PI; // Flip +Y to point outward from hand
+    weaponAttachBone.rotation.x = Math.PI * 0.85; // Angle weapon slightly forward for natural grip
     handBone.add(weaponAttachBone);
 
     this.weaponAttachBone = weaponAttachBone;
@@ -297,8 +300,8 @@ export class ViewmodelRenderer {
 
     // Position arm group relative to camera using camera-local offset
     // Convert ARM_OFFSET from camera-local space to world space
-    const worldOffset = ARM_OFFSET.clone().applyQuaternion(worldCamera.quaternion);
-    this.group.position.copy(worldCamera.position).add(worldOffset);
+    _worldOffset.copy(ARM_OFFSET).applyQuaternion(worldCamera.quaternion);
+    this.group.position.copy(worldCamera.position).add(_worldOffset);
     this.group.quaternion.copy(worldCamera.quaternion);
   }
 

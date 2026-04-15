@@ -32,9 +32,9 @@ const DEG = Math.PI / 180;
 // ── Longsword — wide sweeping arcs, classic medieval FPS feel ──
 
 const LONGSWORD_IDLE: Pose = {
-  upper_arm_R: { x: -40 * DEG },
-  forearm_R:   { x: -30 * DEG },
-  hand_R:      { z: -5 * DEG },
+  upper_arm_R: { x: -30 * DEG, z: -8 * DEG },
+  forearm_R:   { x: -35 * DEG },
+  hand_R:      { x: -5 * DEG, z: -5 * DEG },
 };
 
 const LONGSWORD_ATTACKS: Record<number, CombatAnimation> = {
@@ -50,9 +50,9 @@ const LONGSWORD_ATTACKS: Record<number, CombatAnimation> = {
       hand_R:      { z: -15 * DEG },
     },
     recovery: {
-      upper_arm_R: { x: -40 * DEG },
-      forearm_R:   { x: -30 * DEG },
-      hand_R:      { z: -5 * DEG },
+      upper_arm_R: { x: -30 * DEG, z: -8 * DEG },
+      forearm_R:   { x: -35 * DEG },
+      hand_R:      { x: -5 * DEG, z: -5 * DEG },
     },
   },
   [AttackDirection.Right as number]: {
@@ -67,9 +67,9 @@ const LONGSWORD_ATTACKS: Record<number, CombatAnimation> = {
       hand_R:      { z: 15 * DEG },
     },
     recovery: {
-      upper_arm_R: { x: -40 * DEG },
-      forearm_R:   { x: -30 * DEG },
-      hand_R:      { z: -5 * DEG },
+      upper_arm_R: { x: -30 * DEG, z: -8 * DEG },
+      forearm_R:   { x: -35 * DEG },
+      hand_R:      { x: -5 * DEG, z: -5 * DEG },
     },
   },
   [AttackDirection.Overhead as number]: {
@@ -84,9 +84,9 @@ const LONGSWORD_ATTACKS: Record<number, CombatAnimation> = {
       hand_R:      { x: 5 * DEG },
     },
     recovery: {
-      upper_arm_R: { x: -40 * DEG },
-      forearm_R:   { x: -30 * DEG },
-      hand_R:      { z: -5 * DEG },
+      upper_arm_R: { x: -30 * DEG, z: -8 * DEG },
+      forearm_R:   { x: -35 * DEG },
+      hand_R:      { x: -5 * DEG, z: -5 * DEG },
     },
   },
   [AttackDirection.Underhand as number]: {
@@ -101,9 +101,9 @@ const LONGSWORD_ATTACKS: Record<number, CombatAnimation> = {
       hand_R:      { x: -5 * DEG },
     },
     recovery: {
-      upper_arm_R: { x: -40 * DEG },
-      forearm_R:   { x: -30 * DEG },
-      hand_R:      { z: -5 * DEG },
+      upper_arm_R: { x: -30 * DEG, z: -8 * DEG },
+      forearm_R:   { x: -35 * DEG },
+      hand_R:      { x: -5 * DEG, z: -5 * DEG },
     },
   },
   [AttackDirection.Stab as number]: {
@@ -118,9 +118,9 @@ const LONGSWORD_ATTACKS: Record<number, CombatAnimation> = {
       hand_R:      { x: 3 * DEG },
     },
     recovery: {
-      upper_arm_R: { x: -40 * DEG },
-      forearm_R:   { x: -30 * DEG },
-      hand_R:      { z: -5 * DEG },
+      upper_arm_R: { x: -30 * DEG, z: -8 * DEG },
+      forearm_R:   { x: -35 * DEG },
+      hand_R:      { x: -5 * DEG, z: -5 * DEG },
     },
   },
 };
@@ -178,9 +178,9 @@ const LONGSWORD_ANIMS: ViewmodelWeaponAnims = {
 // ── Mace — heavy, slower swings, extra wrist rotation ───
 
 const MACE_IDLE: Pose = {
-  upper_arm_R: { x: -35 * DEG },
-  forearm_R:   { x: -25 * DEG },
-  hand_R:      { z: -8 * DEG, y: 5 * DEG },
+  upper_arm_R: { x: -28 * DEG, z: -10 * DEG },
+  forearm_R:   { x: -30 * DEG },
+  hand_R:      { x: -5 * DEG, z: -8 * DEG, y: 5 * DEG },
 };
 
 const MACE_ATTACKS: Record<number, CombatAnimation> = {
@@ -196,9 +196,9 @@ const MACE_ATTACKS: Record<number, CombatAnimation> = {
       hand_R:      { z: -25 * DEG, y: -15 * DEG },
     },
     recovery: {
-      upper_arm_R: { x: -35 * DEG },
-      forearm_R:   { x: -25 * DEG },
-      hand_R:      { z: -8 * DEG, y: 5 * DEG },
+      upper_arm_R: { x: -28 * DEG, z: -10 * DEG },
+      forearm_R:   { x: -30 * DEG },
+      hand_R:      { x: -5 * DEG, z: -8 * DEG, y: 5 * DEG },
     },
   },
   [AttackDirection.Right as number]: {
@@ -213,9 +213,9 @@ const MACE_ATTACKS: Record<number, CombatAnimation> = {
       hand_R:      { z: 25 * DEG, y: 15 * DEG },
     },
     recovery: {
-      upper_arm_R: { x: -35 * DEG },
-      forearm_R:   { x: -25 * DEG },
-      hand_R:      { z: -8 * DEG, y: 5 * DEG },
+      upper_arm_R: { x: -28 * DEG, z: -10 * DEG },
+      forearm_R:   { x: -30 * DEG },
+      hand_R:      { x: -5 * DEG, z: -8 * DEG, y: 5 * DEG },
     },
   },
   [AttackDirection.Overhead as number]: {
@@ -231,9 +231,9 @@ const MACE_ATTACKS: Record<number, CombatAnimation> = {
       hand_R:      { x: 10 * DEG, z: -10 * DEG },
     },
     recovery: {
-      upper_arm_R: { x: -35 * DEG },
-      forearm_R:   { x: -25 * DEG },
-      hand_R:      { z: -8 * DEG, y: 5 * DEG },
+      upper_arm_R: { x: -28 * DEG, z: -10 * DEG },
+      forearm_R:   { x: -30 * DEG },
+      hand_R:      { x: -5 * DEG, z: -8 * DEG, y: 5 * DEG },
     },
   },
   [AttackDirection.Underhand as number]: {
@@ -248,9 +248,9 @@ const MACE_ATTACKS: Record<number, CombatAnimation> = {
       hand_R:      { x: -8 * DEG, y: -5 * DEG },
     },
     recovery: {
-      upper_arm_R: { x: -35 * DEG },
-      forearm_R:   { x: -25 * DEG },
-      hand_R:      { z: -8 * DEG, y: 5 * DEG },
+      upper_arm_R: { x: -28 * DEG, z: -10 * DEG },
+      forearm_R:   { x: -30 * DEG },
+      hand_R:      { x: -5 * DEG, z: -8 * DEG, y: 5 * DEG },
     },
   },
   [AttackDirection.Stab as number]: {
@@ -265,9 +265,9 @@ const MACE_ATTACKS: Record<number, CombatAnimation> = {
       hand_R:      { x: 5 * DEG, y: -5 * DEG },
     },
     recovery: {
-      upper_arm_R: { x: -35 * DEG },
-      forearm_R:   { x: -25 * DEG },
-      hand_R:      { z: -8 * DEG, y: 5 * DEG },
+      upper_arm_R: { x: -28 * DEG, z: -10 * DEG },
+      forearm_R:   { x: -30 * DEG },
+      hand_R:      { x: -5 * DEG, z: -8 * DEG, y: 5 * DEG },
     },
   },
 };
@@ -325,9 +325,9 @@ const MACE_ANIMS: ViewmodelWeaponAnims = {
 // ── Dagger — quick, snappy motions, tight close-range ───
 
 const DAGGER_IDLE: Pose = {
-  upper_arm_R: { x: -30 * DEG },
-  forearm_R:   { x: -40 * DEG },
-  hand_R:      { z: -3 * DEG },
+  upper_arm_R: { x: -22 * DEG, z: -5 * DEG },
+  forearm_R:   { x: -45 * DEG },
+  hand_R:      { x: -8 * DEG, z: -3 * DEG },
 };
 
 const DAGGER_ATTACKS: Record<number, CombatAnimation> = {
@@ -343,9 +343,9 @@ const DAGGER_ATTACKS: Record<number, CombatAnimation> = {
       hand_R:      { z: -10 * DEG },
     },
     recovery: {
-      upper_arm_R: { x: -30 * DEG },
-      forearm_R:   { x: -40 * DEG },
-      hand_R:      { z: -3 * DEG },
+      upper_arm_R: { x: -22 * DEG, z: -5 * DEG },
+      forearm_R:   { x: -45 * DEG },
+      hand_R:      { x: -8 * DEG, z: -3 * DEG },
     },
   },
   [AttackDirection.Right as number]: {
@@ -360,9 +360,9 @@ const DAGGER_ATTACKS: Record<number, CombatAnimation> = {
       hand_R:      { z: 10 * DEG },
     },
     recovery: {
-      upper_arm_R: { x: -30 * DEG },
-      forearm_R:   { x: -40 * DEG },
-      hand_R:      { z: -3 * DEG },
+      upper_arm_R: { x: -22 * DEG, z: -5 * DEG },
+      forearm_R:   { x: -45 * DEG },
+      hand_R:      { x: -8 * DEG, z: -3 * DEG },
     },
   },
   [AttackDirection.Overhead as number]: {
@@ -377,9 +377,9 @@ const DAGGER_ATTACKS: Record<number, CombatAnimation> = {
       hand_R:      { x: 5 * DEG },
     },
     recovery: {
-      upper_arm_R: { x: -30 * DEG },
-      forearm_R:   { x: -40 * DEG },
-      hand_R:      { z: -3 * DEG },
+      upper_arm_R: { x: -22 * DEG, z: -5 * DEG },
+      forearm_R:   { x: -45 * DEG },
+      hand_R:      { x: -8 * DEG, z: -3 * DEG },
     },
   },
   [AttackDirection.Underhand as number]: {
@@ -394,9 +394,9 @@ const DAGGER_ATTACKS: Record<number, CombatAnimation> = {
       hand_R:      { x: -5 * DEG },
     },
     recovery: {
-      upper_arm_R: { x: -30 * DEG },
-      forearm_R:   { x: -40 * DEG },
-      hand_R:      { z: -3 * DEG },
+      upper_arm_R: { x: -22 * DEG, z: -5 * DEG },
+      forearm_R:   { x: -45 * DEG },
+      hand_R:      { x: -8 * DEG, z: -3 * DEG },
     },
   },
   // Stab is the dagger's signature — fast thrust, minimal windup
@@ -412,9 +412,9 @@ const DAGGER_ATTACKS: Record<number, CombatAnimation> = {
       hand_R:      { x: 2 * DEG },
     },
     recovery: {
-      upper_arm_R: { x: -30 * DEG },
-      forearm_R:   { x: -40 * DEG },
-      hand_R:      { z: -3 * DEG },
+      upper_arm_R: { x: -22 * DEG, z: -5 * DEG },
+      forearm_R:   { x: -45 * DEG },
+      hand_R:      { x: -8 * DEG, z: -3 * DEG },
     },
   },
 };
@@ -472,9 +472,9 @@ const DAGGER_ANIMS: ViewmodelWeaponAnims = {
 // ── Battleaxe — exaggerated windups, devastating releases ──
 
 const BATTLEAXE_IDLE: Pose = {
-  upper_arm_R: { x: -45 * DEG },
-  forearm_R:   { x: -20 * DEG },
-  hand_R:      { z: -10 * DEG },
+  upper_arm_R: { x: -32 * DEG, z: -12 * DEG },
+  forearm_R:   { x: -25 * DEG },
+  hand_R:      { x: -5 * DEG, z: -10 * DEG },
 };
 
 const BATTLEAXE_ATTACKS: Record<number, CombatAnimation> = {
@@ -492,9 +492,9 @@ const BATTLEAXE_ATTACKS: Record<number, CombatAnimation> = {
       hand_R:      { z: -20 * DEG },
     },
     recovery: {
-      upper_arm_R: { x: -45 * DEG },
-      forearm_R:   { x: -20 * DEG },
-      hand_R:      { z: -10 * DEG },
+      upper_arm_R: { x: -32 * DEG, z: -12 * DEG },
+      forearm_R:   { x: -25 * DEG },
+      hand_R:      { x: -5 * DEG, z: -10 * DEG },
     },
   },
   [AttackDirection.Right as number]: {
@@ -511,9 +511,9 @@ const BATTLEAXE_ATTACKS: Record<number, CombatAnimation> = {
       hand_R:      { z: 20 * DEG },
     },
     recovery: {
-      upper_arm_R: { x: -45 * DEG },
-      forearm_R:   { x: -20 * DEG },
-      hand_R:      { z: -10 * DEG },
+      upper_arm_R: { x: -32 * DEG, z: -12 * DEG },
+      forearm_R:   { x: -25 * DEG },
+      hand_R:      { x: -5 * DEG, z: -10 * DEG },
     },
   },
   [AttackDirection.Overhead as number]: {
@@ -530,9 +530,9 @@ const BATTLEAXE_ATTACKS: Record<number, CombatAnimation> = {
       hand_R:      { x: 12 * DEG },
     },
     recovery: {
-      upper_arm_R: { x: -45 * DEG },
-      forearm_R:   { x: -20 * DEG },
-      hand_R:      { z: -10 * DEG },
+      upper_arm_R: { x: -32 * DEG, z: -12 * DEG },
+      forearm_R:   { x: -25 * DEG },
+      hand_R:      { x: -5 * DEG, z: -10 * DEG },
     },
   },
   [AttackDirection.Underhand as number]: {
@@ -547,9 +547,9 @@ const BATTLEAXE_ATTACKS: Record<number, CombatAnimation> = {
       hand_R:      { x: -10 * DEG },
     },
     recovery: {
-      upper_arm_R: { x: -45 * DEG },
-      forearm_R:   { x: -20 * DEG },
-      hand_R:      { z: -10 * DEG },
+      upper_arm_R: { x: -32 * DEG, z: -12 * DEG },
+      forearm_R:   { x: -25 * DEG },
+      hand_R:      { x: -5 * DEG, z: -10 * DEG },
     },
   },
   [AttackDirection.Stab as number]: {
@@ -564,9 +564,9 @@ const BATTLEAXE_ATTACKS: Record<number, CombatAnimation> = {
       hand_R:      { x: 5 * DEG },
     },
     recovery: {
-      upper_arm_R: { x: -45 * DEG },
-      forearm_R:   { x: -20 * DEG },
-      hand_R:      { z: -10 * DEG },
+      upper_arm_R: { x: -32 * DEG, z: -12 * DEG },
+      forearm_R:   { x: -25 * DEG },
+      hand_R:      { x: -5 * DEG, z: -10 * DEG },
     },
   },
 };
