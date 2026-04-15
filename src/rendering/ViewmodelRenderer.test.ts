@@ -28,6 +28,7 @@ describe('ViewmodelRenderer', () => {
     Dagger: createFakeWeaponFactory('Dagger'),
     Longsword: createFakeWeaponFactory('Longsword'),
     Mace: createFakeWeaponFactory('Mace'),
+    Battleaxe: createFakeWeaponFactory('Battleaxe'),
   };
 
   beforeEach(() => {
@@ -50,9 +51,25 @@ describe('ViewmodelRenderer', () => {
       expect(scene.children).toContain(viewmodel.group);
     });
 
-    it('viewmodel group has arm meshes (forearm + hand group)', () => {
-      // group has: forearm mesh + hand group
-      expect(viewmodel.group.children.length).toBe(2);
+    it('viewmodel group has skinned arm meshes and root bone', () => {
+      // group has: upper arm mesh + forearm mesh + hand mesh + root bone
+      expect(viewmodel.group.children.length).toBe(4);
+    });
+
+    it('arm meshes are SkinnedMesh instances', () => {
+      const upperArm = viewmodel.group.children.find(
+        (c) => c.name === 'viewmodel_upper_arm',
+      );
+      const forearm = viewmodel.group.children.find(
+        (c) => c.name === 'viewmodel_forearm',
+      );
+      const hand = viewmodel.group.children.find(
+        (c) => c.name === 'viewmodel_hand',
+      );
+
+      expect(upperArm).toBeInstanceOf(THREE.SkinnedMesh);
+      expect(forearm).toBeInstanceOf(THREE.SkinnedMesh);
+      expect(hand).toBeInstanceOf(THREE.SkinnedMesh);
     });
 
     it('sets all meshes to Layer 1 recursively', () => {
@@ -63,12 +80,10 @@ describe('ViewmodelRenderer', () => {
     });
 
     it('attaches initial weapon when factory is available', () => {
-      // hand group should have a hand mesh + weapon group
-      const handGroup = viewmodel.group.children.find(
-        (c) => c.name === 'viewmodel_hand',
-      ) as THREE.Group;
-      expect(handGroup).toBeDefined();
-      const weaponChild = handGroup.children.find((c) =>
+      // Weapon is attached to weapon_attach bone
+      const weaponAttach = viewmodel.bones['weapon_attach'];
+      expect(weaponAttach).toBeDefined();
+      const weaponChild = weaponAttach.children.find((c) =>
         c.name.startsWith('viewmodel_weapon_'),
       );
       expect(weaponChild).toBeDefined();
@@ -81,6 +96,50 @@ describe('ViewmodelRenderer', () => {
         weaponFactories: {},
       });
       expect(vm.group).toBeDefined();
+    });
+  });
+
+  describe('bone hierarchy', () => {
+    it('exposes bones record with canonical names (no vm_ prefix)', () => {
+      expect(viewmodel.bones).toBeDefined();
+      expect(viewmodel.bones['upper_arm_R']).toBeInstanceOf(THREE.Bone);
+      expect(viewmodel.bones['forearm_R']).toBeInstanceOf(THREE.Bone);
+      expect(viewmodel.bones['hand_R']).toBeInstanceOf(THREE.Bone);
+      expect(viewmodel.bones['weapon_attach']).toBeInstanceOf(THREE.Bone);
+    });
+
+    it('bones have vm_ prefixed internal names', () => {
+      expect(viewmodel.bones['upper_arm_R'].name).toBe('vm_upper_arm_R');
+      expect(viewmodel.bones['forearm_R'].name).toBe('vm_forearm_R');
+      expect(viewmodel.bones['hand_R'].name).toBe('vm_hand_R');
+      expect(viewmodel.bones['weapon_attach'].name).toBe('vm_weapon_attach');
+    });
+
+    it('bones form correct parent-child hierarchy', () => {
+      const upperArm = viewmodel.bones['upper_arm_R'];
+      const forearm = viewmodel.bones['forearm_R'];
+      const hand = viewmodel.bones['hand_R'];
+      const weaponAttach = viewmodel.bones['weapon_attach'];
+
+      // forearm is child of upper_arm
+      expect(forearm.parent).toBe(upperArm);
+      // hand is child of forearm
+      expect(hand.parent).toBe(forearm);
+      // weapon_attach is child of hand
+      expect(weaponAttach.parent).toBe(hand);
+    });
+
+    it('weapon_attach bone is pre-rotated Math.PI on X', () => {
+      const weaponAttach = viewmodel.bones['weapon_attach'];
+      expect(weaponAttach.rotation.x).toBeCloseTo(Math.PI);
+    });
+
+    it('root bone (upper_arm_R) is added to the group', () => {
+      const upperArm = viewmodel.bones['upper_arm_R'];
+      const boneInGroup = viewmodel.group.children.find(
+        (c) => c instanceof THREE.Bone && c.name === 'vm_upper_arm_R',
+      );
+      expect(boneInGroup).toBe(upperArm);
     });
   });
 
@@ -109,10 +168,8 @@ describe('ViewmodelRenderer', () => {
       const result = viewmodel.swapWeapon('Longsword');
       expect(result).toBe(true);
 
-      const handGroup = viewmodel.group.children.find(
-        (c) => c.name === 'viewmodel_hand',
-      ) as THREE.Group;
-      const weaponChild = handGroup.children.find((c) =>
+      const weaponAttach = viewmodel.bones['weapon_attach'];
+      const weaponChild = weaponAttach.children.find((c) =>
         c.name.startsWith('viewmodel_weapon_'),
       );
       expect(weaponChild!.name).toBe('viewmodel_weapon_Longsword');
@@ -122,11 +179,9 @@ describe('ViewmodelRenderer', () => {
       viewmodel.swapWeapon('Longsword');
       viewmodel.swapWeapon('Mace');
 
-      const handGroup = viewmodel.group.children.find(
-        (c) => c.name === 'viewmodel_hand',
-      ) as THREE.Group;
-      // Should only have hand mesh + new weapon (no old weapon)
-      const weapons = handGroup.children.filter((c) =>
+      const weaponAttach = viewmodel.bones['weapon_attach'];
+      // Should only have the new weapon (no old weapon)
+      const weapons = weaponAttach.children.filter((c) =>
         c.name.startsWith('viewmodel_weapon_'),
       );
       expect(weapons.length).toBe(1);
@@ -141,15 +196,39 @@ describe('ViewmodelRenderer', () => {
     it('sets new weapon meshes to Layer 1', () => {
       viewmodel.swapWeapon('Longsword');
 
-      const handGroup = viewmodel.group.children.find(
-        (c) => c.name === 'viewmodel_hand',
-      ) as THREE.Group;
-      const weaponChild = handGroup.children.find((c) =>
+      const weaponAttach = viewmodel.bones['weapon_attach'];
+      const weaponChild = weaponAttach.children.find((c) =>
         c.name.startsWith('viewmodel_weapon_'),
       );
       weaponChild!.traverse((obj) => {
         expect(obj.layers.mask).toBe(1 << VIEWMODEL_LAYER);
       });
+    });
+
+    it('weapon is a child of weapon_attach bone (not a plain Group)', () => {
+      viewmodel.swapWeapon('Battleaxe');
+
+      const weaponAttach = viewmodel.bones['weapon_attach'];
+      expect(weaponAttach).toBeInstanceOf(THREE.Bone);
+
+      const weaponChild = weaponAttach.children.find((c) =>
+        c.name.startsWith('viewmodel_weapon_'),
+      );
+      expect(weaponChild).toBeDefined();
+      expect(weaponChild!.name).toBe('viewmodel_weapon_Battleaxe');
+    });
+
+    it('all 4 weapons can be swapped successfully', () => {
+      for (const name of ['Longsword', 'Mace', 'Dagger', 'Battleaxe']) {
+        const result = viewmodel.swapWeapon(name);
+        expect(result).toBe(true);
+
+        const weaponAttach = viewmodel.bones['weapon_attach'];
+        const weaponChild = weaponAttach.children.find((c) =>
+          c.name.startsWith('viewmodel_weapon_'),
+        );
+        expect(weaponChild!.name).toBe(`viewmodel_weapon_${name}`);
+      }
     });
   });
 
