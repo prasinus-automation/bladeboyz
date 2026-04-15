@@ -61,6 +61,7 @@ bladeboyz/
 │   │   ├── HUD.ts               # HUD manager
 │   │   ├── HealthBar.ts
 │   │   ├── StaminaBar.ts
+│   │   ├── DirectionIndicator.ts # Mordhau-style compass-rose crosshair overlay (attack/block direction)
 │   │   ├── InventoryPanel.ts    # Tab inventory UI overlay (HTML/CSS, pointer lock toggle)
 │   │   └── DebugOverlay.ts      # FSM state, FPS counter
 │   └── utils/
