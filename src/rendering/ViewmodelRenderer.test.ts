@@ -129,9 +129,9 @@ describe('ViewmodelRenderer', () => {
       expect(weaponAttach.parent).toBe(hand);
     });
 
-    it('weapon_attach bone is pre-rotated Math.PI on X', () => {
+    it('weapon_attach bone is pre-rotated Math.PI * 0.85 on X', () => {
       const weaponAttach = viewmodel.bones['weapon_attach'];
-      expect(weaponAttach.rotation.x).toBeCloseTo(Math.PI);
+      expect(weaponAttach.rotation.x).toBeCloseTo(Math.PI * 0.85);
     });
 
     it('root bone (upper_arm_R) is added to the group', () => {
@@ -257,10 +257,10 @@ describe('ViewmodelRenderer', () => {
       viewmodel.syncWithCamera(worldCamera);
 
       // With identity quaternion, offset should be applied directly
-      // ARM_OFFSET = (0.3, -0.3, -0.5)
-      expect(viewmodel.group.position.x).toBeCloseTo(0.3);
-      expect(viewmodel.group.position.y).toBeCloseTo(-0.3);
-      expect(viewmodel.group.position.z).toBeCloseTo(-0.5);
+      // ARM_OFFSET = (0.25, -0.25, -0.4)
+      expect(viewmodel.group.position.x).toBeCloseTo(0.25);
+      expect(viewmodel.group.position.y).toBeCloseTo(-0.25);
+      expect(viewmodel.group.position.z).toBeCloseTo(-0.4);
     });
 
     it('applies camera rotation to viewmodel group orientation', () => {
