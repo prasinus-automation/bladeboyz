@@ -28,51 +28,51 @@ export const battleaxe: WeaponConfig = {
   },
 
   // -- Windup durations (ticks) --------------------------
-  // Very slow. Overhead is glacial at 30 ticks (~500ms).
+  // Very slow. Overhead is glacial at 31 ticks (~517ms).
 
   windup: {
-    [AttackDirection.Left]: 26,      // ~433ms
-    [AttackDirection.Right]: 26,     // ~433ms
-    [AttackDirection.Overhead]: 30,  // ~500ms -- massive telegraph
-    [AttackDirection.Underhand]: 28, // ~467ms
-    [AttackDirection.Stab]: 26,      // ~433ms -- butt spike thrust
+    [AttackDirection.Left]: 23,      // ~383ms
+    [AttackDirection.Right]: 23,     // ~383ms
+    [AttackDirection.Overhead]: 31,  // ~517ms -- massive telegraph
+    [AttackDirection.Underhand]: 25, // ~417ms
+    [AttackDirection.Stab]: 19,      // ~317ms -- butt spike thrust
   },
 
   // -- Release / active swing durations (ticks) ----------
   // Long release window compensates for slow windup.
 
   release: {
-    [AttackDirection.Left]: 12,      // ~200ms
-    [AttackDirection.Right]: 12,     // ~200ms
-    [AttackDirection.Overhead]: 14,  // ~233ms
-    [AttackDirection.Underhand]: 13, // ~217ms
-    [AttackDirection.Stab]: 12,      // ~200ms
+    [AttackDirection.Left]: 15,      // ~250ms
+    [AttackDirection.Right]: 15,     // ~250ms
+    [AttackDirection.Overhead]: 19,  // ~317ms
+    [AttackDirection.Underhand]: 15, // ~250ms
+    [AttackDirection.Stab]: 13,      // ~217ms
   },
 
   // -- Full recovery durations (ticks) -------------------
   // Extremely long. A whiffed swing is practically a death sentence.
 
   recovery: {
-    [AttackDirection.Left]: 28,      // ~467ms
-    [AttackDirection.Right]: 28,     // ~467ms
-    [AttackDirection.Overhead]: 32,  // ~533ms
-    [AttackDirection.Underhand]: 30, // ~500ms
-    [AttackDirection.Stab]: 28,      // ~467ms
+    [AttackDirection.Left]: 38,      // ~633ms
+    [AttackDirection.Right]: 38,     // ~633ms
+    [AttackDirection.Overhead]: 50,  // ~833ms
+    [AttackDirection.Underhand]: 44, // ~733ms
+    [AttackDirection.Stab]: 35,      // ~583ms
   },
 
   // -- Combo recovery durations (ticks) ------------------
   // Still slow but shorter than full recovery to reward aggression.
 
   comboRecovery: {
-    [AttackDirection.Left]: 20,      // ~333ms
-    [AttackDirection.Right]: 20,     // ~333ms
-    [AttackDirection.Overhead]: 24,  // ~400ms
-    [AttackDirection.Underhand]: 22, // ~367ms
-    [AttackDirection.Stab]: 20,      // ~333ms
+    [AttackDirection.Left]: 25,      // ~417ms
+    [AttackDirection.Right]: 25,     // ~417ms
+    [AttackDirection.Overhead]: 35,  // ~583ms
+    [AttackDirection.Underhand]: 29, // ~483ms
+    [AttackDirection.Stab]: 23,      // ~383ms
   },
 
   // -- Parry window (ticks) ------------------------------
-  parryWindow: 9,
+  parryWindow: 14,
 
   // -- Stamina costs -------------------------------------
   // Very expensive. Can only sustain a few swings.
@@ -109,8 +109,8 @@ export const battleaxe: WeaponConfig = {
   // -- Combat resolution values --------------------------
 
   blockStaminaDrain: 30,
-  parryStunTicks: 50,
-  hitStunTicks: 40,
+  parryStunTicks: 75,
+  hitStunTicks: 55,
 };
 
 registerWeapon(battleaxe);

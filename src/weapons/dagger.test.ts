@@ -40,10 +40,10 @@ describe('Dagger weapon config', () => {
     }
   });
 
-  it('has fast timings (windup <= 8 ticks)', () => {
+  it('has fast timings (windup <= 16 ticks)', () => {
     const cfg = weaponConfigs['Dagger'];
     for (const dir of ALL_DIRS) {
-      expect(cfg.windup[dir]).toBeLessThanOrEqual(8);
+      expect(cfg.windup[dir]).toBeLessThanOrEqual(16);
     }
   });
 

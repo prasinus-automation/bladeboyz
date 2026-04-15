@@ -30,14 +30,14 @@ export const longsword: WeaponConfig = {
 
   // ── Windup durations (ticks) ──────────────────────────
   // How long before the blade becomes active after initiating an attack.
-  // Overhead is slowest (10), horizontal swings are fastest (6-7).
+  // Overhead is slowest (25), horizontal swings are moderate (18).
 
   windup: {
-    [AttackDirection.Left]: 7,       // ~117ms
-    [AttackDirection.Right]: 7,      // ~117ms
-    [AttackDirection.Overhead]: 10,   // ~167ms — slowest but highest damage
-    [AttackDirection.Underhand]: 8,  // ~133ms
-    [AttackDirection.Stab]: 6,       // ~100ms — fastest windup
+    [AttackDirection.Left]: 18,      // ~300ms
+    [AttackDirection.Right]: 18,     // ~300ms
+    [AttackDirection.Overhead]: 25,  // ~417ms — slowest but highest damage
+    [AttackDirection.Underhand]: 20, // ~333ms
+    [AttackDirection.Stab]: 15,      // ~250ms — fastest windup
   },
 
   // ── Release / active swing durations (ticks) ─────────
@@ -45,11 +45,11 @@ export const longsword: WeaponConfig = {
   // Stab is shortest (tight timing), overhead is longest.
 
   release: {
-    [AttackDirection.Left]: 5,       // ~83ms
-    [AttackDirection.Right]: 5,      // ~83ms
-    [AttackDirection.Overhead]: 6,   // ~100ms
-    [AttackDirection.Underhand]: 5,  // ~83ms
-    [AttackDirection.Stab]: 4,       // ~67ms — narrow hit window
+    [AttackDirection.Left]: 12,      // ~200ms
+    [AttackDirection.Right]: 12,     // ~200ms
+    [AttackDirection.Overhead]: 15,  // ~250ms
+    [AttackDirection.Underhand]: 12, // ~200ms
+    [AttackDirection.Stab]: 10,      // ~167ms — narrow hit window
   },
 
   // ── Full recovery durations (ticks) ───────────────────
@@ -57,11 +57,11 @@ export const longsword: WeaponConfig = {
   // Overhead has longest recovery to balance its high damage.
 
   recovery: {
-    [AttackDirection.Left]: 14,      // ~233ms
-    [AttackDirection.Right]: 14,     // ~233ms
-    [AttackDirection.Overhead]: 18,  // ~300ms — punished if you miss
-    [AttackDirection.Underhand]: 15, // ~250ms
-    [AttackDirection.Stab]: 12,      // ~200ms — quickest recovery
+    [AttackDirection.Left]: 30,      // ~500ms
+    [AttackDirection.Right]: 30,     // ~500ms
+    [AttackDirection.Overhead]: 40,  // ~667ms — punished if you miss
+    [AttackDirection.Underhand]: 35, // ~583ms
+    [AttackDirection.Stab]: 28,      // ~467ms — quickest recovery
   },
 
   // ── Combo recovery durations (ticks) ──────────────────
@@ -69,18 +69,18 @@ export const longsword: WeaponConfig = {
   // Encourages aggressive play with mix-up potential.
 
   comboRecovery: {
-    [AttackDirection.Left]: 9,       // ~150ms
-    [AttackDirection.Right]: 9,      // ~150ms
-    [AttackDirection.Overhead]: 12,  // ~200ms
-    [AttackDirection.Underhand]: 10, // ~167ms
-    [AttackDirection.Stab]: 8,       // ~133ms
+    [AttackDirection.Left]: 20,      // ~333ms
+    [AttackDirection.Right]: 20,     // ~333ms
+    [AttackDirection.Overhead]: 28,  // ~467ms
+    [AttackDirection.Underhand]: 23, // ~383ms
+    [AttackDirection.Stab]: 18,      // ~300ms
   },
 
   // ── Parry window (ticks) ──────────────────────────────
   // Duration at the start of block where a parry is registered.
-  // 8 ticks ≈ 133ms — tight but learnable.
+  // 12 ticks ≈ 200ms — tight but learnable.
 
-  parryWindow: 8,
+  parryWindow: 12,
 
   // ── Stamina costs ─────────────────────────────────────
 
@@ -130,10 +130,10 @@ export const longsword: WeaponConfig = {
   blockStaminaDrain: 10,
 
   /** Recovery ticks applied to attacker when parried */
-  parryStunTicks: 40,
+  parryStunTicks: 60,
 
   /** HitStun ticks applied to target on unblocked hit */
-  hitStunTicks: 30,
+  hitStunTicks: 45,
 };
 
 // Auto-register on import so systems can look up by name

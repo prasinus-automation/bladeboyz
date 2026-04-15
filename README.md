@@ -87,7 +87,7 @@ All weapons are data-driven via `WeaponConfig` objects — damage, timing, turnc
 |--------|-------|-------|--------------------------|---------|-------|
 | **Longsword** | 1.4 | Fast | 50–55 / 35–40 / 20–25 | 15 | Balanced all-rounder. Good reach and moderate speed. Reliable across all directions. |
 | **Dagger** | 0.35 | Very Fast | 22–25 / 15–18 / 10–12 | 8 | Lightning-fast but short range. Low stamina cost lets you combo freely. |
-| **Mace** | 0.6 | Slow | 42–55 / 30–40 / 20–25 | 18 | Heavy blunt weapon. High stun duration (45 ticks) punishes failed parries. |
+| **Mace** | 0.6 | Slow | 42–55 / 30–40 / 20–25 | 18 | Heavy blunt weapon. High stun duration (68 ticks) punishes failed parries. |
 | **Battleaxe** | 1.2 | Very Slow | 55–75 / 40–55 / 28–35 | 24 | Devastating damage but long windups. Overheads deal up to 75 head damage. |
 
 *Damage ranges show min–max across attack directions (left, right, overhead, underhand, stab). Actual damage depends on attack direction and body region hit.*
@@ -100,7 +100,7 @@ BladeBoyz uses a **directional melee combat system** inspired by Mordhau and Chi
 Mouse movement before clicking determines your attack direction — sweep left for a left swing, pull down for an underhand, push forward for a stab. Blocking works the same way: hold RMB in the correct direction to block an incoming attack. Mismatched block direction lets the attack through.
 
 ### Parry & Riposte
-Tapping block just as an attack enters its Release phase triggers a **parry**. A successful parry stuns the attacker (30–50 ticks depending on weapon) and opens a **riposte window** — your next attack comes out faster with reduced stamina cost.
+Tapping block just as an attack enters its Release phase triggers a **parry**. A successful parry stuns the attacker (40–75 ticks depending on weapon) and opens a **riposte window** — your next attack comes out faster with reduced stamina cost.
 
 ### Stamina
 Every action costs stamina: attacking, blocking, feinting. Blocking drains stamina based on the attacker's weapon weight (8–30 per block). Running out of stamina leaves you unable to block.

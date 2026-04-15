@@ -27,49 +27,49 @@ export const mace: WeaponConfig = {
   },
 
   // -- Windup durations (ticks) --------------------------
-  // Slow across the board. Overhead is punishing at 24 ticks (~400ms).
+  // Slow across the board. Overhead is punishing at 29 ticks (~483ms).
 
   windup: {
-    [AttackDirection.Left]: 20,      // ~333ms
-    [AttackDirection.Right]: 20,     // ~333ms
-    [AttackDirection.Overhead]: 24,  // ~400ms -- signature slam
-    [AttackDirection.Underhand]: 22, // ~367ms
-    [AttackDirection.Stab]: 20,      // ~333ms -- pommel strike
+    [AttackDirection.Left]: 21,      // ~350ms
+    [AttackDirection.Right]: 21,     // ~350ms
+    [AttackDirection.Overhead]: 29,  // ~483ms -- signature slam
+    [AttackDirection.Underhand]: 23, // ~383ms
+    [AttackDirection.Stab]: 17,      // ~283ms -- pommel strike
   },
 
   // -- Release / active swing durations (ticks) ----------
 
   release: {
-    [AttackDirection.Left]: 8,       // ~133ms
-    [AttackDirection.Right]: 8,      // ~133ms
-    [AttackDirection.Overhead]: 10,  // ~167ms
-    [AttackDirection.Underhand]: 9,  // ~150ms
-    [AttackDirection.Stab]: 8,       // ~133ms
+    [AttackDirection.Left]: 14,      // ~233ms
+    [AttackDirection.Right]: 14,     // ~233ms
+    [AttackDirection.Overhead]: 17,  // ~283ms
+    [AttackDirection.Underhand]: 14, // ~233ms
+    [AttackDirection.Stab]: 12,      // ~200ms
   },
 
   // -- Full recovery durations (ticks) -------------------
   // Very long recovery. Missing a swing is costly.
 
   recovery: {
-    [AttackDirection.Left]: 22,      // ~367ms
-    [AttackDirection.Right]: 22,     // ~367ms
-    [AttackDirection.Overhead]: 26,  // ~433ms
-    [AttackDirection.Underhand]: 24, // ~400ms
-    [AttackDirection.Stab]: 22,      // ~367ms
+    [AttackDirection.Left]: 34,      // ~567ms
+    [AttackDirection.Right]: 34,     // ~567ms
+    [AttackDirection.Overhead]: 46,  // ~767ms
+    [AttackDirection.Underhand]: 40, // ~667ms
+    [AttackDirection.Stab]: 32,      // ~533ms
   },
 
   // -- Combo recovery durations (ticks) ------------------
 
   comboRecovery: {
-    [AttackDirection.Left]: 16,      // ~267ms
-    [AttackDirection.Right]: 16,     // ~267ms
-    [AttackDirection.Overhead]: 20,  // ~333ms
-    [AttackDirection.Underhand]: 18, // ~300ms
-    [AttackDirection.Stab]: 16,      // ~267ms
+    [AttackDirection.Left]: 23,      // ~383ms
+    [AttackDirection.Right]: 23,     // ~383ms
+    [AttackDirection.Overhead]: 32,  // ~533ms
+    [AttackDirection.Underhand]: 27, // ~450ms
+    [AttackDirection.Stab]: 21,      // ~350ms
   },
 
   // -- Parry window (ticks) ------------------------------
-  parryWindow: 7,
+  parryWindow: 10,
 
   // -- Stamina costs -------------------------------------
 
@@ -104,8 +104,8 @@ export const mace: WeaponConfig = {
   // -- Combat resolution values --------------------------
 
   blockStaminaDrain: 25,
-  parryStunTicks: 45,
-  hitStunTicks: 35,
+  parryStunTicks: 68,
+  hitStunTicks: 50,
 };
 
 registerWeapon(mace);
