@@ -12,9 +12,11 @@ import {
   AnimationComp,
   meshRegistry,
   hitboxColliderRegistry,
+  TracerTag,
 } from '../components';
 import { createCharacterModel } from '../../rendering/CharacterModel';
 import { createHitboxes } from '../systems/HitboxSystem';
+import { weaponBoneMap } from '../systems/TracerSystem';
 import { CombatState } from '../../combat/states';
 import { BlockDirection } from '../../combat/directions';
 import { SPAWN_HEIGHT } from '../../core/types';
@@ -56,6 +58,7 @@ export function createDummy(
   addComponent(world.ecs, CombatStateComp, eid);
   addComponent(world.ecs, CombatStateComponent, eid);
   addComponent(world.ecs, AnimationComp, eid);
+  addComponent(world.ecs, TracerTag, eid);
 
   Position.x[eid] = x;
   Position.y[eid] = y;
@@ -83,6 +86,10 @@ export function createDummy(
 
   world.scene.add(group);
   createHitboxes(world, eid, skeleton, bones);
+
+  // Register weapon bone for tracer system (even though dummies don't attack yet)
+  const weaponBone = bones['weapon_attach'];
+  if (weaponBone) weaponBoneMap.set(eid, weaponBone);
 
   activeDummies.push(eid);
   dummyLastHitTick.set(eid, -HEALTH_RESET_TICKS); // allow immediate regen

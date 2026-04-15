@@ -16,12 +16,16 @@ import {
   CombatStateComponent,
   AnimationComp,
   CharacterModel,
+  TracerTag,
+  Hitboxes,
   meshRegistry,
 } from '../components';
 import { registerPhysicsBody } from '../systems/MovementSystem';
 import { createCharacterModel } from '../../rendering/CharacterModel';
 import { weaponModelFactories } from '../../rendering/WeaponModels';
 import { weaponIdToName } from '../systems/CombatSystem';
+import { weaponBoneMap } from '../systems/TracerSystem';
+import { createHitboxes } from '../systems/HitboxSystem';
 import { CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS, SPAWN_HEIGHT } from '../../core/types';
 import type { GameWorld } from '../../core/types';
 
@@ -63,6 +67,8 @@ export function createPlayer(
   addComponent(world.ecs, CombatStateComp, eid);
   addComponent(world.ecs, CombatStateComponent, eid);
   addComponent(world.ecs, AnimationComp, eid);
+  addComponent(world.ecs, TracerTag, eid);
+  addComponent(world.ecs, Hitboxes, eid);
 
   // Set initial values
   Position.x[eid] = spawnPos.x;
@@ -112,6 +118,7 @@ export function createPlayer(
   // Attach starting weapon model to the weapon_attach bone on hand_R
   const weaponAttachBone = bones['weapon_attach'];
   if (weaponAttachBone) {
+    weaponBoneMap.set(eid, weaponAttachBone);
     const factory = weaponModelFactories[startingWeapon];
     if (factory) {
       const weaponModel = factory();
@@ -121,6 +128,9 @@ export function createPlayer(
 
   group.position.set(spawnPos.x, spawnPos.y, spawnPos.z);
   world.scene.add(group);
+
+  // Create hitbox sensor colliders for the player (enables damage detection)
+  createHitboxes(world, eid, characterModelData.skeleton, characterModelData.bones);
 
   return { eid, mesh: group };
 }

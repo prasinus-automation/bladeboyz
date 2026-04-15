@@ -11,6 +11,7 @@ import {
   BodyRegion,
 } from '../components';
 import type { GameWorld } from '../../core/types';
+import { colliderToHitbox } from './TracerSystem';
 
 /* ─── Hitbox dimensions per region (half-extents) ─── */
 
@@ -96,6 +97,7 @@ export function createHitboxes(
 
     const collider = world.physicsWorld.createCollider(colliderDesc, rigidBody);
     colliderMap.set(def.region, collider);
+    colliderToHitbox.set(collider.handle, { ownerEid: entity, bodyRegion: def.region });
   }
 
   hitboxColliderRegistry.set(entity, colliderMap);
