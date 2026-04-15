@@ -132,14 +132,8 @@ Two ECS components track combat state: `CombatStateComponent` (authoritative —
 ### Two Disconnected Inventory Modules (NEEDS FIX)
 `src/inventory/InventoryData.ts` is a lightweight UI-only side-table used by `InventoryPanel.ts`. `src/ecs/systems/InventorySystem.ts` is the real system with full equip logic (3D model swap, FSM update, ECS sync). **They maintain separate data stores.** `InventoryData.ts` is never initialized in `main.ts`, so the UI weapons grid is always empty. The UI's `equipWeapon()` only updates the InventoryData side-table — it does NOT swap 3D models, update FSM, or sync `CombatStateComponent.weaponId`. Fix: wire `InventoryPanel.ts` to import from `InventorySystem.ts` instead.
 
-### Damage Pipeline Completely Unwired (CRITICAL — NEEDS FIX)
-The tracer-based hit detection pipeline (`TracerSystem` → `DamageSystem` → `HealthSystem`) is fully coded but **never connected**. Four missing wiring points:
-1. **`TracerTag` never added** — `tracerQuery` in TracerSystem.ts:87 requires `[CombatStateComponent, TracerTag]`, but neither `createPlayer.ts` nor `createDummy.ts` adds `TracerTag`. The query returns empty.
-2. **`weaponBoneMap` never populated** — TracerSystem.ts:62 exports it but nobody calls `.set()`. TracerSystem needs this to find the weapon_attach bone for world-space tracer transforms.
-3. **`weaponConfigMap` never populated** — TracerSystem.ts:55 exports it but nobody calls `.set()`. TracerSystem needs this to look up tracer points and damage values.
-4. **`colliderToHitbox` never populated** — TracerSystem.ts:68 exports it but nobody calls `.set()`. `createHitboxes()` in HitboxSystem.ts populates `hitboxColliderRegistry` (Map<eid, Map<region, Collider>>) but never writes to `colliderToHitbox` (Map<colliderHandle, {ownerEid, bodyRegion}>).
-5. **Player has no hitboxes** — `createHitboxes()` is called for dummies (createDummy.ts:85) but not for the player.
-Fix: Add TracerTag + populate all three side-maps in entity factories and InventorySystem.equipWeapon(). Add colliderToHitbox population in createHitboxes(). Create hitboxes for the player.
+### Damage Pipeline (WIRED — PR #60)
+The tracer-based hit detection pipeline (`TracerSystem` → `DamageSystem` → `HealthSystem`) is now fully connected. All 5 wiring points fixed: `TracerTag` added to player and dummies, `weaponBoneMap` populated in entity factories, `weaponConfigMap` populated in main.ts from `weaponConfigs` registry, `colliderToHitbox` populated in `createHitboxes()`, and player entity now has hitbox sensor colliders. Note: `weaponBoneMap` and `weaponConfigMap` must also be updated when weapons are swapped at runtime (handled by `InventorySystem.equipWeapon()`).
 
 ### First-Person Viewmodel (IMPLEMENTED — PR #57)
 `ViewmodelRenderer` (`src/rendering/ViewmodelRenderer.ts`) renders a procedural right arm + weapon in FPS mode using Two-pass Layer architecture: Layer 0 = world, Layer 1 = viewmodel. Separate `PerspectiveCamera` (FOV 70, near 0.01). Weapon swaps automatically via `onEquip` listener. `CameraController.setViewmodel()` toggles visibility on F5 camera mode switch. Minor optimization opportunity: `ARM_OFFSET.clone()` allocates every frame in `syncWithCamera()`.
