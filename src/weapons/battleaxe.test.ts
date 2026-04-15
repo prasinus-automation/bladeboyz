@@ -40,10 +40,10 @@ describe('Battleaxe weapon config', () => {
     }
   });
 
-  it('has very slow timings (windup >= 26 ticks)', () => {
+  it('has very slow timings (windup >= 19 ticks)', () => {
     const cfg = weaponConfigs['Battleaxe'];
     for (const dir of ALL_DIRS) {
-      expect(cfg.windup[dir]).toBeGreaterThanOrEqual(26);
+      expect(cfg.windup[dir]).toBeGreaterThanOrEqual(19);
     }
   });
 

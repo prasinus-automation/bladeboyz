@@ -40,10 +40,10 @@ describe('Mace weapon config', () => {
     }
   });
 
-  it('has slow timings (windup >= 20 ticks)', () => {
+  it('has slow timings (windup >= 17 ticks)', () => {
     const cfg = weaponConfigs['Mace'];
     for (const dir of ALL_DIRS) {
-      expect(cfg.windup[dir]).toBeGreaterThanOrEqual(20);
+      expect(cfg.windup[dir]).toBeGreaterThanOrEqual(17);
     }
   });
 

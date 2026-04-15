@@ -27,51 +27,51 @@ export const dagger: WeaponConfig = {
   },
 
   // -- Windup durations (ticks) --------------------------
-  // Very fast across the board. Stab is nearly instant at 6 ticks.
+  // Very fast across the board. Stab is snappy at 10 ticks.
 
   windup: {
-    [AttackDirection.Left]: 7,       // ~117ms
-    [AttackDirection.Right]: 7,      // ~117ms
-    [AttackDirection.Overhead]: 8,   // ~133ms
-    [AttackDirection.Underhand]: 7,  // ~117ms
-    [AttackDirection.Stab]: 6,       // ~100ms -- fastest attack
+    [AttackDirection.Left]: 12,      // ~200ms
+    [AttackDirection.Right]: 12,     // ~200ms
+    [AttackDirection.Overhead]: 16,  // ~267ms
+    [AttackDirection.Underhand]: 13, // ~217ms
+    [AttackDirection.Stab]: 10,      // ~167ms -- fastest attack
   },
 
   // -- Release / active swing durations (ticks) ----------
-  // Very short windows require precise timing.
+  // Short windows require precise timing.
 
   release: {
-    [AttackDirection.Left]: 5,       // ~83ms
-    [AttackDirection.Right]: 5,      // ~83ms
-    [AttackDirection.Overhead]: 6,   // ~100ms
-    [AttackDirection.Underhand]: 5,  // ~83ms
-    [AttackDirection.Stab]: 4,       // ~67ms
+    [AttackDirection.Left]: 8,       // ~133ms
+    [AttackDirection.Right]: 8,      // ~133ms
+    [AttackDirection.Overhead]: 10,  // ~167ms
+    [AttackDirection.Underhand]: 8,  // ~133ms
+    [AttackDirection.Stab]: 7,       // ~117ms
   },
 
   // -- Full recovery durations (ticks) -------------------
   // Fast recovery enables rapid follow-ups.
 
   recovery: {
-    [AttackDirection.Left]: 12,      // ~200ms
-    [AttackDirection.Right]: 12,     // ~200ms
-    [AttackDirection.Overhead]: 14,  // ~233ms
-    [AttackDirection.Underhand]: 12, // ~200ms
-    [AttackDirection.Stab]: 10,      // ~167ms
+    [AttackDirection.Left]: 20,      // ~333ms
+    [AttackDirection.Right]: 20,     // ~333ms
+    [AttackDirection.Overhead]: 26,  // ~433ms
+    [AttackDirection.Underhand]: 23, // ~383ms
+    [AttackDirection.Stab]: 18,      // ~300ms
   },
 
   // -- Combo recovery durations (ticks) ------------------
   // Very fast combo recovery rewards aggressive play.
 
   comboRecovery: {
-    [AttackDirection.Left]: 7,       // ~117ms
-    [AttackDirection.Right]: 7,      // ~117ms
-    [AttackDirection.Overhead]: 9,   // ~150ms
-    [AttackDirection.Underhand]: 8,  // ~133ms
-    [AttackDirection.Stab]: 6,       // ~100ms
+    [AttackDirection.Left]: 13,      // ~217ms
+    [AttackDirection.Right]: 13,     // ~217ms
+    [AttackDirection.Overhead]: 18,  // ~300ms
+    [AttackDirection.Underhand]: 15, // ~250ms
+    [AttackDirection.Stab]: 12,      // ~200ms
   },
 
   // -- Parry window (ticks) ------------------------------
-  parryWindow: 6,
+  parryWindow: 8,
 
   // -- Stamina costs -------------------------------------
   // Low costs allow sustained aggression.
@@ -106,8 +106,8 @@ export const dagger: WeaponConfig = {
   // -- Combat resolution values --------------------------
 
   blockStaminaDrain: 8,
-  parryStunTicks: 25,
-  hitStunTicks: 20,
+  parryStunTicks: 40,
+  hitStunTicks: 30,
 };
 
 registerWeapon(dagger);
