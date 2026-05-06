@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { InputManager } from './InputManager';
 
 // Mock DOM environment
@@ -6,6 +6,9 @@ function createMockCanvas() {
   return {
     requestPointerLock: vi.fn(),
     addEventListener: vi.fn(),
+    setAttribute: vi.fn(),
+    hasAttribute: vi.fn().mockReturnValue(false),
+    style: {} as CSSStyleDeclaration,
   } as unknown as HTMLElement;
 }
 
@@ -268,6 +271,15 @@ describe('InputManager', () => {
     });
   });
 
+  describe('canvas tabindex', () => {
+    it('sets tabindex=0 on canvas during construction (HTMLElement only)', () => {
+      // The mock canvas isn't an HTMLElement so the branch is skipped.
+      // We assert via a real canvas in a separate suite below.
+      // Here just verify the constructor was called without errors.
+      expect(canvas).toBeDefined();
+    });
+  });
+
   describe('scroll delta', () => {
     it('returns zero scroll delta by default', () => {
       expect(input.getScrollDelta()).toBe(0);
@@ -278,6 +290,203 @@ describe('InputManager', () => {
       expect(input.getScrollDelta()).toBe(100);
       input.resetFrameDeltas();
       expect(input.getScrollDelta()).toBe(0);
+    });
+  });
+});
+
+/**
+ * Regression suite for issue #82 (WASD movement doesn't work in browser).
+ *
+ * These tests use a REAL HTMLCanvasElement (not a mock) and dispatch REAL
+ * KeyboardEvents to verify the full keyboard input path. The previous bug
+ * symptom was that mouse aim worked (mousemove on document was reaching
+ * the InputManager) but WASD didn't (keydown wasn't reaching it). The fix:
+ *  - Add tabindex=0 to the canvas so it can hold keyboard focus under pointer lock
+ *  - Listen on BOTH document AND the canvas itself (Set semantics make duplicate
+ *    delivery idempotent)
+ *  - Auto-focus the canvas when pointer lock is acquired
+ */
+describe('InputManager — issue #82 WASD regression', () => {
+  let realCanvas: HTMLCanvasElement;
+  let input: InputManager;
+
+  beforeEach(() => {
+    // The outer suite spies on document.addEventListener — restore those
+    // mocks so this suite uses the real document event flow.
+    vi.restoreAllMocks();
+
+    // Use a REAL canvas so we can verify tabindex / focus / native event flow
+    realCanvas = document.createElement('canvas');
+    document.body.appendChild(realCanvas);
+    input = new InputManager(realCanvas);
+  });
+
+  afterEach(() => {
+    realCanvas.remove();
+    delete (globalThis as any).__debugInput;
+  });
+
+  describe('canvas tabindex', () => {
+    it('sets tabindex="0" on the canvas during construction', () => {
+      expect(realCanvas.getAttribute('tabindex')).toBe('0');
+    });
+
+    it('does not override an existing tabindex set by the host page', () => {
+      // Create a fresh canvas with pre-existing tabindex
+      const c2 = document.createElement('canvas');
+      c2.setAttribute('tabindex', '5');
+      document.body.appendChild(c2);
+      // eslint-disable-next-line no-new
+      new InputManager(c2);
+      expect(c2.getAttribute('tabindex')).toBe('5');
+      c2.remove();
+    });
+
+    it('hides the focus outline on the canvas (game viewport)', () => {
+      expect(realCanvas.style.outline).toBe('none');
+    });
+  });
+
+  describe('keyboard event delivery — multiple targets', () => {
+    it('captures keydown dispatched on document', () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' }));
+      expect(input.isKeyDown('KeyW')).toBe(true);
+    });
+
+    it('captures keydown dispatched directly on the canvas', () => {
+      realCanvas.dispatchEvent(
+        new KeyboardEvent('keydown', { code: 'KeyA', bubbles: false }),
+      );
+      expect(input.isKeyDown('KeyA')).toBe(true);
+    });
+
+    it('captures keyup dispatched on document', () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyS' }));
+      expect(input.isKeyDown('KeyS')).toBe(true);
+      document.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyS' }));
+      expect(input.isKeyDown('KeyS')).toBe(false);
+    });
+
+    it('captures keyup dispatched on canvas only', () => {
+      realCanvas.dispatchEvent(
+        new KeyboardEvent('keydown', { code: 'KeyD', bubbles: false }),
+      );
+      expect(input.isKeyDown('KeyD')).toBe(true);
+      realCanvas.dispatchEvent(
+        new KeyboardEvent('keyup', { code: 'KeyD', bubbles: false }),
+      );
+      expect(input.isKeyDown('KeyD')).toBe(false);
+    });
+
+    it('handles bubbled canvas events without double-tracking (Set idempotency)', () => {
+      // A bubbling event hits both the canvas listener AND the document listener.
+      // Set.add is idempotent so the key is correctly tracked once.
+      realCanvas.dispatchEvent(
+        new KeyboardEvent('keydown', { code: 'KeyW', bubbles: true }),
+      );
+      expect(input.isKeyDown('KeyW')).toBe(true);
+      // Single keyup removes it cleanly
+      realCanvas.dispatchEvent(
+        new KeyboardEvent('keyup', { code: 'KeyW', bubbles: true }),
+      );
+      expect(input.isKeyDown('KeyW')).toBe(false);
+    });
+
+    it('all four WASD keys are independently tracked from real events', () => {
+      const codes = ['KeyW', 'KeyA', 'KeyS', 'KeyD'];
+      for (const code of codes) {
+        document.dispatchEvent(new KeyboardEvent('keydown', { code }));
+      }
+      for (const code of codes) {
+        expect(input.isKeyDown(code)).toBe(true);
+      }
+      for (const code of codes) {
+        document.dispatchEvent(new KeyboardEvent('keyup', { code }));
+        expect(input.isKeyDown(code)).toBe(false);
+      }
+    });
+
+    it('Shift, Control, and Space modifiers are tracked', () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'ShiftLeft' }));
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'ControlLeft' }));
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' }));
+      expect(input.isKeyDown('ShiftLeft')).toBe(true);
+      expect(input.isKeyDown('ControlLeft')).toBe(true);
+      expect(input.isKeyDown('Space')).toBe(true);
+    });
+  });
+
+  describe('paused gating with real events', () => {
+    it('keydown dispatched while paused does not register the key', () => {
+      input.paused = true;
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' }));
+      expect(input.isKeyDown('KeyW')).toBe(false);
+      input.paused = false;
+      // Even after unpausing, the key wasn't added (gated at write time)
+      expect(input.isKeyDown('KeyW')).toBe(false);
+    });
+
+    it('keyup is processed while paused (no stuck keys)', () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' }));
+      input.paused = true;
+      document.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW' }));
+      input.paused = false;
+      expect(input.isKeyDown('KeyW')).toBe(false);
+    });
+  });
+
+  describe('debug instrumentation', () => {
+    it('does not log when __debugInput is unset', () => {
+      const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' }));
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    });
+
+    it('logs keydown events when __debugInput is true', () => {
+      const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      (globalThis as any).__debugInput = true;
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' }));
+      expect(spy).toHaveBeenCalledWith(
+        '[InputManager] keydown',
+        'KeyW',
+        'paused?',
+        false,
+      );
+      spy.mockRestore();
+    });
+  });
+
+  describe('pointer lock auto-focus', () => {
+    it('focuses the canvas when pointer lock is acquired', () => {
+      const focusSpy = vi.spyOn(realCanvas, 'focus');
+      Object.defineProperty(document, 'pointerLockElement', {
+        value: realCanvas,
+        configurable: true,
+      });
+      document.dispatchEvent(new Event('pointerlockchange'));
+      expect(focusSpy).toHaveBeenCalled();
+      Object.defineProperty(document, 'pointerLockElement', {
+        value: null,
+        configurable: true,
+      });
+    });
+
+    it('does not focus the canvas when pointer lock is released', () => {
+      // First lock and focus
+      Object.defineProperty(document, 'pointerLockElement', {
+        value: realCanvas,
+        configurable: true,
+      });
+      document.dispatchEvent(new Event('pointerlockchange'));
+      // Then release; focus should not be called again on the canvas
+      const focusSpy = vi.spyOn(realCanvas, 'focus');
+      Object.defineProperty(document, 'pointerLockElement', {
+        value: null,
+        configurable: true,
+      });
+      document.dispatchEvent(new Event('pointerlockchange'));
+      expect(focusSpy).not.toHaveBeenCalled();
     });
   });
 });
