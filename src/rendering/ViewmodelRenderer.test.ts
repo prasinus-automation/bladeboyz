@@ -141,6 +141,31 @@ describe('ViewmodelRenderer', () => {
       );
       expect(boneInGroup).toBe(upperArm);
     });
+
+    it('shoulder bone is anchored at the group origin (at-or-below convention)', () => {
+      // #81: shoulder must sit at (0, 0, 0) in group-local space so the
+      // visible arm hangs DOWN from the group origin into the lower-right
+      // viewport. Anything above 0 means the upper-arm box clips into the
+      // top of the viewport.
+      const upperArm = viewmodel.bones['upper_arm_R'];
+      expect(upperArm.position.x).toBeCloseTo(0);
+      expect(upperArm.position.y).toBeCloseTo(0);
+      expect(upperArm.position.z).toBeCloseTo(0);
+      // Stricter: shoulder Y must never exceed the group origin
+      expect(upperArm.position.y).toBeLessThanOrEqual(0);
+    });
+
+    it('forearm/hand/weapon_attach bones extend negative Y from their parents', () => {
+      // The arm hangs down from the shoulder via -Y child offsets; this is
+      // what makes the "shoulder above, arm below" silhouette correct in FPS.
+      const forearm = viewmodel.bones['forearm_R'];
+      const hand = viewmodel.bones['hand_R'];
+      const weaponAttach = viewmodel.bones['weapon_attach'];
+
+      expect(forearm.position.y).toBeLessThan(0);
+      expect(hand.position.y).toBeLessThan(0);
+      expect(weaponAttach.position.y).toBeLessThan(0);
+    });
   });
 
   describe('visible', () => {
@@ -256,11 +281,26 @@ describe('ViewmodelRenderer', () => {
 
       viewmodel.syncWithCamera(worldCamera);
 
-      // With identity quaternion, offset should be applied directly
-      // ARM_OFFSET = (0.25, -0.25, -0.4)
+      // With identity quaternion, offset should be applied directly.
+      // ARM_OFFSET = (0.25, -0.10, -0.4) — the group origin (= shoulder) sits
+      // slightly below the camera so the arm hangs into the lower-right FOV.
       expect(viewmodel.group.position.x).toBeCloseTo(0.25);
-      expect(viewmodel.group.position.y).toBeCloseTo(-0.25);
+      expect(viewmodel.group.position.y).toBeCloseTo(-0.1);
       expect(viewmodel.group.position.z).toBeCloseTo(-0.4);
+    });
+
+    it('places the group origin (= shoulder anchor) at or below camera Y', () => {
+      // Regression guard for #81: with identity camera orientation, the
+      // viewmodel group origin (which is also the shoulder bone position in
+      // group-local space) must NOT be above the camera. If this drifts
+      // positive, the upper-arm box will clip into the top of the viewport.
+      const worldCamera = new THREE.PerspectiveCamera(78, 16 / 9, 0.1, 1000);
+      worldCamera.position.set(0, 0, 0);
+      worldCamera.quaternion.identity();
+
+      viewmodel.syncWithCamera(worldCamera);
+
+      expect(viewmodel.group.position.y).toBeLessThanOrEqual(0);
     });
 
     it('applies camera rotation to viewmodel group orientation', () => {
