@@ -77,7 +77,18 @@ window.setWeapon('Longsword')    // Swap weapon by name
 window.setWeapon('Dagger')
 window.setWeapon('Mace')
 window.setWeapon('Battleaxe')
+
+window.__debugInput = true       // Log every keydown/keyup with paused state
+window.__debugInput = false      // Disable
 ```
+
+### Troubleshooting Movement
+If WASD doesn't seem to work:
+
+1. **Click the canvas first** — pointer lock must be acquired for full input. The "Click to Play" overlay disappears once locked.
+2. **Verify the canvas has focus** — the `InputManager` constructor sets `tabindex="0"` on the canvas and auto-focuses it on pointer lock so keyboard events route reliably even under pointer lock.
+3. **Enable input logging** — set `window.__debugInput = true` in the console, then press WASD. You should see `[InputManager] keydown KeyW paused? false` for each key. If `paused?` is `true`, an inventory or other overlay is blocking input.
+4. **Hard refresh** if Vite HMR seems to have left stale event listeners (`Ctrl+Shift+R`).
 
 ## Weapons
 

@@ -425,9 +425,14 @@ describe('InputManager paused flag', () => {
     // We need to import the real InputManager and test with a mock canvas
     const { InputManager } = await import('../../input/InputManager');
 
-    // Create a minimal mock canvas element
+    // Create a minimal mock canvas element with the methods InputManager
+    // uses during construction (addEventListener, setAttribute, hasAttribute).
     const canvas = {
       requestPointerLock: vi.fn(),
+      addEventListener: vi.fn(),
+      setAttribute: vi.fn(),
+      hasAttribute: vi.fn().mockReturnValue(false),
+      style: {},
     } as any;
 
     // Mock document methods to prevent real event binding
@@ -463,6 +468,10 @@ describe('InputManager paused flag', () => {
 
     const canvas = {
       requestPointerLock: vi.fn(),
+      addEventListener: vi.fn(),
+      setAttribute: vi.fn(),
+      hasAttribute: vi.fn().mockReturnValue(false),
+      style: {},
     } as any;
 
     const originalAddEventListener = document.addEventListener;

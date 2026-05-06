@@ -63,18 +63,56 @@ export class InputManager {
 
   constructor(canvas: HTMLElement) {
     this.canvas = canvas;
+    // Make the canvas focusable so it can receive keyboard events when
+    // pointer-locked. Without tabindex, some browsers route keyboard events
+    // to the locked canvas instead of bubbling them up to document.
+    if (this.canvas instanceof HTMLElement && !this.canvas.hasAttribute('tabindex')) {
+      this.canvas.setAttribute('tabindex', '0');
+      // Hide the focus outline since the canvas is the entire game viewport
+      (this.canvas as HTMLElement).style.outline = 'none';
+    }
     this.bindEvents();
   }
 
+  /**
+   * Add a key event to the keysDown set. Centralized so we can hook in
+   * runtime debug logging via `window.__debugInput = true`.
+   */
+  private _onKeyDown = (e: KeyboardEvent): void => {
+    if ((globalThis as any).__debugInput) {
+      // eslint-disable-next-line no-console
+      console.log('[InputManager] keydown', e.code, 'paused?', this._paused);
+    }
+    if (this._paused) return;
+    this.keysDown.add(e.code);
+  };
+
+  private _onKeyUp = (e: KeyboardEvent): void => {
+    if ((globalThis as any).__debugInput) {
+      // eslint-disable-next-line no-console
+      console.log('[InputManager] keyup', e.code);
+    }
+    // Always remove — paused only gates reads, not writes
+    this.keysDown.delete(e.code);
+  };
+
   private bindEvents(): void {
-    // Keyboard — use document so events fire reliably under pointer lock
-    document.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (this.paused) return;
-      this.keysDown.add(e.code);
-    });
-    document.addEventListener('keyup', (e: KeyboardEvent) => {
-      this.keysDown.delete(e.code); // Always remove — paused only gates reads, not writes
-    });
+    // Keyboard — listen on BOTH document and the canvas itself.
+    //
+    // History: PR f41e987 switched from `window` → `document` because some
+    // browsers stopped delivering keydown events to window listeners while
+    // pointer lock was active on the canvas. We've since seen reports that
+    // even document listeners can miss events under pointer lock in some
+    // browser/OS combinations (issue #82). The locked canvas itself always
+    // receives keyboard events when it has tabindex, so we defensively
+    // listen there too. `Set.add` / `Set.delete` are idempotent, so
+    // receiving the same event on multiple targets is safe.
+    document.addEventListener('keydown', this._onKeyDown);
+    document.addEventListener('keyup', this._onKeyUp);
+    if (this.canvas) {
+      this.canvas.addEventListener('keydown', this._onKeyDown);
+      this.canvas.addEventListener('keyup', this._onKeyUp);
+    }
 
     // Mouse move (only useful when pointer-locked)
     document.addEventListener('mousemove', (e: MouseEvent) => {
@@ -106,6 +144,15 @@ export class InputManager {
     // Pointer lock change
     document.addEventListener('pointerlockchange', () => {
       this._isPointerLocked = document.pointerLockElement === this.canvas;
+
+      // When pointer lock is acquired, ensure the canvas has keyboard focus
+      // so that keydown events route through it reliably. Without this, some
+      // browsers can leave focus on a non-canvas element (e.g. the click-to-play
+      // overlay or a button), which can suppress key events in the canvas's
+      // bubble path.
+      if (this._isPointerLocked && typeof (this.canvas as HTMLElement).focus === 'function') {
+        (this.canvas as HTMLElement).focus();
+      }
 
       const overlay = document.getElementById('click-to-play');
       if (overlay) {

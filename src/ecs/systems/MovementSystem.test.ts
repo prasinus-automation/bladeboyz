@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createWorld, addEntity, addComponent } from 'bitecs';
 import {
   Position, PreviousPosition, Rotation, PreviousRotation,
@@ -511,5 +511,217 @@ describe('MovementSystem', () => {
       const callArgs = (mockBody.setNextKinematicTranslation as any).mock.calls[0][0];
       expect(callArgs.z).toBeCloseTo(0, 5); // body started at z=0
     });
+  });
+});
+
+/* ──────────────────────────────────────────────────────────
+ * Regression suite for issue #82 (WASD movement doesn't work)
+ *
+ * These tests exercise the FULL keyboard → MovementSystem path with
+ * a REAL InputManager (not mocked) and REAL KeyboardEvents dispatched
+ * via jsdom. Mocking only the Rapier physics layer.
+ *
+ * Catches the symptom from the user report: keyboard events fire but
+ * the player never moves. If any link in the chain breaks, these
+ * tests fail.
+ * ────────────────────────────────────────────────────────── */
+
+describe('MovementSystem — issue #82 WASD end-to-end regression', () => {
+  let ecsWorld: any;
+  let realInput: import('../../input/InputManager').InputManager;
+  let realCanvas: HTMLCanvasElement;
+  let mockController: ReturnType<typeof createMockCharacterController>;
+  let mockBody: ReturnType<typeof createMockBody>;
+  let mockCollider: ReturnType<typeof createMockCollider>;
+  let mockCamera: ReturnType<typeof createMockCameraController>;
+  let movementSystem: (dt: number) => void;
+  let eid: number;
+
+  beforeEach(async () => {
+    resetMovementState();
+    ecsWorld = createWorld();
+
+    // Real DOM canvas (jsdom)
+    realCanvas = document.createElement('canvas');
+    document.body.appendChild(realCanvas);
+
+    // Real InputManager — its constructor binds keydown listeners on
+    // both document and the canvas. The whole point is to exercise the
+    // ACTUAL event-flow that runs in the browser at runtime.
+    const { InputManager } = await import('../../input/InputManager');
+    realInput = new InputManager(realCanvas);
+
+    mockController = createMockCharacterController();
+    mockBody = createMockBody(0, 1, 0);
+    mockCollider = createMockCollider();
+    mockCamera = createMockCameraController(0, 0);
+
+    // Pass-through movement so desired = corrected (no walls)
+    mockController.computeColliderMovement.mockImplementation(
+      (_collider: any, movement: any) => {
+        mockController.computedMovement.mockReturnValue({
+          x: movement.x,
+          y: movement.y,
+          z: movement.z,
+        });
+      },
+    );
+
+    const gameWorld = {
+      ecs: ecsWorld,
+      physicsWorld: {
+        createCharacterController: vi.fn().mockReturnValue(mockController),
+      },
+      rapier: {
+        Vector3: vi
+          .fn()
+          .mockImplementation((x: number, y: number, z: number) => ({ x, y, z })),
+      },
+    } as any;
+
+    eid = addEntity(ecsWorld);
+    addComponent(ecsWorld, Player, eid);
+    addComponent(ecsWorld, Position, eid);
+    addComponent(ecsWorld, PreviousPosition, eid);
+    addComponent(ecsWorld, Rotation, eid);
+    addComponent(ecsWorld, PreviousRotation, eid);
+    addComponent(ecsWorld, Velocity, eid);
+    addComponent(ecsWorld, PhysicsBody, eid);
+    addComponent(ecsWorld, MovementState, eid);
+
+    Position.x[eid] = 0;
+    Position.y[eid] = 1;
+    Position.z[eid] = 0;
+    MovementState.grounded[eid] = 1;
+    MovementState.speedFactor[eid] = 1; // skip the accel ramp for clarity
+
+    registerPhysicsBody(eid, mockBody as any, mockCollider as any);
+    movementSystem = createMovementSystem(gameWorld, realInput, mockCamera);
+  });
+
+  afterEach(() => {
+    realCanvas.remove();
+  });
+
+  /** Helper: simulate the user's real-world flow */
+  function pressKey(code: string, target: 'document' | 'canvas' = 'document'): void {
+    const evt = new KeyboardEvent('keydown', { code, bubbles: true });
+    if (target === 'canvas') realCanvas.dispatchEvent(evt);
+    else document.dispatchEvent(evt);
+  }
+  function releaseKey(code: string, target: 'document' | 'canvas' = 'document'): void {
+    const evt = new KeyboardEvent('keyup', { code, bubbles: true });
+    if (target === 'canvas') realCanvas.dispatchEvent(evt);
+    else document.dispatchEvent(evt);
+  }
+
+  it('REGRESSION: pressing W moves player forward (-Z)', () => {
+    // This is THE test the issue asked for: real keyboard event → player moves
+    pressKey('KeyW');
+    expect(realInput.isKeyDown('KeyW')).toBe(true); // sanity: input chain works
+
+    movementSystem(FIXED_TIMESTEP);
+
+    // Expect Z to have decreased (forward)
+    expect(Position.z[eid]).toBeLessThan(0);
+    expect(Position.z[eid]).toBeCloseTo(-WALK_SPEED * FIXED_TIMESTEP, 4);
+  });
+
+  it('REGRESSION: pressing S moves player backward (+Z)', () => {
+    pressKey('KeyS');
+    movementSystem(FIXED_TIMESTEP);
+    expect(Position.z[eid]).toBeGreaterThan(0);
+  });
+
+  it('REGRESSION: pressing A strafes left (-X)', () => {
+    pressKey('KeyA');
+    movementSystem(FIXED_TIMESTEP);
+    expect(Position.x[eid]).toBeLessThan(0);
+  });
+
+  it('REGRESSION: pressing D strafes right (+X)', () => {
+    pressKey('KeyD');
+    movementSystem(FIXED_TIMESTEP);
+    expect(Position.x[eid]).toBeGreaterThan(0);
+  });
+
+  it('REGRESSION: WASD events dispatched directly on canvas also move player', () => {
+    // The defensive canvas listener catches events that don't bubble to document
+    pressKey('KeyW', 'canvas');
+    expect(realInput.isKeyDown('KeyW')).toBe(true);
+    movementSystem(FIXED_TIMESTEP);
+    expect(Position.z[eid]).toBeLessThan(0);
+  });
+
+  it('REGRESSION: releasing W stops the player from continuing forward', () => {
+    pressKey('KeyW');
+    movementSystem(FIXED_TIMESTEP);
+    const zAfterPress = Position.z[eid];
+    expect(zAfterPress).toBeLessThan(0);
+
+    releaseKey('KeyW');
+    // Run several ticks of decel
+    for (let i = 0; i < 10; i++) movementSystem(FIXED_TIMESTEP);
+
+    // After release, speedFactor should decay to 0; further ticks should not
+    // change Z significantly
+    const zAfterRelease = Position.z[eid];
+    movementSystem(FIXED_TIMESTEP);
+    expect(Position.z[eid]).toBeCloseTo(zAfterRelease, 4);
+  });
+
+  it('REGRESSION: Shift while moving forward triggers sprint', () => {
+    pressKey('KeyW');
+    pressKey('ShiftLeft');
+    movementSystem(FIXED_TIMESTEP);
+    expect(MovementState.sprinting[eid]).toBe(1);
+  });
+
+  it('REGRESSION: Ctrl triggers crouch', () => {
+    pressKey('ControlLeft');
+    movementSystem(FIXED_TIMESTEP);
+    expect(MovementState.crouching[eid]).toBe(1);
+  });
+
+  it('REGRESSION: Space triggers jump when grounded', () => {
+    pressKey('Space');
+    movementSystem(FIXED_TIMESTEP);
+    // After jump, velocity.y should be JUMP_VELOCITY (the controller's
+    // computedGrounded() then overwrites grounded back to whatever the
+    // controller reports, so we don't assert on that here).
+    expect(Velocity.y[eid]).toBeGreaterThan(0);
+  });
+
+  it('REGRESSION: pause→unpause cycle does not stick keys (issue #72 still fixed)', () => {
+    pressKey('KeyW');
+    expect(realInput.isKeyDown('KeyW')).toBe(true);
+
+    realInput.paused = true;
+    releaseKey('KeyW'); // user releases while inventory is open
+    realInput.paused = false;
+
+    expect(realInput.isKeyDown('KeyW')).toBe(false);
+
+    movementSystem(FIXED_TIMESTEP);
+    movementSystem(FIXED_TIMESTEP);
+    // Player should not be drifting forward
+    const zBefore = Position.z[eid];
+    movementSystem(FIXED_TIMESTEP);
+    expect(Position.z[eid]).toBeCloseTo(zBefore, 4);
+  });
+
+  it('REGRESSION: bubbling event hits both document and canvas listeners but key tracked once (Set idempotency)', () => {
+    // A real bubbling event reaches both the canvas listener AND the document
+    // listener (events bubble up). Without Set semantics this could double-count.
+    realCanvas.dispatchEvent(
+      new KeyboardEvent('keydown', { code: 'KeyW', bubbles: true }),
+    );
+    expect(realInput.isKeyDown('KeyW')).toBe(true);
+
+    // Single keyup must remove cleanly even though it also reaches both listeners
+    realCanvas.dispatchEvent(
+      new KeyboardEvent('keyup', { code: 'KeyW', bubbles: true }),
+    );
+    expect(realInput.isKeyDown('KeyW')).toBe(false);
   });
 });
