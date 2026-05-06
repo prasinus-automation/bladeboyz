@@ -32,8 +32,18 @@ const VIEWMODEL_FOV = 70;
 const VIEWMODEL_NEAR = 0.01;
 const VIEWMODEL_FAR = 5;
 
-/** Arm offset from camera in camera-local space (lower-right of view) */
-const ARM_OFFSET = new THREE.Vector3(0.25, -0.25, -0.4);
+/**
+ * Arm offset from camera in camera-local space (lower-right of view).
+ *
+ * The shoulder bone sits at the group origin (see upperArmBone.position below),
+ * so this offset places the *shoulder* at camera-local (x, y, z). With y just
+ * slightly below the camera (-0.10), the visible arm geometry hangs DOWN into
+ * the lower-right quadrant of the viewport from a shoulder anchor that is
+ * at-or-below the eye line — the canonical FPS placement. Avoid raising y
+ * above the camera (positive) or the upper-arm box will clip into the top of
+ * the viewport (this was the bug fixed in #81).
+ */
+const ARM_OFFSET = new THREE.Vector3(0.25, -0.1, -0.4);
 
 /** Pre-allocated vector for syncWithCamera (avoids per-frame allocation) */
 const _worldOffset = new THREE.Vector3();
@@ -120,11 +130,21 @@ export class ViewmodelRenderer {
     const skinMat = new THREE.MeshBasicMaterial({ color: SKIN_COLOR });
 
     // Bone chain: upper_arm_R -> forearm_R -> hand_R -> weapon_attach
-    // Root bone is positioned so forearm mesh center remains at (0, 0, 0)
-    // in group space, preserving the original arm visual placement.
+    //
+    // Anchoring convention (see #81):
+    //   The shoulder (root bone) is positioned at the group origin (0, 0, 0).
+    //   The entire visible arm hangs *below* the origin via negative-Y child
+    //   offsets (forearm at -UPPER_ARM_H, hand at -FOREARM_H from forearm,
+    //   weapon_attach at -HAND_H from hand).
+    //
+    //   Because the group origin is itself placed slightly below the camera
+    //   (ARM_OFFSET.y = -0.10), the shoulder ends up at-or-below the camera
+    //   eye line and the arm enters the screen from the lower-right corner.
+    //   The previous convention put the shoulder ABOVE the origin, which
+    //   pushed upper-arm geometry into the top of the viewport.
     const upperArmBone = new THREE.Bone();
     upperArmBone.name = 'vm_upper_arm_R';
-    upperArmBone.position.set(0, UPPER_ARM_H + FOREARM_H / 2, 0);
+    upperArmBone.position.set(0, 0, 0);
 
     const forearmBone = new THREE.Bone();
     forearmBone.name = 'vm_forearm_R';
