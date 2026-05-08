@@ -101,6 +101,9 @@ bladeboyz/
 │   ├── combat-fsm-v2.md                      # Combat FSM v2 architecture spec (issue #88)
 │   ├── gold-currency.md                      # Gold currency design doc (issue #95)
 │   ├── input-pipeline.md                     # Input pipeline architecture spec (issue #102)
+│   ├── networking/                           # Multiplayer architecture spec set (parent #92)
+│   │   ├── README.md                         # Index + read-order for the four-doc set
+│   │   └── 01-transport-and-authority.md     # Transport, topology, tickrate, authority model (#116)
 │   ├── spawn-death-respawn.md                # Spawn/death/respawn loop design (issue #93)
 │   └── training-dummies-and-bots-spec.md     # Training dummies + warmup bots (issue #99)
 ├── public/
