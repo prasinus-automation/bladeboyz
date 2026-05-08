@@ -37,8 +37,7 @@ import { WorldLabel } from './hud/WorldLabel';
 import { createDummyDamageObserver } from './ecs/systems/DummyDamageObserver';
 import { showNotification } from './hud/DebugNotification';
 import { InventoryPanel } from './hud/InventoryPanel';
-import { ShopPanel } from './hud/shop/ShopPanel';
-import { MockPaymentProvider } from './hud/shop/types';
+import { ShopPanel } from './hud/ShopPanel';
 import { FIXED_TIMESTEP, SPAWN_HEIGHT } from './core/types';
 import { Position, PreviousPosition, meshRegistry } from './ecs/components';
 import { lerp } from './utils/math';
@@ -179,13 +178,13 @@ async function main(): Promise<void> {
   // Inventory panel (I key to toggle)
   const inventoryPanel = new InventoryPanel(input, playerEid);
 
-  // Shop panel — Premium (USD) scaffold + stub Weapons tab.
-  // No real payment integration; MockPaymentProvider always reports unavailable.
-  // No hotkey wired yet — #96 will hook this up to a shopkeep NPC interaction.
-  const paymentProvider = new MockPaymentProvider();
-  const shopPanel = new ShopPanel(input, { provider: paymentProvider });
+  // Shop panel — opens via the KeyE handler when standing near the
+  // shopkeep NPC. Purchases go through `purchaseWeapon()` (#123), which is
+  // the atomic validate-then-mutate API that becomes server-authoritative
+  // when networking lands.
+  const shopPanel = new ShopPanel(input, playerEid);
 
-  // Expose for debugging until the shopkeep interaction lands in #96
+  // Dev console helpers — handy for testing without walking to the NPC
   (window as any).openShop = () => shopPanel.open();
   (window as any).closeShop = () => shopPanel.close();
 
@@ -200,14 +199,6 @@ async function main(): Promise<void> {
 
   // Shopkeep nameplate + "Press [E] to shop" prompt
   const worldLabel = new WorldLabel(world.camera);
-
-  // Stub: the dependent shop-UI issue replaces this with the real overlay
-  // open. For now it just logs and surfaces a HUD notification so we can
-  // confirm the proximity + KeyE wiring works end-to-end.
-  function openShop(shopkeepEid: number): void {
-    console.log('shop opened for', shopkeepEid);
-    showNotification('Shop opened (UI placeholder)');
-  }
 
   // ─── Keybind handler (T, Y, J, K, number keys) ───
   window.addEventListener('keydown', (e: KeyboardEvent) => {
@@ -229,13 +220,25 @@ async function main(): Promise<void> {
         resetAllDummies(world);
         showNotification('All dummies reset');
         break;
+      case 'KeyI': {
+        // Defensive: close the shop if KeyI was pressed while it was open.
+        // InventoryPanel handles its own toggle on its own listener
+        // (registered on `document`); this `window` handler runs after that
+        // bubbles up, so the resulting state is shop-closed + inventory-open.
+        if (shopPanel.isOpen) shopPanel.close();
+        break;
+      }
       case 'KeyE': {
         // Bail out if input is paused (e.g. inventory open) so pressing E
         // with another overlay up doesn't trigger weird state.
         if (input.paused) break;
         const target = getNearbyInteractable(playerEid);
         if (target !== null) {
-          openShop(target);
+          // Defensive: never have the inventory and shop open simultaneously.
+          // Different keys (I vs E) make this unlikely, but if it ever
+          // happens neither panel should fight over pointer-lock state.
+          if (inventoryPanel.isOpen) inventoryPanel.close();
+          shopPanel.open(target);
         }
         break;
       }

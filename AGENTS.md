@@ -78,21 +78,23 @@ bladeboyz/
 │   │   └── InventoryData.ts     # Inventory side-table (inventoryRegistry Map<eid, InventoryData>)
 │   ├── economy/
 │   │   ├── Wallet.ts            # In-memory player gold balance + onGoldChange pubsub (#107)
-│   │   └── Prices.ts            # weaponPrices side-table + getWeaponPrice() (#107)
+│   │   ├── Prices.ts            # weaponPrices side-table + getWeaponPrice() (#107)
+│   │   └── PurchaseFlow.ts      # Atomic validate-then-mutate purchaseWeapon API (#123)
 │   ├── hud/
 │   │   ├── HUD.ts               # HUD manager
 │   │   ├── HealthBar.ts
 │   │   ├── StaminaBar.ts
 │   │   ├── DirectionIndicator.ts # Mordhau-style compass-rose crosshair overlay (attack/block direction)
 │   │   ├── InventoryPanel.ts    # Tab inventory UI overlay (HTML/CSS, pointer lock toggle)
+│   │   ├── ShopPanel.ts         # Shopkeep overlay — weapon list + Buy buttons + live gold (#123)
 │   │   ├── DeathScreen.ts       # Full-screen death overlay + respawn countdown (#93)
 │   │   ├── Killfeed.ts          # Top-right kill log, fades after 5s (#93)
 │   │   ├── Scoreboard.ts        # Persistent K/D/Gold display (#93)
 │   │   ├── GoldCounter.ts       # Top-right gold balance HUD, subscribes to Wallet (#107)
 │   │   ├── WorldLabel.ts        # World-anchored HTML overlay — shopkeep nameplate + "Press [E] to shop" prompt (#113)
 │   │   ├── DebugOverlay.ts      # FSM state, FPS counter
-│   │   └── shop/                # Shop overlay scaffold (#100)
-│   │       ├── ShopPanel.ts     # Tab-switcher overlay (mirrors InventoryPanel; backdrop, Escape, click-outside, pointer-lock release via input.paused)
+│   │   └── shop/                # Forward-compat USD payment scaffolding (#100, currently unwired)
+│   │       ├── ShopPanel.ts     # Legacy tab-switcher (orphaned by #123 — see Shop UI section)
 │   │       ├── PremiumShopTab.ts # USD tab — empty-state by default; Buy buttons disabled when provider.isAvailable() === false
 │   │       └── types.ts         # Currency, ShopItem, ShopTab, PurchaseResult, PaymentProvider, MockPaymentProvider (always reports unavailable)
 │   └── utils/
@@ -220,8 +222,14 @@ The two architectural drifts (player capsule origin = center vs. mesh root = fee
 ### Arena Authoring (Arena v1, #91)
 Arenas are **code-authored** — pure TypeScript, no glTF or JSON map files. `createArena(world: GameWorld): ArenaSpec` builds Three.js meshes + matching Rapier static colliders (`RigidBodyType.Fixed` + `cuboid`) 1:1 with mesh extents. Lights live inside `createArena()` (not `World.ts`) — they're map data, not engine data. Returned `ArenaSpec` is stored on `GameWorld.arena` for systems (spawn, weapon-pickup, shopkeep AI) to query. See `docs/arena-v1.md` for v1 layout, spawn coordinates, lighting plan, and `weapon_pickup_safe_volume` rules. **Ground top surface MUST stay at `y = 0.1`** because that's `GROUND_TOP_Y` in `core/types.ts` — both `spawnAtGround`'s fallback path and the feet-origin convention assume it.
 
-### Shop Panel Scaffold (#100 — PR #140)
-`ShopPanel` is a tab-switcher HTML overlay that mirrors `InventoryPanel` (backdrop, Escape, click-outside, pointer-lock release via `input.paused`). Two default tabs: a stub `Weapons (Gold)` tab (replaced by #96) and `PremiumShopTab` (USD). Tabs implement the `ShopTab` interface (`mount(container)` / `unmount()`) — the panel clears the body container before mounting the next tab; tab impls only need to clean up listeners. Real-money flows go through the **forward-compatible `PaymentProvider` interface** (`isAvailable()`, `start(item): Promise<PurchaseResult>`); the default `MockPaymentProvider` always reports unavailable, so Buy buttons render disabled with a "Coming soon" tooltip. When Stripe lands, replace `MockPaymentProvider` with `StripePaymentProvider` — `PremiumShopTab` works unchanged. No hotkey wired yet; #96 will hook this up to the shopkeep NPC. Dev console exposes `window.openShop()` / `window.closeShop()`. `_suppressClickToPlay` covers both `inventoryPanel.isOpen || shopPanel.isOpen`.
+### Shop Panel Scaffold (#100 — PR #140) — superseded by #123
+The original `src/hud/shop/ShopPanel.ts` was a tab-switcher overlay (default tabs: stub `Weapons (Gold)` + `PremiumShopTab`/USD). #123 replaces the wired panel with a flat overlay at `src/hud/ShopPanel.ts` — see "Shop UI + Purchase Flow" below. The `src/hud/shop/` directory is **left intact** as forward-compat scaffolding for real-money cosmetics: `PremiumShopTab.ts`, `types.ts`, and the legacy `ShopPanel.ts` remain in the tree but are no longer imported by `main.ts`. When Stripe (or another provider) lands, the `PaymentProvider` interface + `PremiumShopTab` can be revived as a sub-overlay or re-introduced as a tab.
+
+### Shop UI + Purchase Flow (#123)
+Two pieces ship the shippable shop UX:
+- **`src/hud/ShopPanel.ts`** — flat HTML overlay cloning `InventoryPanel`'s structure (backdrop, container, ESC + click-outside close, pointer-lock release on open, `input.paused` gating). Header shows `Shopkeep — Wares` + a live gold balance subscribed to `Wallet.onGoldChange`. Body iterates `weaponConfigs` and renders one row per weapon (name, stats summary [avg head/torso/limb damage, range in m, mean swing time in ms, attack stamina cost], price, Buy button). Button states: `Owned` (disabled, grey) for in-inventory weapons, `Not enough gold` (disabled, red-ish) when balance < price, `Buy` (enabled, gold) when affordable, `—` (disabled) for `getWeaponPrice() === undefined`. The currently equipped weapon is visually marked with a green border + `(equipped)` tag. On purchase failure the row gets an inline red message that auto-clears after `ROW_MESSAGE_TIMEOUT_MS` (2.5s).
+- **`src/economy/PurchaseFlow.ts`** — `purchaseWeapon(entityId, weaponName): { ok: true, weaponName, pricePaid } | { ok: false, reason }`. **Validate-then-mutate atomicity contract**: validates *every* precondition (price exists, inventory exists, not already owned, sufficient gold, FSM is `Idle`) before any mutation. On failure, **nothing changes** — gold balance, inventory, and equip state are untouched. On success: `spendGold(price)` → `addWeaponToInventory()` → `equipWeapon()`, in that order. Architect's "option A": gate on FSM busy *up front*, so we never spend gold and then bail on equip. Failure reasons: `unknown_weapon | already_owned | insufficient_gold | fsm_busy | no_inventory`. **This is the surface that becomes server-authoritative when networking lands (#92)** — keep validation order identical between client and server so the migration is mechanical.
+- **Wiring**: `main.ts` constructs `new ShopPanel(input, playerEid)` (no payment provider needed) and the existing KeyE handler now calls `shopPanel.open(target)` instead of the placeholder `openShop()` log. `_suppressClickToPlay` is composed as `() => inventoryPanel.isOpen || shopPanel.isOpen` (unchanged from #100). Defensive `KeyI`/`KeyE` cross-close logic ensures inventory and shop are never simultaneously open.
 
 ### Economy Foundation (#107 — PR #142)
 Minimal scaffolding for the shop feature, deliberately scoped narrower than the full Gold currency design (#95). Three pieces:
@@ -236,7 +244,7 @@ Three pieces ship the proximity-interact loop:
 - **`createShopkeep(world, x, y, z, opts?)`** — non-combatant entity factory. Adds **only** `Position`, `Rotation`, `CharacterModel` (no `Velocity`, `Health`, `Stamina`, `Hitboxes`, `CombatStateComp`, no Rapier body). Verified via `hasComponent` in tests — shopkeeps are deliberately not hittable. Body color `0xddaa44` (gold) distinguishes from dummies (red) / player (blue). Faces toward origin via `Rotation.y = atan2(-x, -z)`. String `name` lives in module-level **`shopkeepRegistry: Map<eid, {name, interactRadius}>`** side-table (bitECS components are TypedArrays). One spawned at `(8, SPAWN_HEIGHT, 8)` on game start.
 - **`InteractionSystem`** — ticks per fixedUpdate (called from main loop after `tickDummyHealthReset`), iterates `shopkeepRegistry` and computes 3D Euclidean distance from player Position. Caches the nearest in-range eid in module-level `nearbyByPlayer: Map<eid, eid|null>`. API: `interactionSystem(playerEid)` to tick, `getNearbyInteractable(playerEid)` for consumers, `clearInteractionCache(eid?)` for tests/cleanup. **Distance check, not a Rapier sensor** — single shopkeep makes per-tick distance ~5ns; switch to a sensor approach if interactable count grows beyond ~10.
 - **`WorldLabel` HUD class** — world-anchored HTML overlay (`#world-label-container`, fixed/pointer-events:none/z-index 14), updated each render frame. Mirrors `DummyHealthBar.ts`'s projection pattern: `Vector3.project(camera)` → NDC → pixel coords; hides when `proj.z > 1` (behind camera). Renders **two divs per shopkeep**: persistent gold nameplate at head height (`+1.6m`) and a conditional "Press [E] to shop" prompt at `+1.2m` shown only when `nearbyInteractableEid === eid`. Single reused `Vector3` — zero per-frame allocations. Auto-removes labels for shopkeeps deleted from `shopkeepRegistry`.
-- **KeyE wiring**: `main.ts` `keydown` switch dispatches `KeyE` → bails on `input.paused` (so E during inventory/shop overlay is a no-op) → calls `getNearbyInteractable(playerEid)` → if non-null, calls a local `openShop(eid)` stub (logs + `showNotification('Shop opened (UI placeholder)')`). **The stub deliberately does not call `shopPanel.open()`** — wiring this to the real shop overlay (already shipped in #100/#140) is a follow-up so #113 could land in parallel; the README "Interaction" section calls this out.
+- **KeyE wiring**: `main.ts` `keydown` switch dispatches `KeyE` → bails on `input.paused` (so E during inventory/shop overlay is a no-op) → calls `getNearbyInteractable(playerEid)` → if non-null, defensively closes any open inventory and calls `shopPanel.open(target)`. (Originally landed as a placeholder log in #113; rewired to the real overlay in #123.)
 
 ### Module-Level Singletons
 `fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName`, `inventoryRegistry`, `weaponModelFactories`, `Wallet.goldBalance`, `shopkeepRegistry`, `InteractionSystem.nearbyByPlayer`, `MovementSystem.bodyByEid` / `colliderByEid` / `movementTick`, `InputSystem.prevJumpKeyDown` are all module-level Maps/arrays/scalars. Works for single-world but won't scale to multiple worlds. The `prevJumpKeyDown` edge-trigger state is the one that will need to become per-controller when multiplayer lands.

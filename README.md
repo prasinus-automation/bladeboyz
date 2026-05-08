@@ -57,27 +57,39 @@ In first-person mode, a **viewmodel** renders your right arm and equipped weapon
 |-----|--------|
 | **E** | Interact (when prompt shown) — e.g. open the shop while standing near the shopkeep |
 
-> A **shopkeep NPC** stands at one corner of the arena. Walk close enough and a "Press [E] to shop" prompt appears above their head; pressing **E** triggers the shop-open hook. The interaction pipeline is wired but the hook currently stubs out to a HUD notification — connecting it to the real shop overlay (below) is a follow-up.
+> A **shopkeep NPC** stands at one corner of the arena (around `(8, _, 8)`). Walk close enough and a "Press [E] to shop" prompt appears above their head; pressing **E** opens the shop overlay.
 
-### Shop (placeholder)
+### Shop
 
-A two-tab shop panel scaffold. The "Weapons (Gold)" tab is a stub
-filled in by #96. The "Premium (USD)" tab shows a "Coming soon"
-placeholder — no real payments are wired. Forward-compatible
-`PaymentProvider` interface lets Stripe etc. plug in later without
-UI changes.
+A simple HTML overlay listing the four base weapons (Dagger, Mace, Longsword, Battleaxe) with their stats, gold price, and a Buy button. The header shows the **Shopkeep — Wares** title and the player's live gold balance.
 
-No hotkey is wired yet — open from the dev console:
+| Key / Click | Action |
+|-------------|--------|
+| **E** (near shopkeep) | Open the shop overlay |
+| **Escape** / **X** / click outside | Close the shop |
+| **Click "Buy"** | Purchase the weapon — deducts gold, adds it to inventory, equips it |
+
+Each row shows:
+
+- **Name** — with an "(equipped)" tag and a green border on the currently equipped weapon
+- **Stats** — average damage (head/torso/limb), reach in metres, mean swing time in ms, and stamina cost per attack
+- **Price** — gold cost, `FREE` for the starter Dagger, or `Not for sale` if the weapon has no price entry
+- **Buy** — the button is disabled and shows `Owned` if you already have it, `Not enough gold` if your balance is too low, otherwise the button reads `Buy`
+
+#### Purchase atomicity
+
+Purchases go through `purchaseWeapon()` in [`src/economy/PurchaseFlow.ts`](src/economy/PurchaseFlow.ts). The function validates **every** precondition first (price exists, not already owned, sufficient gold, FSM is `Idle`) and only then mutates wallet + inventory + equipped weapon as a single batch. On any failure (`{ ok: false, reason }`), nothing changes — gold balance unchanged, inventory unchanged. The result type is the surface that becomes server-authoritative when networking lands; the client `purchaseWeapon` and the future server `purchaseWeapon` will share identical validation order so the migration is mechanical.
+
+Shop prices are temporary scaffolding — they live in `src/economy/Prices.ts` and will be tuned alongside the full gold-currency design (issue #95) when earning loops, persistence, and balancing land.
+
+#### Dev console
 
 ```js
-window.openShop()    // Open the shop panel
+window.openShop()    // Open the shop without walking to the NPC
 window.closeShop()   // Close it (Escape also works)
 ```
 
-The shop releases pointer lock and pauses input on open, the same
-way the inventory does. The default `MockPaymentProvider` always
-reports `isAvailable() === false`, so any Buy buttons render
-disabled with a "Coming soon" tooltip.
+The shop releases pointer lock and pauses input on open, the same way the inventory does. The inventory and shop are mutually exclusive — opening one closes the other so neither fights over pointer-lock state.
 
 ### Training Dummy Controls
 | Key | Action |
@@ -105,8 +117,8 @@ window.setWeapon('Dagger')
 window.setWeapon('Mace')
 window.setWeapon('Battleaxe')
 
-window.openShop()                // Open shop panel (placeholder; #96 will add NPC interaction)
-window.closeShop()               // Close shop panel
+window.openShop()                // Open the shopkeep overlay (also bound to E near the NPC)
+window.closeShop()               // Close the shop panel
 
 window.__debugInput = true       // Log every keydown/keyup with paused state
 window.__debugInput = false      // Disable
@@ -154,6 +166,8 @@ All weapons are data-driven via `WeaponConfig` objects — damage, timing, turnc
 ## Gold & Shop
 
 The player starts with a small purse of **200 gold** and only the **Dagger** equipped. Other weapons (Mace, Longsword, Battleaxe) must be purchased from the shopkeep — the inventory no longer starts populated with every weapon. Gold prices live in `src/economy/Prices.ts` (Mace 100, Longsword 150, Battleaxe 200) and the balance lives in a small in-memory `Wallet` module at `src/economy/Wallet.ts`. A **gold counter HUD** appears at the top-right of the screen and updates whenever the balance changes; it pulses briefly on each change.
+
+To shop, walk up to the shopkeep NPC and press **E** — see [Shop](#shop) above for the full UX. Purchases are atomic: gold is only deducted on success, and a successful purchase adds the weapon to inventory and equips it in one step.
 
 The wallet is intentionally minimal scaffolding for the shop feature — earning gold from kills, persistence across sessions, and networked reconciliation belong to the full Gold currency design (issue #95) and are deliberately out of scope here.
 
@@ -253,13 +267,20 @@ src/
 │   └── AnimationData.test.ts
 ├── inventory/
 │   └── InventoryData.ts     # Weapon ownership & equipment side-table
+├── economy/
+│   ├── Wallet.ts            # In-memory gold balance + onGoldChange pubsub (#107)
+│   ├── Prices.ts            # weaponPrices side-table + getWeaponPrice (#107)
+│   └── PurchaseFlow.ts      # Atomic validate-then-mutate purchaseWeapon API (#123)
 ├── hud/
 │   ├── HUD.ts               # HUD manager (health, stamina, debug, direction indicator)
 │   ├── HealthBar.ts         # Player health bar
 │   ├── StaminaBar.ts        # Player stamina bar
 │   ├── InventoryPanel.ts    # Inventory overlay UI (weapon selection & gear slots)
+│   ├── ShopPanel.ts         # Shopkeep overlay — weapon list + Buy buttons (#123)
+│   ├── GoldCounter.ts       # Top-right gold balance HUD (#107)
 │   ├── FloatingDamage.ts    # Floating damage numbers (3D→2D projected HTML)
 │   ├── DummyHealthBar.ts    # Floating health bars above training dummies
+│   ├── WorldLabel.ts        # World-anchored HTML overlay (shopkeep nameplate + prompt)
 │   ├── DebugOverlay.ts      # FPS counter, position, movement state (top-left)
 │   └── DebugNotification.ts # Brief toast notifications for toggle states
 └── utils/
