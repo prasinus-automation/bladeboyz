@@ -17,6 +17,11 @@ import {
   tickDummyHealthReset,
   activeDummies,
 } from './ecs/entities/createDummy';
+import { createShopkeep } from './ecs/entities/createShopkeep';
+import {
+  interactionSystem,
+  getNearbyInteractable,
+} from './ecs/systems/InteractionSystem';
 import { animationSystem } from './ecs/systems/AnimationSystem';
 import { DebugOverlay } from './hud/DebugOverlay';
 import { HUD } from './hud/HUD';
@@ -27,6 +32,7 @@ import { hitboxSystem } from './ecs/systems/HitboxSystem';
 import { TracerDebugRenderer } from './rendering/TracerDebugRenderer';
 import { FloatingDamage } from './hud/FloatingDamage';
 import { DummyHealthBar } from './hud/DummyHealthBar';
+import { WorldLabel } from './hud/WorldLabel';
 import { createDummyDamageObserver } from './ecs/systems/DummyDamageObserver';
 import { showNotification } from './hud/DebugNotification';
 import { InventoryPanel } from './hud/InventoryPanel';
@@ -141,6 +147,10 @@ async function main(): Promise<void> {
   createDummy(world, 0, SPAWN_HEIGHT, -4, 0xcc4444);
   dummySpawnIdx = 1;
 
+  // Spawn shopkeep NPC at far corner of arena. Walking distance from origin
+  // is intentional — proves the interact prompt only shows up close.
+  createShopkeep(world, 8, SPAWN_HEIGHT, 8, { name: 'Shopkeep' });
+
   // Create movement system
   const movementSystem = createMovementSystem(world, input, cameraController);
 
@@ -165,6 +175,17 @@ async function main(): Promise<void> {
   const dummyHealthBar = new DummyHealthBar(world.camera);
   const dummyDamageObserver = createDummyDamageObserver(world, floatingDamage);
 
+  // Shopkeep nameplate + "Press [E] to shop" prompt
+  const worldLabel = new WorldLabel(world.camera);
+
+  // Stub: the dependent shop-UI issue replaces this with the real overlay
+  // open. For now it just logs and surfaces a HUD notification so we can
+  // confirm the proximity + KeyE wiring works end-to-end.
+  function openShop(shopkeepEid: number): void {
+    console.log('shop opened for', shopkeepEid);
+    showNotification('Shop opened (UI placeholder)');
+  }
+
   // ─── Keybind handler (T, Y, J, K, number keys) ───
   window.addEventListener('keydown', (e: KeyboardEvent) => {
     switch (e.code) {
@@ -185,6 +206,16 @@ async function main(): Promise<void> {
         resetAllDummies(world);
         showNotification('All dummies reset');
         break;
+      case 'KeyE': {
+        // Bail out if input is paused (e.g. inventory open) so pressing E
+        // with another overlay up doesn't trigger weird state.
+        if (input.paused) break;
+        const target = getNearbyInteractable(playerEid);
+        if (target !== null) {
+          openShop(target);
+        }
+        break;
+      }
     }
   });
 
@@ -257,6 +288,9 @@ async function main(): Promise<void> {
     // Dummy health reset timer
     tickDummyHealthReset();
 
+    // Update nearest-interactable cache (for KeyE handler + WorldLabel prompt)
+    interactionSystem(playerEid);
+
     // Sync player mesh position with ECS (skeletal model group)
     const playerModelData = meshRegistry.get(playerEid);
     if (playerModelData) {
@@ -293,6 +327,7 @@ async function main(): Promise<void> {
     tracerDebugRenderer.update();
     floatingDamage.update();
     dummyHealthBar.update();
+    worldLabel.update(getNearbyInteractable(playerEid));
     cameraController.updateCamera(playerEid, alpha);
 
     // Pass 1: Render world scene (Layer 0) with world camera

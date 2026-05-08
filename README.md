@@ -52,6 +52,13 @@ In first-person mode, a **viewmodel** renders your right arm and equipped weapon
 
 > While the inventory is open, mouse look and combat inputs are paused. Close with **I** or **Escape** to resume gameplay.
 
+### Interaction
+| Key | Action |
+|-----|--------|
+| **E** | Interact (when prompt shown) — e.g. open the shop while standing near the shopkeep |
+
+> A **shopkeep NPC** stands at one corner of the arena. Walk close enough and a "Press [E] to shop" prompt appears above their head; pressing **E** opens the shop overlay. The shop UI itself ships in a follow-up issue.
+
 ### Training Dummy Controls
 | Key | Action |
 |-----|--------|
