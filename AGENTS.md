@@ -102,6 +102,15 @@ Weapon behavior comes entirely from `WeaponConfig` objects — no hardcoded weap
 ### Tracer-Based Hit Detection
 No simple raycasts. Weapons have tracer points along the blade. During Release phase, swept-volume collision checks between tick positions against enemy hitbox sensor colliders.
 
+### Character Controller (planned — issue #86)
+Movement is a Rapier `KinematicCharacterController` driven by `MovementSystem` in `fixedUpdate` at 60Hz. Player uses a `kinematicPositionBased` rigid body with a capsule collider; dummies use a `fixed` body with a capsule collider (static obstacle). The controller provides slope handling, autostep, and snap-to-ground. Gravity is applied manually in MovementSystem because Rapier's solver does not apply forces to kinematic/fixed bodies.
+
+**Tick contract**:
+1. `combatSystem()` → ticks FSMs, syncs combat state (and `CameraController.maxTurnRate`)
+2. `movementSystem(dt)` → reads input + camera yaw, computes desired movement, calls `characterController.computeColliderMovement()`, calls `body.setNextKinematicTranslation()`, writes ECS `Position`
+3. `world.physicsWorld.step()` → Rapier integrates kinematic translations and runs sensor queries
+4. Mesh sync runs in `render(alpha)` with `lerp(PreviousPosition, Position, alpha)` — NOT in fixedUpdate (avoids 60Hz position snapping)
+
 ## Build / Run / Test Commands
 ```bash
 npm install          # Install dependencies
@@ -128,6 +137,14 @@ npm run lint         # Run ESLint
 - Rapier colliders for hitboxes are **sensors** (no physics response)
 - Character skeletons use Three.js `Bone` / `Skeleton` — procedurally generated, not imported from glTF for scaffolding phase
 
+### Spatial Conventions (issue #86 — under refactor)
+- **ECS `Position` = entity feet position** (point of contact with ground). The character mesh's root bone is at the feet (`y=0`), so `meshGroup.position = (Position.x, Position.y, Position.z)` is a direct copy with NO offset.
+- **Capsule collider** is offset upward inside the rigid body via `ColliderDesc.capsule(...).setTranslation(0, CAPSULE_RADIUS + CAPSULE_HALF_HEIGHT, 0)` so the capsule's bottom hemisphere sits at the body origin (= feet).
+- **Forward = -Z** (Three.js convention). Yaw=0 looks down -Z. `moveZ = -strafe*sin(yaw) - forward*cos(yaw)`.
+- **Spawn**: always raycast down from `(x, 50, z)` and place feet at `hit.toi` (with a small `+CHARACTER_CONTROLLER_OFFSET` epsilon). Never hard-code Y in spawn-position arrays.
+- **Ground**: arena ground is a fixed cuboid centered at y=0 with half-height 0.1, so its top surface is at **y = 0.1**. Visual ground plane sits at y=0 (mid-cuboid).
+- This convention applies to **all** characters (player, dummies, future NPCs). Entity factories must not invent their own offset.
+
 ## Known Issues / Architectural Debt
 
 ### Two Combat State Components (SYNCED — no longer broken)
@@ -141,6 +158,13 @@ The tracer-based hit detection pipeline (`TracerSystem` → `DamageSystem` → `
 
 ### First-Person Viewmodel (IMPLEMENTED — PR #57, skeletal PR #68, animation PR #70, anchor fix #81)
 `ViewmodelRenderer` (`src/rendering/ViewmodelRenderer.ts`) renders a procedural right arm + weapon in FPS mode using Two-pass Layer architecture: Layer 0 = world, Layer 1 = viewmodel. Separate `PerspectiveCamera` (FOV 70, near 0.01). Weapon swaps automatically via `onEquip` listener. `CameraController.setViewmodel()` toggles visibility on F5 camera mode switch. **Bone-driven skeletal arm** (PR #68): arm is built from a `THREE.Bone` hierarchy (`vm_upper_arm_R → vm_forearm_R → vm_hand_R → vm_weapon_attach`) with `THREE.SkinnedMesh` parts. `bones` record exposed with canonical names (without `vm_` prefix) for animation system use — keys match AnimationData.ts bone names. `weapon_attach` bone pre-rotated `Math.PI * 0.85` on X (angled slightly forward for natural grip). **Anchor convention** (#81): the shoulder bone (`vm_upper_arm_R`) is positioned at the group origin `(0, 0, 0)`, so the entire visible arm hangs DOWN into the viewport via negative-Y child offsets (forearm at `-UPPER_ARM_H`, hand at `-FOREARM_H` from forearm, etc.). `ARM_OFFSET = (0.25, -0.10, -0.4)` places the group origin (= shoulder anchor) slightly below the camera, so the arm enters the screen from the lower-right corner. Do NOT raise the shoulder above the group origin — that's the bug fixed in #81 (upper-arm box clipped into the top-third of the viewport). **Viewmodel animation** (PR #70): `ViewmodelAnimationSystem` (`src/rendering/ViewmodelAnimationSystem.ts`) drives bone poses based on `CombatStateComp` — per-weapon pose lookup via `getViewmodelPose()`, quaternion slerp crossfade blending (~80ms, matching AnimationSystem), `effectiveBlend = max(phaseBlend, crossfadeBlend)` pattern, idle sway (sinusoidal bob on hand_R + forearm_R z-axis). Runs in `update(dt)` after `animationSystem()`. Zero per-frame allocations.
+
+### Character Controller / Hover Bug (BEING FIXED — issue #86)
+Two architectural drifts cause characters to hover and WASD to feel broken:
+1. **Origin convention drift**: `createPlayer.ts` creates a capsule whose origin is the **center**, but the mesh group's root bone is at the **feet**. `main.ts` syncs `meshGroup.position = ECS Position`, so the mesh's feet end up at the capsule's center → visible character floats by `CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS = 1.0m` above the ground. `SPAWN_HEIGHT = 1.1` is the capsule center, not the feet.
+2. **Dummy has no rigid body**: `createDummy.ts` does not call `world.physicsWorld.createRigidBody()` — it only sets ECS `Position` and creates hitbox sensors. With no body and no ground contact, dummies float wherever `Position.y` is set (currently `SPAWN_HEIGHT = 1.1`).
+
+**Resolution** (issue #86 plan): adopt feet-origin convention everywhere (see "Spatial Conventions" above), give dummies a fixed-body capsule collider, add a `spawnAtGround()` helper that raycasts down to place feet on terrain. Move mesh sync out of fixedUpdate into render with interpolation.
 
 ### Module-Level Singletons
 `fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName`, `inventoryRegistry`, `weaponModelFactories` are all module-level Maps/arrays/objects. Works for single-world but won't scale to multiple worlds.
