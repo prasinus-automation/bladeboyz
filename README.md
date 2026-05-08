@@ -219,7 +219,8 @@ src/
 │   │   └── DummyDamageObserver.ts  # Floating damage numbers for training dummies
 │   ├── entities/
 │   │   ├── createPlayer.ts      # Player entity factory (mesh, kinematic body, MovementIntent)
-│   │   └── createDummy.ts       # Training dummy factory (mesh, fixed body, capsule)
+│   │   ├── createDummy.ts       # Training dummy factory (mesh, fixed body, capsule)
+│   │   └── createWeaponPickup.ts # Ground weapon pickup factory (#109, foundation for #94)
 │   └── utils/
 │       └── spawnAtGround.ts     # Raycast-down feet-Y resolver (used by all entity factories)
 ├── arena/
@@ -252,7 +253,8 @@ src/
 │   ├── ViewmodelAnimationData.ts # Per-weapon first-person viewmodel poses
 │   └── AnimationData.test.ts
 ├── inventory/
-│   └── InventoryData.ts     # Weapon ownership & equipment side-table
+│   ├── InventoryData.ts     # Legacy side-table (dead code — see AGENTS.md)
+│   └── PickupRegistry.ts    # Side-table for ground weapon pickups (#109, foundation for #94)
 ├── hud/
 │   ├── HUD.ts               # HUD manager (health, stamina, debug, direction indicator)
 │   ├── HealthBar.ts         # Player health bar

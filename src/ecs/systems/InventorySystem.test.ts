@@ -184,6 +184,38 @@ describe('InventorySystem', () => {
       weapons.push('Extra');
       expect(inventoryRegistry.get(eid)!.weapons).toHaveLength(2);
     });
+
+    // ── starterWeapon (foundation for #94 / #109) ───────────
+
+    it('defaults starterWeapon to the initially-equipped weapon', () => {
+      initInventory(eid, ['TestSword', 'TestMace'], 'TestSword');
+      expect(inventoryRegistry.get(eid)!.starterWeapon).toBe('TestSword');
+    });
+
+    it('defaults starterWeapon to null when nothing equipped', () => {
+      initInventory(eid, ['TestSword']);
+      expect(inventoryRegistry.get(eid)!.starterWeapon).toBeNull();
+    });
+
+    it('honors an explicit starterWeapon arg', () => {
+      // Equipped is TestMace, but TestSword is the protected starter
+      initInventory(eid, ['TestSword', 'TestMace'], 'TestMace', 'TestSword');
+      expect(inventoryRegistry.get(eid)!.starterWeapon).toBe('TestSword');
+      expect(inventoryRegistry.get(eid)!.equippedWeapon).toBe('TestMace');
+    });
+
+    it('honors an explicit null starterWeapon (no protected starter)', () => {
+      initInventory(eid, ['TestSword'], 'TestSword', null);
+      expect(inventoryRegistry.get(eid)!.starterWeapon).toBeNull();
+      expect(inventoryRegistry.get(eid)!.equippedWeapon).toBe('TestSword');
+    });
+
+    it('preserves starterWeapon through getInventory copy', () => {
+      initInventory(eid, ['TestSword', 'TestMace'], 'TestSword');
+      const inv = inventoryRegistry.get(eid)!;
+      // Even when reading via the registry, the field should be visible.
+      expect(inv.starterWeapon).toBe('TestSword');
+    });
   });
 
   // ── getInventory ─────────────────────────────────────

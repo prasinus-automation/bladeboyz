@@ -125,7 +125,9 @@ async function main(): Promise<void> {
   // Other weapons must be purchased from the shopkeep (issue #107). When the
   // full gold-currency design (#95) lands and earning loops exist, this list
   // will likely stay the same — gold/shop is the entry point, not initInventory.
-  initInventory(playerEid, ['Dagger'], 'Dagger');
+  // The 4th arg is the permanent `starterWeapon` (won't be dropped on death,
+  // per #94). Passed explicitly even though the default would resolve the same.
+  initInventory(playerEid, ['Dagger'], 'Dagger', 'Dagger');
 
   // ─── First-person viewmodel ───
   const viewmodel = new ViewmodelRenderer(world.scene, world.camera.aspect, {
@@ -296,8 +298,12 @@ async function main(): Promise<void> {
     // Stamina system (reads combat state, handles regen/costs)
     staminaSystemTick(world.ecs);
 
-    // Health system (processes damage, handles death/respawn)
-    healthSystemTick(world.ecs);
+    // Health system (processes damage, handles death/respawn).
+    // Capture `died` for #A2 (weapon-pickup drop-on-death) — the dropping
+    // system will read this list and spawn a `createWeaponPickup` for each
+    // dropped weapon. Foundation only here (#109): we just thread the data.
+    // TODO(#A2): weaponPickupSystem(world, currentTick, died, ...);
+    const { died: _died, respawned: _respawned } = healthSystemTick(world.ecs);
 
     // Step physics
     world.physicsWorld.step();

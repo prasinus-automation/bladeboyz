@@ -166,6 +166,27 @@ export const Hitbox = defineComponent({
 export const TracerTag = defineComponent();
 
 /**
+ * WeaponPickup — marks an entity as a ground-spawned weapon pickup.
+ *
+ * Numeric only (bitECS constraint). The string `weaponName` and the
+ * Three.js Group/Material refs live in the side-table `pickupRegistry`
+ * (see `src/inventory/PickupRegistry.ts`).
+ *
+ * - weaponId: index into `weaponIdToName` (CombatSystem.ts) — used for
+ *   networking-friendly serialization once that lands.
+ * - spawnTick: tick the pickup was created on (for despawn timer + age math).
+ * - despawnTick: tick the pickup will be auto-removed (consumed by #A2).
+ *
+ * See parent issue #94 for the full lifecycle and #109 for the foundation
+ * scope. No behavior here — drop/pickup/despawn live in #A2.
+ */
+export const WeaponPickup = defineComponent({
+  weaponId: Types.ui8,
+  spawnTick: Types.ui32,
+  despawnTick: Types.ui32,
+});
+
+/**
  * DamageEvent component — written by TracerSystem, consumed by DamageSystem.
  * Represents a pending damage event to be processed in the same tick.
  */
