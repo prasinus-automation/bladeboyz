@@ -51,7 +51,9 @@ bladeboyz/
 │   │   ├── dagger.ts            # Dagger weapon data (auto-registers on import)
 │   │   └── battleaxe.ts         # Battleaxe weapon data (auto-registers on import)
 │   ├── input/
-│   │   └── InputManager.ts      # Raw input capture, pointer lock, mouse delta tracking
+│   │   ├── InputManager.ts      # Raw input capture, pointer lock, mouse delta tracking
+│   │   ├── InputManager.types.ts # Target interface contract (issue #102 spec — see docs/input-pipeline.md)
+│   │   └── keybinds.ts          # DEFAULT_KEYBINDS table (action → KeyboardEvent.code mapping)
 │   ├── rendering/
 │   │   ├── CameraController.ts  # FPS + debug third-person camera
 │   │   ├── CharacterModel.ts    # Procedural low-poly character mesh + skeleton
@@ -70,6 +72,10 @@ bladeboyz/
 │   │   └── DebugOverlay.ts      # FSM state, FPS counter
 │   └── utils/
 │       └── math.ts              # Vector utilities, interpolation helpers
+├── docs/
+│   ├── MVP.md                   # MVP rebuild roadmap (issue #85)
+│   ├── gold-currency.md         # Gold currency design doc (issue #95)
+│   └── input-pipeline.md        # Input pipeline architecture spec (issue #102)
 ├── public/
 │   └── (static assets if any)
 ├── index.html
@@ -101,6 +107,9 @@ Weapon behavior comes entirely from `WeaponConfig` objects — no hardcoded weap
 
 ### Tracer-Based Hit Detection
 No simple raycasts. Weapons have tracer points along the blade. During Release phase, swept-volume collision checks between tick positions against enemy hitbox sensor colliders.
+
+### Input Pipeline
+All keyboard / mouse / pointer-lock signals are owned by `InputManager`; gameplay systems read via a typed action-based API (`isActionDown`, `isActionJustPressed`, `getMouseDelta`). A three-state mode FSM (`Menu` / `Playing` / `OverlayOpen`) gates whether gameplay polls return live state — outside `Playing` they return false / 0. No system attaches its own raw `addEventListener('keydown')` (target state — current code still has scattered listeners that downstream tickets will migrate). Default keymap lives in `src/input/keybinds.ts`. Full spec: [`docs/input-pipeline.md`](docs/input-pipeline.md).
 
 ### Character Controller (planned — issue #86)
 Movement is a Rapier `KinematicCharacterController` driven by `MovementSystem` in `fixedUpdate` at 60Hz. Player uses a `kinematicPositionBased` rigid body with a capsule collider; dummies use a `fixed` body with a capsule collider (static obstacle). The controller provides slope handling, autostep, and snap-to-ground. Gravity is applied manually in MovementSystem because Rapier's solver does not apply forces to kinematic/fixed bodies.

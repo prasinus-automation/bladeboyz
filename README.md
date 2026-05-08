@@ -177,7 +177,9 @@ src/
 │   ├── dagger.ts            # Dagger weapon data (auto-registers on import)
 │   └── battleaxe.ts         # Battleaxe weapon data (auto-registers on import)
 ├── input/
-│   └── InputManager.ts      # Keyboard, mouse, pointer lock, rolling delta buffer
+│   ├── InputManager.ts      # Keyboard, mouse, pointer lock, rolling delta buffer
+│   ├── InputManager.types.ts # Target interface contract (#102 spec)
+│   └── keybinds.ts          # DEFAULT_KEYBINDS map (action → KeyboardEvent.code)
 ├── rendering/
 │   ├── CameraController.ts  # FPS + third-person orbit camera
 │   ├── CharacterModel.ts    # Procedural low-poly character mesh + bone skeleton
@@ -204,6 +206,14 @@ src/
 └── utils/
     └── math.ts              # Vector utilities, interpolation helpers
 ```
+
+## Documentation
+
+Design docs and architecture specs live in [`docs/`](docs/):
+
+- [`docs/MVP.md`](docs/MVP.md) — Foundation rebuild roadmap (#85)
+- [`docs/gold-currency.md`](docs/gold-currency.md) — Gold currency design (#95)
+- [`docs/input-pipeline.md`](docs/input-pipeline.md) — Input pipeline architecture (#102)
 
 ## Architecture Notes
 
