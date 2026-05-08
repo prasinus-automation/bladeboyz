@@ -28,7 +28,9 @@ import { HUD } from './hud/HUD';
 import { DebugRenderer } from './rendering/DebugRenderer';
 import { TracerSystem, weaponConfigMap } from './ecs/systems/TracerSystem';
 import { DamageSystem } from './ecs/systems/DamageSystem';
+import { hitReactSystemTick } from './ecs/systems/HitReactSystem';
 import { hitboxSystem } from './ecs/systems/HitboxSystem';
+import { advanceFixedTick } from './core/tickCounter';
 import { TracerDebugRenderer } from './rendering/TracerDebugRenderer';
 import { FloatingDamage } from './hud/FloatingDamage';
 import { DummyHealthBar } from './hud/DummyHealthBar';
@@ -275,6 +277,11 @@ async function main(): Promise<void> {
   };
 
   loop.fixedUpdate = (_dt: number) => {
+    // Advance the global fixed-tick counter ONCE per fixedUpdate so
+    // tick-stamped events (e.g. HitReactComp.spawnedAtTick) are consistent
+    // for everything that runs this tick.
+    advanceFixedTick();
+
     // Combat system (reads input, ticks FSMs, syncs ECS components)
     combatSystem();
 
@@ -296,9 +303,12 @@ async function main(): Promise<void> {
     // Observe damage events (floating numbers) before they're consumed
     dummyDamageObserver(FIXED_TIMESTEP);
 
-    // Tracer hit detection + damage resolution
+    // Tracer hit detection + damage resolution. DamageSystem may stamp
+    // HitReactComp on a target this tick; the hit-react clear pass runs
+    // after so it doesn't immediately wipe a fresh entry.
     TracerSystem(world, FIXED_TIMESTEP);
     DamageSystem(world, FIXED_TIMESTEP);
+    hitReactSystemTick(world.ecs);
 
     // Dummy health reset timer
     tickDummyHealthReset();

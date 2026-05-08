@@ -7,8 +7,8 @@ import { createWorld, addEntity, addComponent, type IWorld } from 'bitecs';
 import { CombatStateComponent, CombatStateComp, Player } from '../components';
 import { CombatState } from '../../combat/states';
 import { AttackDirection, BlockDirection } from '../../combat/directions';
-import { CombatFSM, CombatInput, fsmRegistry, createFSM } from '../../combat/CombatFSM';
-import { createCombatSystem, resetCombatInputState, computePhaseTotal } from './CombatSystem';
+import { CombatInput, fsmRegistry, createFSM } from '../../combat/CombatFSM';
+import { createCombatSystem, resetCombatInputState } from './CombatSystem';
 import type { WeaponConfig } from '../../weapons/WeaponConfig';
 
 // ── Mock InputManager ────────────────────────────────────
@@ -210,6 +210,27 @@ describe('CombatSystem', () => {
     // Should tick the dummy's FSM and sync to ECS
     expect(CombatStateComponent.state[dummyEid]).toBe(CombatState.HitStun);
     expect(CombatStateComponent.ticksRemaining[dummyEid]).toBe(weapon.hitStunTicks - 1);
+  });
+
+  it('populates CombatStateComp.phaseTotal/phaseT for non-player FSM entities (dummies)', () => {
+    // Regression for issue #120: dummies that have a CombatFSM in fsmRegistry
+    // should get their phase fields populated by CombatSystem each tick,
+    // not just the player.
+    const dummyEid = addEntity(ecsWorld);
+    addComponent(ecsWorld, CombatStateComponent, dummyEid);
+    addComponent(ecsWorld, CombatStateComp, dummyEid);
+    CombatStateComponent.state[dummyEid] = CombatState.Idle;
+
+    const dummyFsm = createFSM(dummyEid, weapon);
+    // Drive it into HitStun so phaseTotal is non-zero (HitStun has a fixed duration).
+    dummyFsm.transition(CombatInput.HitReceived);
+
+    tick();
+    expect(CombatStateComp.state[dummyEid]).toBe(CombatState.HitStun);
+    expect(CombatStateComp.phaseTotal[dummyEid]).toBe(weapon.hitStunTicks);
+    // After 1 tick, phaseElapsed = 1 and phaseT ≈ 1/total.
+    expect(CombatStateComp.phaseElapsed[dummyEid]).toBe(1);
+    expect(CombatStateComp.phaseT[dummyEid]).toBeCloseTo(1 / weapon.hitStunTicks, 5);
   });
 
   it('complete attack chain syncs all states through ECS', () => {
@@ -436,65 +457,29 @@ describe('CombatSystem', () => {
     });
   });
 
-  // ── computePhaseTotal unit tests ──────────────────────
+  // ── fsm.getPhaseTotal sanity (system-level coverage) ───
+  // Detailed phase math is tested in CombatFSM.test.ts; the smoke
+  // tests below confirm that the value reaches CombatStateComp
+  // through the system's per-tick sync.
 
-  describe('computePhaseTotal', () => {
-    it('returns windup ticks for Windup state', () => {
-      const fsm = new CombatFSM(weapon);
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
-      fsm.tick();
-      expect(computePhaseTotal(CombatState.Windup, fsm)).toBe(weapon.windup[AttackDirection.Left]);
+  describe('phase math sync via CombatStateComp', () => {
+    it('CombatStateComp.phaseTotal mirrors fsm.getPhaseTotal during Windup', () => {
+      input.pressMouseButton(0);
+      tick(); // → Windup
+      const fsm = fsmRegistry.get(playerEid)!;
+      expect(CombatStateComp.phaseTotal[playerEid]).toBe(fsm.getPhaseTotal());
     });
 
-    it('returns release ticks for Release state', () => {
-      const fsm = new CombatFSM(weapon);
-      fsm.transition(CombatInput.Attack, AttackDirection.Stab);
-      // Tick through windup
-      for (let i = 0; i < weapon.windup[AttackDirection.Stab]; i++) fsm.tick();
-      expect(fsm.state).toBe(CombatState.Release);
-      expect(computePhaseTotal(CombatState.Release, fsm)).toBe(weapon.release[AttackDirection.Stab]);
+    it('CombatStateComp.phaseT mirrors fsm.getPhaseT during Windup', () => {
+      input.pressMouseButton(0);
+      tick(); // → Windup, 1 tick consumed
+      const fsm = fsmRegistry.get(playerEid)!;
+      expect(CombatStateComp.phaseT[playerEid]).toBeCloseTo(fsm.getPhaseT(), 5);
     });
 
-    it('returns recovery ticks for Recovery state', () => {
-      const fsm = new CombatFSM(weapon);
-      fsm.transition(CombatInput.Attack, AttackDirection.Stab);
-      // Through windup
-      for (let i = 0; i < weapon.windup[AttackDirection.Stab]; i++) fsm.tick();
-      // Through release
-      for (let i = 0; i < weapon.release[AttackDirection.Stab]; i++) fsm.tick();
-      expect(fsm.state).toBe(CombatState.Recovery);
-      expect(computePhaseTotal(CombatState.Recovery, fsm)).toBe(weapon.recovery[AttackDirection.Stab]);
-    });
-
-    it('returns 3 for Feint state', () => {
-      const fsm = new CombatFSM(weapon);
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
-      fsm.tick();
-      fsm.transition(CombatInput.Feint);
-      fsm.tick();
-      expect(fsm.state).toBe(CombatState.Feint);
-      expect(computePhaseTotal(CombatState.Feint, fsm)).toBe(3);
-    });
-
-    it('returns 0 for Idle state', () => {
-      const fsm = new CombatFSM(weapon);
-      expect(computePhaseTotal(CombatState.Idle, fsm)).toBe(0);
-    });
-
-    it('returns parryWindow for ParryWindow state', () => {
-      const fsm = new CombatFSM(weapon);
-      fsm.transition(CombatInput.Block, undefined, BlockDirection.Top);
-      fsm.tick();
-      expect(fsm.state).toBe(CombatState.ParryWindow);
-      expect(computePhaseTotal(CombatState.ParryWindow, fsm)).toBe(weapon.parryWindow);
-    });
-
-    it('returns hitStunTicks for HitStun state', () => {
-      const fsm = new CombatFSM(weapon);
-      fsm.transition(CombatInput.HitReceived);
-      fsm.tick();
-      expect(fsm.state).toBe(CombatState.HitStun);
-      expect(computePhaseTotal(CombatState.HitStun, fsm)).toBe(weapon.hitStunTicks);
+    it('phaseT is 0 in Idle (no fixed phase duration)', () => {
+      tick();
+      expect(CombatStateComp.phaseT[playerEid]).toBe(0);
     });
   });
 });
