@@ -193,8 +193,10 @@ src/
 │   │   └── DummyDamageObserver.ts  # Floating damage numbers for training dummies
 │   └── entities/
 │       ├── createPlayer.ts      # Player entity factory (mesh, physics, components)
-│       ├── createDummy.ts       # Training dummy factory + management (spawn/reset/block)
-│       └── createArena.ts       # Test arena geometry + physics
+│       └── createDummy.ts       # Training dummy factory + management (spawn/reset/block)
+├── arena/
+│   ├── types.ts                 # ArenaSpec, SpawnPoint, ShopkeepStallSpec, Volume3D
+│   └── createArena.ts           # Code-authored arena: lights (#117), geometry/spawns (#112)
 ├── combat/
 │   ├── CombatFSM.ts         # Combat state machine (11 states, data-driven transitions)
 │   ├── states.ts            # CombatState enum (Idle, Windup, Release, Block, etc.)
@@ -252,4 +254,5 @@ Design docs and architecture specs live in [`docs/`](docs/):
 - **Tracer-based hits**: no simple raycasts. Weapons have tracer points swept between ticks.
 - **Damage pipeline**: TracerSystem detects hits → DamageSystem resolves block/parry/damage → HealthSystem applies HP changes.
 - **First-person viewmodel**: two-pass render layer architecture (Layer 0 = world, Layer 1 = viewmodel) with a dedicated camera for depth-correct weapon rendering. Bone-driven animation via `ViewmodelAnimationSystem` — per-weapon unique poses, quaternion slerp crossfade blending matching the world animation system.
+- **Arena lighting (Arena v1, #117)**: lights are map data, owned by `createArena()`, not the engine. The v1 rig is a warm directional "sun" against a sky/ground `HemisphereLight` tint plus a low ambient fill — no shadows, no skybox texture. Sky color matches `scene.background`; ground color matches the arena floor.
 - **bitECS components are numbers-only**: complex data (meshes, skeletons) lives in `Map<number, ...>` side-tables.
