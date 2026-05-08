@@ -57,7 +57,27 @@ In first-person mode, a **viewmodel** renders your right arm and equipped weapon
 |-----|--------|
 | **E** | Interact (when prompt shown) — e.g. open the shop while standing near the shopkeep |
 
-> A **shopkeep NPC** stands at one corner of the arena. Walk close enough and a "Press [E] to shop" prompt appears above their head; pressing **E** opens the shop overlay. The shop UI itself ships in a follow-up issue.
+> A **shopkeep NPC** stands at one corner of the arena. Walk close enough and a "Press [E] to shop" prompt appears above their head; pressing **E** triggers the shop-open hook. The interaction pipeline is wired but the hook currently stubs out to a HUD notification — connecting it to the real shop overlay (below) is a follow-up.
+
+### Shop (placeholder)
+
+A two-tab shop panel scaffold. The "Weapons (Gold)" tab is a stub
+filled in by #96. The "Premium (USD)" tab shows a "Coming soon"
+placeholder — no real payments are wired. Forward-compatible
+`PaymentProvider` interface lets Stripe etc. plug in later without
+UI changes.
+
+No hotkey is wired yet — open from the dev console:
+
+```js
+window.openShop()    // Open the shop panel
+window.closeShop()   // Close it (Escape also works)
+```
+
+The shop releases pointer lock and pauses input on open, the same
+way the inventory does. The default `MockPaymentProvider` always
+reports `isAvailable() === false`, so any Buy buttons render
+disabled with a "Coming soon" tooltip.
 
 ### Training Dummy Controls
 | Key | Action |
@@ -85,6 +105,9 @@ window.setWeapon('Dagger')
 window.setWeapon('Mace')
 window.setWeapon('Battleaxe')
 
+window.openShop()                // Open shop panel (placeholder; #96 will add NPC interaction)
+window.closeShop()               // Close shop panel
+
 window.__debugInput = true       // Log every keydown/keyup with paused state
 window.__debugInput = false      // Disable
 ```
@@ -109,6 +132,12 @@ All weapons are data-driven via `WeaponConfig` objects — damage, timing, turnc
 | **Battleaxe** | 1.2 | Very Slow | 55–75 / 40–55 / 28–35 | 24 | Devastating damage but long windups. Overheads deal up to 75 head damage. |
 
 *Damage ranges show min–max across attack directions (left, right, overhead, underhand, stab). Actual damage depends on attack direction and body region hit.*
+
+## Gold & Shop
+
+The player starts with a small purse of **200 gold** and only the **Dagger** equipped. Other weapons (Mace, Longsword, Battleaxe) must be purchased from the shopkeep — the inventory no longer starts populated with every weapon. Gold prices live in `src/economy/Prices.ts` (Mace 100, Longsword 150, Battleaxe 200) and the balance lives in a small in-memory `Wallet` module at `src/economy/Wallet.ts`. A **gold counter HUD** appears at the top-right of the screen and updates whenever the balance changes; it pulses briefly on each change.
+
+The wallet is intentionally minimal scaffolding for the shop feature — earning gold from kills, persistence across sessions, and networked reconciliation belong to the full Gold currency design (issue #95) and are deliberately out of scope here.
 
 ## Combat System
 
@@ -184,7 +213,9 @@ src/
 │   ├── dagger.ts            # Dagger weapon data (auto-registers on import)
 │   └── battleaxe.ts         # Battleaxe weapon data (auto-registers on import)
 ├── input/
-│   └── InputManager.ts      # Keyboard, mouse, pointer lock, rolling delta buffer
+│   ├── InputManager.ts      # Keyboard, mouse, pointer lock, rolling delta buffer
+│   ├── InputManager.types.ts # Target interface contract (#102 spec)
+│   └── keybinds.ts          # DEFAULT_KEYBINDS map (action → KeyboardEvent.code)
 ├── rendering/
 │   ├── CameraController.ts  # FPS + third-person orbit camera
 │   ├── CharacterModel.ts    # Procedural low-poly character mesh + bone skeleton
@@ -211,6 +242,14 @@ src/
 └── utils/
     └── math.ts              # Vector utilities, interpolation helpers
 ```
+
+## Documentation
+
+Design docs and architecture specs live in [`docs/`](docs/):
+
+- [`docs/MVP.md`](docs/MVP.md) — Foundation rebuild roadmap (#85)
+- [`docs/gold-currency.md`](docs/gold-currency.md) — Gold currency design (#95)
+- [`docs/input-pipeline.md`](docs/input-pipeline.md) — Input pipeline architecture (#102)
 
 ## Architecture Notes
 

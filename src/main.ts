@@ -36,6 +36,8 @@ import { WorldLabel } from './hud/WorldLabel';
 import { createDummyDamageObserver } from './ecs/systems/DummyDamageObserver';
 import { showNotification } from './hud/DebugNotification';
 import { InventoryPanel } from './hud/InventoryPanel';
+import { ShopPanel } from './hud/shop/ShopPanel';
+import { MockPaymentProvider } from './hud/shop/types';
 import { FIXED_TIMESTEP, SPAWN_HEIGHT } from './core/types';
 import { Position, meshRegistry } from './ecs/components';
 import { createFSM, fsmRegistry } from './combat/CombatFSM';
@@ -116,9 +118,11 @@ async function main(): Promise<void> {
   registerWeaponModelFactory('Dagger', createDaggerModel);
   registerWeaponModelFactory('Battleaxe', createBattleaxeModel);
 
-  // Initialize player inventory with available weapons, Dagger equipped
-  const availableWeapons = Object.keys(weaponConfigs);
-  initInventory(playerEid, availableWeapons, 'Dagger');
+  // Initialize player inventory with the starter weapon only.
+  // Other weapons must be purchased from the shopkeep (issue #107). When the
+  // full gold-currency design (#95) lands and earning loops exist, this list
+  // will likely stay the same — gold/shop is the entry point, not initInventory.
+  initInventory(playerEid, ['Dagger'], 'Dagger');
 
   // ─── First-person viewmodel ───
   const viewmodel = new ViewmodelRenderer(world.scene, world.camera.aspect, {
@@ -166,8 +170,19 @@ async function main(): Promise<void> {
 
   // Inventory panel (I key to toggle)
   const inventoryPanel = new InventoryPanel(input, playerEid);
-  // Suppress click-to-play overlay while inventory is open
-  input._suppressClickToPlay = () => inventoryPanel.isOpen;
+
+  // Shop panel — Premium (USD) scaffold + stub Weapons tab.
+  // No real payment integration; MockPaymentProvider always reports unavailable.
+  // No hotkey wired yet — #96 will hook this up to a shopkeep NPC interaction.
+  const paymentProvider = new MockPaymentProvider();
+  const shopPanel = new ShopPanel(input, { provider: paymentProvider });
+
+  // Expose for debugging until the shopkeep interaction lands in #96
+  (window as any).openShop = () => shopPanel.open();
+  (window as any).closeShop = () => shopPanel.close();
+
+  // Suppress click-to-play overlay while inventory or shop is open
+  input._suppressClickToPlay = () => inventoryPanel.isOpen || shopPanel.isOpen;
 
   // Initialize debug renderers
   const tracerDebugRenderer = new TracerDebugRenderer(world.scene);

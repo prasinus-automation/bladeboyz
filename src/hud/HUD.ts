@@ -17,6 +17,7 @@ import { fsmRegistry } from '../combat/CombatFSM';
 import { HealthBar } from './HealthBar';
 import { StaminaBar } from './StaminaBar';
 import { DirectionIndicator } from './DirectionIndicator';
+import { GoldCounter } from './GoldCounter';
 
 /** Direction names for debug display */
 const ATTACK_DIR_NAMES: Record<number, string> = {
@@ -30,6 +31,7 @@ export class HUD {
   private healthBar: HealthBar;
   private staminaBar: StaminaBar;
   private dirIndicator: DirectionIndicator;
+  private goldCounter: GoldCounter;
 
   // FSM state label
   private fsmLabel: HTMLElement;
@@ -46,6 +48,7 @@ export class HUD {
     this.healthBar = new HealthBar();
     this.staminaBar = new StaminaBar();
     this.dirIndicator = new DirectionIndicator();
+    this.goldCounter = new GoldCounter();
 
     // FSM state label (toggled with F4)
     this.fsmLabel = document.createElement('div');
@@ -158,6 +161,7 @@ export class HUD {
     this.healthBar.dispose();
     this.staminaBar.dispose();
     this.dirIndicator.dispose();
+    this.goldCounter.dispose();
     this.fsmLabel.remove();
     this.fpsEl.remove();
   }
