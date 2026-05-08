@@ -85,6 +85,8 @@ bladeboyz/
 │   └── training-dummies-and-bots-spec.md  # Architect spec for issue #99 (training dummies + warmup bots)
 ├── public/
 │   └── (static assets if any)
+├── docs/
+│   └── combat-fsm-v2.md         # Combat FSM v2 architecture spec (issue #88)
 ├── index.html
 ├── package.json
 ├── tsconfig.json
@@ -107,7 +109,9 @@ Everything is an entity with composable components. No god-objects. Systems oper
 - All combat timing is in **fixed-update ticks**, not wall-clock time
 
 ### Combat State Machine
-Each combatant has a per-entity FSM. States: `Idle`, `Windup`, `Release`, `Recovery`, `Block`, `ParryWindow`, `Riposte`, `Feint`, `Clash`, `Stunned`, `HitStun`. Transitions are data-driven from weapon config. **Turncap wiring** (PR #78): `CombatSystem` syncs `CameraController.maxTurnRate` from `FSM.getCurrentTurncap()` every fixed tick. Camera turn rate is capped during Windup/Release/Recovery/Feint per weapon config turncap values; uncapped (Infinity) during Idle/Block/ParryWindow/HitStun/Stunned.
+Each combatant has a per-entity FSM. **Currently shipped** (v1, 11 states): `Idle`, `Windup`, `Release`, `Recovery`, `Block`, `ParryWindow`, `Riposte`, `Feint`, `Clash`, `Stunned`, `HitStun`. Transitions are data-driven from weapon config. **Turncap wiring** (PR #78): `CombatSystem` syncs `CameraController.maxTurnRate` from `FSM.getCurrentTurncap()` every fixed tick. Camera turn rate is capped during Windup/Release/Recovery/Feint per weapon config turncap values; uncapped (Infinity) during Idle/Block/ParryWindow/HitStun/Stunned.
+
+**FSM v2 (in flight, see `docs/combat-fsm-v2.md` and issue #88)**: trims to 7 states (`Idle, Windup, Release, Recovery, Blocking, Parry, HitStun`), 4 directions (`Overhead, Left, Right, Stab` — `Underhand` removed), unified `CombatState` component (replaces dual `CombatStateComponent`/`CombatStateComp`), all state writes funnel through the FSM (no more direct writes from `DamageSystem`/`StaminaSystem`). Implementation gated on #85.
 
 ### Data-Driven Weapons
 Weapon behavior comes entirely from `WeaponConfig` objects — no hardcoded weapon logic in systems.
@@ -163,8 +167,11 @@ npm run lint         # Run ESLint
 
 ## Known Issues / Architectural Debt
 
-### Two Combat State Components (SYNCED — no longer broken)
-Two ECS components track combat state: `CombatStateComponent` (authoritative — synced from FSM by CombatSystem, used by HUD/StaminaSystem/DamageSystem) and `CombatStateComp` (animation mirror — has `phaseElapsed`/`phaseTotal`, used by AnimationSystem). **Both are now synced by CombatSystem** after FSM tick (fixed in PR #36). `computePhaseTotal()` in CombatSystem.ts derives phase duration from FSM state + weapon config. Long-term, these should be unified into a single component.
+### Two Combat State Components (SYNCED — slated for unification in FSM v2)
+Two ECS components track combat state: `CombatStateComponent` (authoritative — synced from FSM by CombatSystem, used by HUD/StaminaSystem/DamageSystem) and `CombatStateComp` (animation mirror — has `phaseElapsed`/`phaseTotal`, used by AnimationSystem). **Both are now synced by CombatSystem** after FSM tick (fixed in PR #36). `computePhaseTotal()` in CombatSystem.ts derives phase duration from FSM state + weapon config. **FSM v2 collapses these into a single `CombatState` component** — see `docs/combat-fsm-v2.md` §9.
+
+### Direct State Writes Bypass the FSM (FSM v2 will fix)
+`DamageSystem.ts` (lines 109, 128, 146) and `StaminaSystem.ts` (lines 99-100) write `CombatStateComponent.state` directly without dispatching an FSM input. This desyncs the FSM in `fsmRegistry` from the ECS component. FSM v2 routes every state change through `FSM.transition(input)` — see `docs/combat-fsm-v2.md` §7.
 
 ### Two Disconnected Inventory Modules (PARTIALLY RESOLVED — `InventoryData.ts` is dead code)
 `src/inventory/InventoryData.ts` is a lightweight UI-only side-table that was originally consumed by `InventoryPanel.ts`. `src/ecs/systems/InventorySystem.ts` is the real system with full equip logic (3D model swap, FSM update, ECS sync). **`InventoryPanel.ts` now correctly imports from `InventorySystem.ts`** (line 11 — `getInventory`, `equipWeapon`). `InventoryData.ts` is unused dead code referenced only by its own tests; remove in a cleanup PR.
