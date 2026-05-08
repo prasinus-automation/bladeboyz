@@ -126,6 +126,12 @@ All weapons are data-driven via `WeaponConfig` objects — damage, timing, turnc
 
 *Damage ranges show min–max across attack directions (left, right, overhead, underhand, stab). Actual damage depends on attack direction and body region hit.*
 
+## Gold & Shop
+
+The player starts with a small purse of **200 gold** and only the **Dagger** equipped. Other weapons (Mace, Longsword, Battleaxe) must be purchased from the shopkeep — the inventory no longer starts populated with every weapon. Gold prices live in `src/economy/Prices.ts` (Mace 100, Longsword 150, Battleaxe 200) and the balance lives in a small in-memory `Wallet` module at `src/economy/Wallet.ts`. A **gold counter HUD** appears at the top-right of the screen and updates whenever the balance changes; it pulses briefly on each change.
+
+The wallet is intentionally minimal scaffolding for the shop feature — earning gold from kills, persistence across sessions, and networked reconciliation belong to the full Gold currency design (issue #95) and are deliberately out of scope here.
+
 ## Combat System
 
 BladeBoyz uses a **directional melee combat system** inspired by Mordhau and Chivalry:

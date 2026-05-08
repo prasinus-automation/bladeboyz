@@ -112,9 +112,11 @@ async function main(): Promise<void> {
   registerWeaponModelFactory('Dagger', createDaggerModel);
   registerWeaponModelFactory('Battleaxe', createBattleaxeModel);
 
-  // Initialize player inventory with available weapons, Dagger equipped
-  const availableWeapons = Object.keys(weaponConfigs);
-  initInventory(playerEid, availableWeapons, 'Dagger');
+  // Initialize player inventory with the starter weapon only.
+  // Other weapons must be purchased from the shopkeep (issue #107). When the
+  // full gold-currency design (#95) lands and earning loops exist, this list
+  // will likely stay the same — gold/shop is the entry point, not initInventory.
+  initInventory(playerEid, ['Dagger'], 'Dagger');
 
   // ─── First-person viewmodel ───
   const viewmodel = new ViewmodelRenderer(world.scene, world.camera.aspect, {
