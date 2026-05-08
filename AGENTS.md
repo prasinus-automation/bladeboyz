@@ -31,12 +31,17 @@ bladeboyz/
 │   │   │   ├── TracerSystem.ts
 │   │   │   ├── HitboxSystem.ts
 │   │   │   ├── StaminaSystem.ts
+│   │   │   ├── HealthSystem.ts  # Damage application, death detection, respawn timer (#93)
 │   │   │   ├── AnimationSystem.ts
 │   │   │   └── ...
 │   │   └── entities/            # Entity factory/spawner functions
 │   │       ├── createPlayer.ts
 │   │       ├── createDummy.ts
 │   │       └── ...
+│   ├── events/
+│   │   └── EventBus.ts          # In-process event bus for DeathEvent, RespawnEvent, DamageDealt (#93)
+│   ├── world/
+│   │   └── SpawnPoints.ts       # Spawn-point registry + selectSpawnPoint() weighted-random selector (#93)
 │   ├── animation/
 │   │   ├── AnimationData.ts     # Third-person combat animation poses (per-direction, per-phase)
 │   │   └── ViewmodelAnimationData.ts # First-person viewmodel poses — per-weapon × per-direction × per-phase
@@ -70,6 +75,9 @@ bladeboyz/
 │   │   ├── StaminaBar.ts
 │   │   ├── DirectionIndicator.ts # Mordhau-style compass-rose crosshair overlay (attack/block direction)
 │   │   ├── InventoryPanel.ts    # Tab inventory UI overlay (HTML/CSS, pointer lock toggle)
+│   │   ├── DeathScreen.ts       # Full-screen death overlay + respawn countdown (#93)
+│   │   ├── Killfeed.ts          # Top-right kill log, fades after 5s (#93)
+│   │   ├── Scoreboard.ts        # Persistent K/D/Gold display (#93)
 │   │   └── DebugOverlay.ts      # FSM state, FPS counter
 │   └── utils/
 │       └── math.ts              # Vector utilities, interpolation helpers
@@ -115,6 +123,9 @@ Movement is a Rapier `KinematicCharacterController` driven by `MovementSystem` i
 2. `movementSystem(dt)` → reads input + camera yaw, computes desired movement, calls `characterController.computeColliderMovement()`, calls `body.setNextKinematicTranslation()`, writes ECS `Position`
 3. `world.physicsWorld.step()` → Rapier integrates kinematic translations and runs sensor queries
 4. Mesh sync runs in `render(alpha)` with `lerp(PreviousPosition, Position, alpha)` — NOT in fixedUpdate (avoids 60Hz position snapping)
+
+### Spawn / Death / Respawn Loop (designed in #93 — see [docs/spawn-death-respawn.md](docs/spawn-death-respawn.md))
+Entity lifecycle is **separate from CombatFSM**: it's a higher-level state expressed via `DeadTag` + `RespawnPending` components plus `Health.current`. States: `Alive → Dying (1 tick) → Dead → Respawning (1 tick) → Alive`. Death fires a `DeathEvent` on the in-process `EventBus`; killfeed/scoreboard/death-screen consume it. Respawn timer is **180 ticks (3 s)**, default starter weapon is **Longsword**, spawn-point selection is **random weighted-away-from-enemies** (min distance 8.0, max-min fallback). `CombatSystem` and `MovementSystem` both early-out on `DeadTag` so dead entities don't read input or move. **Continuous deathmatch — no rounds for MVP.** See the design doc for full state diagram and event payloads.
 
 ## Build / Run / Test Commands
 ```bash
