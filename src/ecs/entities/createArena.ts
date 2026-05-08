@@ -3,6 +3,12 @@ import type { GameWorld } from '../../core/types';
 
 /**
  * Create a simple test arena — flat ground plane with some obstacles.
+ *
+ * Spatial convention (see AGENTS.md "Spatial Conventions" + issue #104):
+ * the ground cuboid is centered at (0, 0, 0) with half-extents (25, 0.1, 25),
+ * so its TOP surface sits at y = 0.1 = `GROUND_TOP_Y`. The visual plane is
+ * at y = 0 (mid-cuboid) for cosmetic reasons. Character feet rest at y = 0.1.
+ * Do NOT change these constants without updating GROUND_TOP_Y in core/types.ts.
  */
 export function createArena(world: GameWorld): void {
   // Ground plane (visual)
@@ -13,7 +19,7 @@ export function createArena(world: GameWorld): void {
   ground.position.y = 0;
   world.scene.add(ground);
 
-  // Ground collider (physics)
+  // Ground collider (physics): center y=0, half-height 0.1 → top at y=0.1.
   const groundBodyDesc = world.rapier.RigidBodyDesc.fixed().setTranslation(0, 0, 0);
   const groundBody = world.physicsWorld.createRigidBody(groundBodyDesc);
   const groundColliderDesc = world.rapier.ColliderDesc.cuboid(25, 0.1, 25);

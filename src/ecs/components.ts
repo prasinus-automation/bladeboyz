@@ -60,6 +60,36 @@ export const MovementState = defineComponent({
   crouching: Types.ui8,
   /** Current speed factor (0..1, for acceleration ramp) */
   speedFactor: Types.f32,
+  /**
+   * Vertical velocity for jump/gravity bookkeeping (units/s).
+   * Authoritative for kinematic gravity simulation. Replaces use of
+   * `Velocity.y` in MovementSystem (issue #104).
+   */
+  verticalVelocity: Types.f32,
+  /** Tick of last successful jump (for jump cooldown / debug) */
+  lastJumpTick: Types.i32,
+});
+
+/**
+ * MovementIntent — per-tick movement commands written by an "agent"
+ * (the local player's InputSystem, an AI controller, or a network
+ * deserializer) and consumed by MovementSystem.
+ *
+ * - moveX, moveZ are world-space normalized direction (length 0 or 1).
+ * - sprint, crouch, jumpRequested are 0/1 flags.
+ * - jumpRequested is edge-triggered: written 1 only on the rising edge
+ *   of the jump input, cleared back to 0 by MovementSystem after the
+ *   jump is consumed (or each tick by the writer if not consumed).
+ *
+ * This is the seam where future AI controllers and network input
+ * packets plug in. See AGENTS.md "Character Controller" and issue #86.
+ */
+export const MovementIntent = defineComponent({
+  moveX: Types.f32,
+  moveZ: Types.f32,
+  sprint: Types.ui8,
+  crouch: Types.ui8,
+  jumpRequested: Types.ui8,
 });
 
 /**

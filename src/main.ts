@@ -3,6 +3,7 @@ import { GameLoop } from './core/GameLoop';
 import { InputManager } from './input/InputManager';
 import { CameraController } from './rendering/CameraController';
 import { createMovementSystem } from './ecs/systems/MovementSystem';
+import { createInputSystem } from './ecs/systems/InputSystem';
 import { createCombatSystem } from './ecs/systems/CombatSystem';
 import { staminaSystemTick } from './ecs/systems/StaminaSystem';
 import { healthSystemTick } from './ecs/systems/HealthSystem';
@@ -39,7 +40,8 @@ import { InventoryPanel } from './hud/InventoryPanel';
 import { ShopPanel } from './hud/shop/ShopPanel';
 import { MockPaymentProvider } from './hud/shop/types';
 import { FIXED_TIMESTEP, SPAWN_HEIGHT } from './core/types';
-import { Position, meshRegistry } from './ecs/components';
+import { Position, PreviousPosition, meshRegistry } from './ecs/components';
+import { lerp } from './utils/math';
 import { createFSM, fsmRegistry } from './combat/CombatFSM';
 import { weaponConfigs } from './weapons/WeaponConfig';
 import { weaponIdToName } from './ecs/systems/CombatSystem';
@@ -70,22 +72,23 @@ for (const [name, config] of Object.entries(weaponConfigs)) {
 
 /** Next dummy spawn index for position cycling */
 let dummySpawnIdx = 0;
-const DUMMY_SPAWN_POSITIONS: Array<{ x: number; y: number; z: number }> = [
-  { x: 0, y: SPAWN_HEIGHT, z: -4 },
-  { x: 3, y: SPAWN_HEIGHT, z: -4 },
-  { x: -3, y: SPAWN_HEIGHT, z: -4 },
-  { x: 0, y: SPAWN_HEIGHT, z: -7 },
-  { x: 3, y: SPAWN_HEIGHT, z: -7 },
-  { x: -3, y: SPAWN_HEIGHT, z: -7 },
-  { x: 6, y: SPAWN_HEIGHT, z: -4 },
-  { x: -6, y: SPAWN_HEIGHT, z: -4 },
+// Y is resolved per-spawn by createDummy → spawnAtGround (raycast).
+const DUMMY_SPAWN_POSITIONS: Array<{ x: number; z: number }> = [
+  { x: 0, z: -4 },
+  { x: 3, z: -4 },
+  { x: -3, z: -4 },
+  { x: 0, z: -7 },
+  { x: 3, z: -7 },
+  { x: -3, z: -7 },
+  { x: 6, z: -4 },
+  { x: -6, z: -4 },
 ];
 
 function spawnDummyAtNextPosition(world: GameWorld): void {
   const pos = DUMMY_SPAWN_POSITIONS[dummySpawnIdx % DUMMY_SPAWN_POSITIONS.length];
   const colors = [0xcc4444, 0xcc8844, 0xcc44cc, 0x44cccc, 0xcccc44];
   const color = colors[dummySpawnIdx % colors.length];
-  createDummy(world, pos.x, pos.y, pos.z, color);
+  createDummy(world, pos.x, pos.z, color);
   dummySpawnIdx++;
   showNotification(`Dummy spawned (${activeDummies.length} total)`);
 }
@@ -104,8 +107,8 @@ async function main(): Promise<void> {
   // Create arena
   createArena(world);
 
-  // Create player
-  const { eid: playerEid, mesh: playerMesh } = createPlayer(world, { x: 0, y: SPAWN_HEIGHT, z: 0 });
+  // Create player (Y resolved by spawnAtGround raycast)
+  const { eid: playerEid, mesh: playerMesh } = createPlayer(world, { x: 0, z: 0 });
   world.playerEntity = playerEid;
   cameraController.setPlayerMesh(playerMesh);
 
@@ -149,16 +152,21 @@ async function main(): Promise<void> {
     viewmodel.swapWeapon(event.weaponName);
   });
 
-  // Spawn initial training dummy
-  createDummy(world, 0, SPAWN_HEIGHT, -4, 0xcc4444);
+  // Spawn initial training dummy (Y resolved by spawnAtGround raycast)
+  createDummy(world, 0, -4, 0xcc4444);
   dummySpawnIdx = 1;
 
   // Spawn shopkeep NPC at far corner of arena. Walking distance from origin
   // is intentional — proves the interact prompt only shows up close.
+  // NOTE: SPAWN_HEIGHT is now a deprecated alias of GROUND_TOP_Y (= 0.1) per
+  // #104's feet-origin convention. The shopkeep mesh root is at feet (y=0
+  // local), so passing 0.1 puts its feet on the ground — fixing what was
+  // previously a floating shopkeep at y=1.1.
   createShopkeep(world, 8, SPAWN_HEIGHT, 8, { name: 'Shopkeep' });
 
-  // Create movement system
-  const movementSystem = createMovementSystem(world, input, cameraController);
+  // Input + movement systems (input writes MovementIntent; movement consumes it)
+  const inputSystem = createInputSystem(world, input, cameraController);
+  const movementSystem = createMovementSystem(world, cameraController);
 
   // Create combat system (reads input, drives per-entity FSMs)
   const combatSystem = createCombatSystem(world.ecs, input, cameraController);
@@ -277,10 +285,14 @@ async function main(): Promise<void> {
   };
 
   loop.fixedUpdate = (_dt: number) => {
+    // Translate raw input → MovementIntent for the player. Must run before
+    // combat/movement so they see this tick's intent.
+    inputSystem(FIXED_TIMESTEP);
+
     // Combat system (reads input, ticks FSMs, syncs ECS components)
     combatSystem();
 
-    // Movement system
+    // Movement system — consumes MovementIntent, writes Position via Rapier
     movementSystem(FIXED_TIMESTEP);
 
     // Stamina system (reads combat state, handles regen/costs)
@@ -312,27 +324,10 @@ async function main(): Promise<void> {
     // Update nearest-interactable cache (for KeyE handler + WorldLabel prompt)
     interactionSystem(playerEid);
 
-    // Sync player mesh position with ECS (skeletal model group)
-    const playerModelData = meshRegistry.get(playerEid);
-    if (playerModelData) {
-      playerModelData.group.position.set(
-        Position.x[playerEid],
-        Position.y[playerEid],
-        Position.z[playerEid],
-      );
-    }
-
-    // Sync dummy meshes
-    for (const deid of activeDummies) {
-      const modelData = meshRegistry.get(deid);
-      if (modelData) {
-        modelData.group.position.set(
-          Position.x[deid],
-          Position.y[deid],
-          Position.z[deid],
-        );
-      }
-    }
+    // NOTE: mesh sync MOVED OUT of fixedUpdate — see loop.render below.
+    // Syncing mesh positions in fixedUpdate snaps them at 60Hz; in render
+    // we lerp between PreviousPosition and Position so motion stays smooth
+    // at high framerates (vsync 144Hz, etc.).
   };
 
   loop.update = (dt: number) => {
@@ -344,6 +339,30 @@ async function main(): Promise<void> {
   };
 
   loop.render = (alpha: number) => {
+    // Sync skeletal mesh groups by interpolating between the previous tick
+    // and current tick's positions. This prevents visible 60Hz snapping at
+    // higher render framerates (e.g. 144Hz vsync). Runs in render — NOT
+    // fixedUpdate — so the mesh interpolates smoothly between physics ticks.
+    const playerModelData = meshRegistry.get(playerEid);
+    if (playerModelData) {
+      const px = lerp(PreviousPosition.x[playerEid], Position.x[playerEid], alpha);
+      const py = lerp(PreviousPosition.y[playerEid], Position.y[playerEid], alpha);
+      const pz = lerp(PreviousPosition.z[playerEid], Position.z[playerEid], alpha);
+      playerModelData.group.position.set(px, py, pz);
+    }
+    for (const deid of activeDummies) {
+      const modelData = meshRegistry.get(deid);
+      if (modelData) {
+        // Dummies are static — Position.* equals PreviousPosition.* so the
+        // lerp is effectively a no-op, but we go through it anyway so that
+        // future moving NPCs that reuse this loop pattern just work.
+        const dx = lerp(PreviousPosition.x[deid], Position.x[deid], alpha);
+        const dy = lerp(PreviousPosition.y[deid], Position.y[deid], alpha);
+        const dz = lerp(PreviousPosition.z[deid], Position.z[deid], alpha);
+        modelData.group.position.set(dx, dy, dz);
+      }
+    }
+
     debugRenderer.update();
     tracerDebugRenderer.update();
     floatingDamage.update();
