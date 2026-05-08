@@ -508,4 +508,154 @@ describe('CombatFSM', () => {
       expect(fsm.weaponConfig.name).toBe('TestAxe');
     });
   });
+
+  // ── setBlockDirection ──────────────────────────────
+
+  describe('setBlockDirection', () => {
+    it('updates blockDirection without changing state', () => {
+      expect(fsm.state).toBe(CombatState.Idle);
+      fsm.setBlockDirection(BlockDirection.Right);
+      expect(fsm.blockDirection).toBe(BlockDirection.Right);
+      expect(fsm.state).toBe(CombatState.Idle);
+    });
+
+    it('preserves the timer when called mid-block', () => {
+      fsm.transition(CombatInput.Block, undefined, BlockDirection.Top);
+      const ticksBefore = fsm.ticksRemaining;
+      fsm.setBlockDirection(BlockDirection.Left);
+      expect(fsm.blockDirection).toBe(BlockDirection.Left);
+      expect(fsm.ticksRemaining).toBe(ticksBefore);
+    });
+  });
+
+  // ── getPhaseTotal / getPhaseT ──────────────────────
+
+  describe('getPhaseTotal', () => {
+    it('returns 0 in Idle', () => {
+      expect(fsm.getPhaseTotal()).toBe(0);
+    });
+
+    it('returns windup ticks during Windup (per direction)', () => {
+      fsm.transition(CombatInput.Attack, AttackDirection.Overhead);
+      expect(fsm.getPhaseTotal()).toBe(weapon.windup[AttackDirection.Overhead]);
+    });
+
+    it('returns release ticks during Release', () => {
+      fsm.transition(CombatInput.Attack, AttackDirection.Stab);
+      tickN(fsm, weapon.windup[AttackDirection.Stab]);
+      expect(fsm.state).toBe(CombatState.Release);
+      expect(fsm.getPhaseTotal()).toBe(weapon.release[AttackDirection.Stab]);
+    });
+
+    it('returns release ticks during Riposte (mirrors Release)', () => {
+      fsm.transition(CombatInput.Block, undefined, BlockDirection.Top);
+      fsm.transition(CombatInput.ParryTriggered);
+      expect(fsm.state).toBe(CombatState.Riposte);
+      // Release ticks for the current attackDirection (default Stab).
+      expect(fsm.getPhaseTotal()).toBe(weapon.release[fsm.attackDirection]);
+    });
+
+    it('returns full recovery ticks during Recovery (non-combo)', () => {
+      fsm.transition(CombatInput.Attack, AttackDirection.Stab);
+      tickN(fsm, weapon.windup[AttackDirection.Stab]);
+      tickN(fsm, weapon.release[AttackDirection.Stab]);
+      expect(fsm.state).toBe(CombatState.Recovery);
+      expect(fsm.getPhaseTotal()).toBe(weapon.recovery[AttackDirection.Stab]);
+    });
+
+    it('returns combo recovery ticks during combo Recovery', () => {
+      // Run a full attack then chain a combo so the second swing's recovery
+      // is tagged as combo recovery internally.
+      fsm.transition(CombatInput.Attack, AttackDirection.Left);
+      tickN(fsm, weapon.windup[AttackDirection.Left]);
+      tickN(fsm, weapon.release[AttackDirection.Left]);
+      // Buffer the combo — fires on Recovery timer expiry
+      fsm.transition(CombatInput.Attack, AttackDirection.Right);
+      tickN(fsm, weapon.recovery[AttackDirection.Left]); // → Windup (combo)
+      tickN(fsm, weapon.windup[AttackDirection.Right]);
+      tickN(fsm, weapon.release[AttackDirection.Right]);
+      expect(fsm.state).toBe(CombatState.Recovery);
+      expect(fsm.getPhaseTotal()).toBe(weapon.comboRecovery[AttackDirection.Right]);
+    });
+
+    it('returns 3 during Feint', () => {
+      fsm.transition(CombatInput.Attack, AttackDirection.Left);
+      fsm.transition(CombatInput.Feint);
+      expect(fsm.state).toBe(CombatState.Feint);
+      expect(fsm.getPhaseTotal()).toBe(3);
+    });
+
+    it('returns parryWindow ticks during ParryWindow', () => {
+      fsm.transition(CombatInput.Block, undefined, BlockDirection.Top);
+      expect(fsm.getPhaseTotal()).toBe(weapon.parryWindow);
+    });
+
+    it('returns hitStunTicks during HitStun', () => {
+      fsm.transition(CombatInput.HitReceived);
+      expect(fsm.getPhaseTotal()).toBe(weapon.hitStunTicks);
+    });
+
+    it('returns parryStunTicks during Stunned', () => {
+      fsm.transition(CombatInput.Attack, AttackDirection.Left);
+      tickN(fsm, weapon.windup[AttackDirection.Left]);
+      fsm.transition(CombatInput.WasParried);
+      expect(fsm.state).toBe(CombatState.Stunned);
+      expect(fsm.getPhaseTotal()).toBe(weapon.parryStunTicks);
+    });
+
+    it('returns 0 during Block (held state, no fixed duration)', () => {
+      fsm.transition(CombatInput.Block, undefined, BlockDirection.Top);
+      tickN(fsm, weapon.parryWindow);
+      expect(fsm.state).toBe(CombatState.Block);
+      expect(fsm.getPhaseTotal()).toBe(0);
+    });
+  });
+
+  describe('getPhaseT', () => {
+    it('is 0 in Idle', () => {
+      expect(fsm.getPhaseT()).toBe(0);
+    });
+
+    it('is 0 immediately after entering Windup (no ticks elapsed)', () => {
+      fsm.transition(CombatInput.Attack, AttackDirection.Overhead);
+      expect(fsm.getPhaseT()).toBe(0);
+    });
+
+    it('is ~0.5 at the midpoint of Windup', () => {
+      fsm.transition(CombatInput.Attack, AttackDirection.Overhead);
+      const total = weapon.windup[AttackDirection.Overhead];
+      const half = Math.floor(total / 2);
+      tickN(fsm, half);
+      expect(fsm.getPhaseT()).toBeCloseTo(half / total, 5);
+    });
+
+    it('is 1.0 on the final tick (fully elapsed)', () => {
+      fsm.transition(CombatInput.Attack, AttackDirection.Overhead);
+      const total = weapon.windup[AttackDirection.Overhead];
+      // Tick exactly `total - 1` times so ticksRemaining is 1; getPhaseT
+      // should report (total-1)/total → close to 1, then on the next tick
+      // the FSM transitions to Release before getPhaseT is read.
+      tickN(fsm, total - 1);
+      expect(fsm.getPhaseT()).toBeCloseTo((total - 1) / total, 5);
+    });
+
+    it('clamps to [0, 1] (never negative, never > 1)', () => {
+      fsm.transition(CombatInput.Attack, AttackDirection.Stab);
+      // Drive deep into the chain
+      tickN(fsm, weapon.windup[AttackDirection.Stab]);
+      tickN(fsm, weapon.release[AttackDirection.Stab]);
+      // Recovery — sample partway through
+      tickN(fsm, 2);
+      const t = fsm.getPhaseT();
+      expect(t).toBeGreaterThanOrEqual(0);
+      expect(t).toBeLessThanOrEqual(1);
+    });
+
+    it('is 0 in Block (no fixed phase total)', () => {
+      fsm.transition(CombatInput.Block, undefined, BlockDirection.Top);
+      tickN(fsm, weapon.parryWindow);
+      expect(fsm.state).toBe(CombatState.Block);
+      expect(fsm.getPhaseT()).toBe(0);
+    });
+  });
 });

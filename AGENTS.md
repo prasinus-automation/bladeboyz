@@ -202,7 +202,7 @@ npm run lint         # Run ESLint
 ## Known Issues / Architectural Debt
 
 ### Two Combat State Components (SYNCED — slated for unification in FSM v2)
-Two ECS components track combat state: `CombatStateComponent` (authoritative — synced from FSM by CombatSystem, used by HUD/StaminaSystem/DamageSystem) and `CombatStateComp` (animation mirror — has `phaseElapsed`/`phaseTotal`, used by AnimationSystem). **Both are now synced by CombatSystem** after FSM tick (fixed in PR #36). `computePhaseTotal()` in CombatSystem.ts derives phase duration from FSM state + weapon config. **FSM v2 collapses these into a single `CombatState` component** — see `docs/combat-fsm-v2.md` §9.
+Two ECS components track combat state: `CombatStateComponent` (authoritative — synced from FSM by CombatSystem, used by HUD/StaminaSystem/DamageSystem) and `CombatStateComp` (animation mirror — has `phaseElapsed`/`phaseTotal`/`phaseT`, used by AnimationSystem). **Both are now synced by CombatSystem** after FSM tick (fixed in PR #36). Phase math (`getPhaseTotal()` / `getPhaseT()`) lives on `CombatFSM` — `CombatSystem` mirrors those values onto `CombatStateComp` each tick. **FSM v2 collapses these into a single `CombatState` component** — see `docs/combat-fsm-v2.md` §9.
 
 ### Direct State Writes Bypass the FSM (FSM v2 will fix)
 `DamageSystem.ts` (lines 109, 128, 146) and `StaminaSystem.ts` (lines 99-100) write `CombatStateComponent.state` directly without dispatching an FSM input. This desyncs the FSM in `fsmRegistry` from the ECS component. FSM v2 routes every state change through `FSM.transition(input)` — see `docs/combat-fsm-v2.md` §7.
@@ -260,7 +260,7 @@ First slice of parent #94 (drop-on-death / pickup / despawn). Foundation only �
 - **Vite HMR** with Three.js requires careful disposal of scenes/renderers to avoid memory leaks on hot reload
 - **Rapier debug renderer** needs `@dimforge/rapier3d-compat` not `@dimforge/rapier3d` for browser compatibility
 - The deploy workflow (`.github/workflows/deploy-staging.yml`) expects a `Dockerfile` and maps port 3000 internally → 3010 externally
-- **CombatSystem syncs both `CombatStateComponent` and `CombatStateComp`** — `computePhaseTotal()` derives phase duration. AnimationSystem reads from `CombatStateComp` (`phaseElapsed`, `phaseTotal`, `state`, `direction`).
+- **CombatSystem syncs both `CombatStateComponent` and `CombatStateComp`** — phase math (`getPhaseTotal` / `getPhaseT`) lives on the FSM. AnimationSystem reads from `CombatStateComp` (`phaseElapsed`, `phaseTotal`, `phaseT`, `state`, `direction`).
 - **`weaponIdToName` in CombatSystem.ts (line 28) is a hardcoded array** — when adding new weapons, update this array AND ensure the weapon's numeric index matches `CombatStateComponent.weaponId[eid]`
 - **Pointer Lock must be released** when showing any UI overlay (inventory, menus) — call `document.exitPointerLock()`. Re-request on close via user gesture (click on canvas).
 - **Side-table pattern** for non-numeric data: `meshRegistry` (Map<number, CharacterModelData>), `fsmRegistry` (Map<number, CombatFSM>), `hitboxColliderRegistry` — use the same pattern for inventory/equipment data

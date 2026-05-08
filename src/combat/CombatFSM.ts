@@ -59,6 +59,13 @@ export class CombatFSM {
   /** Whether the current recovery is a combo recovery (shorter timing) */
   private _isComboRecovery = false;
 
+  /**
+   * Whether the swing currently in flight (Windup → Release → Recovery)
+   * was initiated via a combo buffer rather than from Idle. Used to pick
+   * `comboRecovery` vs `recovery` ticks when Release expires.
+   */
+  private _currentSwingIsCombo = false;
+
   constructor(weaponConfig: WeaponConfig) {
     this._weaponConfig = weaponConfig;
   }
@@ -97,6 +104,15 @@ export class CombatFSM {
     this._weaponConfig = config;
   }
 
+  /**
+   * Set the block direction without changing state. Used when the player
+   * (or training-dummy debug tool) wants to switch which way they're
+   * currently blocking, without re-entering ParryWindow.
+   */
+  setBlockDirection(direction: BlockDirection): void {
+    this._blockDirection = direction;
+  }
+
   // ── Turncap ──────────────────────────────────────────
 
   /**
@@ -116,6 +132,60 @@ export class CombatFSM {
       default:
         return Infinity;
     }
+  }
+
+  // ── Phase math ───────────────────────────────────────
+
+  /**
+   * Total ticks for the current state's phase, derived from the weapon
+   * config + current attack direction. Returns 0 for states without a
+   * fixed duration (Idle, Block).
+   *
+   * This is the single source of truth for phase math — CombatSystem,
+   * AnimationSystem, and any other consumer should call this rather
+   * than re-deriving it from weapon config + state.
+   */
+  getPhaseTotal(): number {
+    const config = this._weaponConfig;
+    const atkDir = this._attackDirection;
+    switch (this._state) {
+      case CombatState.Windup:
+        return config.windup[atkDir];
+      case CombatState.Release:
+      case CombatState.Riposte:
+        return config.release[atkDir];
+      case CombatState.Recovery:
+        return this._isComboRecovery
+          ? config.comboRecovery[atkDir]
+          : config.recovery[atkDir];
+      case CombatState.Feint:
+        // Feint duration matches `_handleFeint` (~50ms / 3 ticks).
+        return 3;
+      case CombatState.ParryWindow:
+        return config.parryWindow;
+      case CombatState.HitStun:
+        return config.hitStunTicks;
+      case CombatState.Stunned:
+        return config.parryStunTicks;
+      default:
+        // Idle, Block, Clash — no fixed phase duration
+        return 0;
+    }
+  }
+
+  /**
+   * Normalized progress through the current phase, in [0, 1].
+   * Returns 0 when the current phase has no fixed duration.
+   *
+   * t = (phaseTotal - ticksRemaining) / phaseTotal
+   */
+  getPhaseT(): number {
+    const total = this.getPhaseTotal();
+    if (total <= 0) return 0;
+    const elapsed = total - this._ticksRemaining;
+    if (elapsed <= 0) return 0;
+    if (elapsed >= total) return 1;
+    return elapsed / total;
   }
 
   // ── Transition logic ─────────────────────────────────
@@ -314,10 +384,11 @@ export class CombatFSM {
 
   // ── Private: state entry helpers ─────────────────────
 
-  private _enterWindup(direction: AttackDirection): void {
+  private _enterWindup(direction: AttackDirection, fromCombo = false): void {
     this._state = CombatState.Windup;
     this._attackDirection = direction;
     this._ticksRemaining = this._weaponConfig.windup[direction];
+    this._currentSwingIsCombo = fromCombo;
     this._pendingStaminaEvents.push({ type: 'attack' });
   }
 
@@ -345,18 +416,22 @@ export class CombatFSM {
         break;
 
       case CombatState.Release:
-        // Release → Recovery
-        this._enterRecovery(false);
+        // Release → Recovery. If the current swing was launched from a
+        // combo buffer (i.e. the previous swing's Recovery), use the
+        // shorter `comboRecovery` ticks instead of the full recovery.
+        this._enterRecovery(this._currentSwingIsCombo);
         break;
 
       case CombatState.Recovery:
         if (this._comboBuffered) {
-          // Combo chain: Recovery → Windup with combo recovery
+          // Combo chain: Recovery → Windup. The next swing's recovery
+          // will be tagged as a combo recovery via `_currentSwingIsCombo`.
           const dir = this._comboDirection;
           this._comboBuffered = false;
-          this._enterWindup(dir);
+          this._enterWindup(dir, /*fromCombo=*/ true);
         } else {
           this._state = CombatState.Idle;
+          this._currentSwingIsCombo = false;
         }
         break;
 
@@ -427,6 +502,7 @@ export class CombatFSM {
     this._comboBuffered = false;
     this._pendingStaminaEvents = [];
     this._isComboRecovery = false;
+    this._currentSwingIsCombo = false;
   }
 }
 

@@ -213,6 +213,7 @@ export const DamageEvent = defineComponent({
  * - direction: AttackDirection or BlockDirection (context-dependent on state)
  * - phaseElapsed: ticks elapsed in current phase
  * - phaseTotal: total ticks for current phase (from weapon config)
+ * - phaseT: normalized phase progress in [0, 1] (mirrors CombatFSM.getPhaseT())
  * - weaponId: index into weaponRegistry for timing lookups
  */
 export const CombatStateComp = defineComponent({
@@ -220,7 +221,33 @@ export const CombatStateComp = defineComponent({
   direction: Types.ui8,
   phaseElapsed: Types.ui16,
   phaseTotal: Types.ui16,
+  phaseT: Types.f32,
   weaponId: Types.ui8,
+});
+
+/**
+ * HitReactComp — populated by DamageSystem on every successful hit.
+ * Read by AnimationSystem to drive a directional stagger lean.
+ *
+ * `dirX/dirY/dirZ` form a unit vector in the target's body-local space
+ * pointing FROM the attacker TO the target (i.e., the direction the hit
+ * pushes the target). Stored as 3 separate floats because bitECS only
+ * supports scalar fields.
+ *
+ * `magnitude` is normalized in [0, 1] (typically `damage / weapon.maxDamage`).
+ *
+ * `active = 1` until `currentTick >= spawnedAtTick + durationTicks`,
+ * at which point HitReactSystem clears it to 0. Animation reads `active`
+ * to decide whether to apply the lean.
+ */
+export const HitReactComp = defineComponent({
+  dirX: Types.f32,
+  dirY: Types.f32,
+  dirZ: Types.f32,
+  magnitude: Types.f32,
+  spawnedAtTick: Types.ui32,
+  durationTicks: Types.ui16,
+  active: Types.ui8,
 });
 
 /**

@@ -13,6 +13,7 @@ import {
   CombatStateComp,
   CombatStateComponent,
   AnimationComp,
+  HitReactComp,
   meshRegistry,
   hitboxColliderRegistry,
   TracerTag,
@@ -24,6 +25,9 @@ import { spawnAtGround } from '../utils/spawnAtGround';
 import { CombatState } from '../../combat/states';
 import { BlockDirection } from '../../combat/directions';
 import { CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS } from '../../core/types';
+import { CombatInput, createFSM, fsmRegistry, removeFSM } from '../../combat/CombatFSM';
+import { weaponConfigs } from '../../weapons/WeaponConfig';
+import { weaponIdToName } from '../systems/CombatSystem';
 import type { GameWorld } from '../../core/types';
 
 /** Track all active dummy entity IDs */
@@ -51,6 +55,12 @@ const HEALTH_RESET_TICKS = 180;
  * Dummies are NOT registered in `MovementSystem.bodyByEid` — that map is
  * for kinematic-controlled entities only. They have no `MovementIntent`.
  *
+ * A `CombatFSM` is registered for the dummy so `CombatSystem` will tick
+ * its state every fixed update — `phaseElapsed/phaseTotal/phaseT` populate
+ * during combat phases just like for the player. Dummies don't read
+ * input, so their FSM stays in `Idle` until something external (a parry
+ * trigger, `toggleDummyBlock`, etc.) drives a transition.
+ *
  * @returns entity ID
  */
 export function createDummy(
@@ -59,6 +69,7 @@ export function createDummy(
   z = -3,
   color = 0xcc4444,
   yOverride?: number,
+  startingWeapon = 'Dagger',
 ): number {
   const eid = addEntity(world.ecs);
 
@@ -75,6 +86,7 @@ export function createDummy(
   addComponent(world.ecs, CombatStateComp, eid);
   addComponent(world.ecs, CombatStateComponent, eid);
   addComponent(world.ecs, AnimationComp, eid);
+  addComponent(world.ecs, HitReactComp, eid);
   addComponent(world.ecs, TracerTag, eid);
 
   // Resolve feet Y (raycast unless explicit override)
@@ -101,7 +113,17 @@ export function createDummy(
   CombatStateComponent.state[eid] = CombatState.Idle;
   CombatStateComponent.blockDirection[eid] = BlockDirection.Top;
   CombatStateComponent.ticksRemaining[eid] = 0;
-  CombatStateComponent.weaponId[eid] = 0;
+  const weaponIndex = weaponIdToName.indexOf(startingWeapon);
+  CombatStateComponent.weaponId[eid] = weaponIndex >= 0 ? weaponIndex : 0;
+
+  // Register a CombatFSM so CombatSystem ticks the dummy each fixed update.
+  // Falls back to the first registered weapon if `startingWeapon` is unknown,
+  // which keeps tests/factories that pass in test-only weapon names happy.
+  const dummyWeapon =
+    weaponConfigs[startingWeapon] ?? Object.values(weaponConfigs)[0];
+  if (dummyWeapon) {
+    createFSM(eid, dummyWeapon);
+  }
 
   // Fixed-body capsule collider. Same offset convention as the player so
   // the body origin (Position) is at feet. Without a body the dummy would
@@ -156,6 +178,7 @@ export function removeDummy(world: GameWorld, eid: number): void {
     meshRegistry.delete(eid);
   }
   hitboxColliderRegistry.delete(eid);
+  removeFSM(eid);
 
   const idx = activeDummies.indexOf(eid);
   if (idx !== -1) activeDummies.splice(idx, 1);
@@ -171,6 +194,11 @@ export function resetAllDummies(world: GameWorld): void {
   for (const eid of activeDummies) {
     Health.current[eid] = Health.max[eid];
     Stamina.current[eid] = Stamina.max[eid];
+    // Reset the FSM through its public API so internal counters
+    // (ticksRemaining, combo buffer, etc.) stay consistent — bypassing
+    // the FSM here would desync `fsmRegistry` from `CombatStateComponent`.
+    const fsm = fsmRegistry.get(eid);
+    if (fsm) fsm.reset();
     CombatStateComponent.state[eid] = CombatState.Idle;
     CombatStateComponent.ticksRemaining[eid] = 0;
     dummyLastHitTick.set(eid, -HEALTH_RESET_TICKS);
@@ -192,21 +220,41 @@ const BLOCK_DIR_NAMES: Record<number, string> = {
 };
 
 /**
- * Toggle block state for all dummies.
- * Returns description of new state.
+ * Toggle block state for all dummies via the FSM transition API.
+ * Going OFF block → ReleaseBlock; going ON block → Block (which enters
+ * ParryWindow first, exactly like the player). Syncs the FSM's state
+ * back onto `CombatStateComponent` immediately so callers don't have
+ * to wait for the next `CombatSystem` tick. Returns description of the
+ * new state for HUD feedback.
  */
 export function toggleDummyBlock(): string {
   for (const eid of activeDummies) {
-    const currentState = CombatStateComponent.state[eid] as CombatState;
-    if (currentState === CombatState.Block || currentState === CombatState.ParryWindow) {
-      CombatStateComponent.state[eid] = CombatState.Idle;
-    } else {
-      CombatStateComponent.state[eid] = CombatState.Block;
+    const fsm = fsmRegistry.get(eid);
+    if (!fsm) continue;
+
+    const currentState = fsm.state;
+    const blockDir = CombatStateComponent.blockDirection[eid] as BlockDirection;
+    if (
+      currentState === CombatState.Block ||
+      currentState === CombatState.ParryWindow
+    ) {
+      fsm.transition(CombatInput.ReleaseBlock);
+    } else if (currentState === CombatState.Idle) {
+      fsm.transition(CombatInput.Block, undefined, blockDir);
     }
+    // Other states (Windup/Recovery/HitStun/etc.) — toggle is a no-op,
+    // matching the FSM's `canTransition` rules.
+
+    // Mirror FSM state onto the component immediately so callers and HUD
+    // see the change this frame.
+    CombatStateComponent.state[eid] = fsm.state;
+    CombatStateComponent.ticksRemaining[eid] = fsm.ticksRemaining;
+    CombatStateComponent.blockDirection[eid] = fsm.blockDirection;
   }
   if (activeDummies.length === 0) return 'No dummies';
-  const state = CombatStateComponent.state[activeDummies[0]] as CombatState;
-  if (state === CombatState.Block) {
+  const firstFsm = fsmRegistry.get(activeDummies[0]);
+  const state = firstFsm ? firstFsm.state : CombatState.Idle;
+  if (state === CombatState.Block || state === CombatState.ParryWindow) {
     const dir = CombatStateComponent.blockDirection[activeDummies[0]];
     return `Block: ${BLOCK_DIR_NAMES[dir] ?? 'Top'}`;
   }
@@ -214,18 +262,25 @@ export function toggleDummyBlock(): string {
 }
 
 /**
- * Cycle block direction for all dummies.
- * Returns the new direction name.
+ * Cycle block direction for all dummies through the FSM (so CombatSystem's
+ * per-tick sync from `fsm.blockDirection → CombatStateComponent` doesn't
+ * overwrite the new direction). Returns the new direction name.
  */
 export function cycleDummyBlockDirection(): string {
   for (const eid of activeDummies) {
-    const current = CombatStateComponent.blockDirection[eid];
-    const idx = BLOCK_DIRECTIONS.indexOf(current as BlockDirection);
+    const fsm = fsmRegistry.get(eid);
+    if (!fsm) continue;
+    const current = fsm.blockDirection;
+    const idx = BLOCK_DIRECTIONS.indexOf(current);
     const next = BLOCK_DIRECTIONS[(idx + 1) % BLOCK_DIRECTIONS.length];
+    fsm.setBlockDirection(next);
     CombatStateComponent.blockDirection[eid] = next;
   }
   if (activeDummies.length === 0) return 'No dummies';
-  const dir = CombatStateComponent.blockDirection[activeDummies[0]];
+  const firstFsm = fsmRegistry.get(activeDummies[0]);
+  const dir = firstFsm
+    ? firstFsm.blockDirection
+    : CombatStateComponent.blockDirection[activeDummies[0]];
   return BLOCK_DIR_NAMES[dir] ?? 'Top';
 }
 

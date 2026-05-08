@@ -1,14 +1,22 @@
-import { defineQuery, removeEntity } from 'bitecs';
+import { defineQuery, hasComponent, removeEntity } from 'bitecs';
 import type { GameWorld } from '../../core/types';
 import {
   DamageEvent,
   CombatStateComponent,
+  HitReactComp,
   Health,
+  Position,
+  Rotation,
   Stamina,
 } from '../components';
 import { CombatState } from '../../combat/states';
 import { AttackDirection, BlockDirection } from '../../combat/directions';
 import { weaponConfigMap } from './TracerSystem';
+import { getCurrentFixedTick } from '../../core/tickCounter';
+import type { WeaponConfig } from '../../weapons/WeaponConfig';
+
+/** HitReact stagger duration (~200ms at 60Hz) */
+const HITREACT_DURATION_TICKS = 12;
 
 // ─── Queries ─────────────────────────────────────────────────────────────────
 
@@ -88,7 +96,7 @@ export function DamageSystem(world: GameWorld, _dt: number): void {
     }
     // Unblocked hit — apply damage
     else {
-      handleHit(targetEid, attackerEid, damage);
+      handleHit(world, targetEid, attackerEid, damage, attackDir);
     }
 
     // Mark processed and remove event entity
@@ -132,9 +140,15 @@ function handleBlock(targetEid: number, attackerEid: number): void {
 }
 
 /**
- * Unblocked hit — apply damage, push target into HitStun.
+ * Unblocked hit — apply damage, push target into HitStun, populate HitReactComp.
  */
-function handleHit(targetEid: number, attackerEid: number, damage: number): void {
+function handleHit(
+  world: GameWorld,
+  targetEid: number,
+  attackerEid: number,
+  damage: number,
+  attackDir: AttackDirection,
+): void {
   // Apply damage
   Health.current[targetEid] = Math.max(0, Health.current[targetEid] - damage);
 
@@ -145,4 +159,74 @@ function handleHit(targetEid: number, attackerEid: number, damage: number): void
 
   CombatStateComponent.state[targetEid] = CombatState.HitStun;
   CombatStateComponent.ticksRemaining[targetEid] = hitStunTicks;
+
+  // Populate HitReactComp on the target so AnimationSystem can drive a
+  // directional stagger lean. Skip if target doesn't have the component
+  // (e.g. legacy entities or test fixtures).
+  if (hasComponent(world.ecs, HitReactComp, targetEid)) {
+    populateHitReact(targetEid, attackerEid, damage, attackDir, config);
+  }
+}
+
+/**
+ * Compute body-local hit direction (unit vector pointing FROM attacker
+ * TO target) and write it onto the target's HitReactComp.
+ *
+ * `dirLocal` is in the target's local frame: x=right, y=up, z=forward(-Z).
+ * Magnitude is `damage / weapon.maxDamage(direction)` clamped to [0, 1].
+ */
+function populateHitReact(
+  targetEid: number,
+  attackerEid: number,
+  damage: number,
+  attackDir: AttackDirection,
+  config: WeaponConfig | undefined,
+): void {
+  // World-space delta from attacker → target.
+  const dx = Position.x[targetEid] - Position.x[attackerEid];
+  const dy = Position.y[targetEid] - Position.y[attackerEid];
+  const dz = Position.z[targetEid] - Position.z[attackerEid];
+  const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+  // Default: zero vector if attacker and target overlap exactly. Animation
+  // systems should treat magnitude=0 as "no directional bias".
+  let lx = 0;
+  let ly = 0;
+  let lz = 0;
+
+  if (len > 1e-6) {
+    // Unit world-space direction.
+    const ux = dx / len;
+    const uy = dy / len;
+    const uz = dz / len;
+
+    // Rotate into target's body-local space by -yaw (around Y axis).
+    // Forward = -Z convention: yaw=0 looks down -Z.
+    const yaw = Rotation.y[targetEid];
+    const cos = Math.cos(-yaw);
+    const sin = Math.sin(-yaw);
+    lx = ux * cos + uz * sin;
+    ly = uy;
+    lz = -ux * sin + uz * cos;
+  }
+
+  // Normalize magnitude: damage / max possible damage for this direction.
+  // Use the head value as the per-direction max (head is the highest tier
+  // in every WeaponConfig today). Clamp to [0, 1].
+  let magnitude = 0;
+  if (config) {
+    const dirDamage = config.damage[attackDir];
+    const maxDamage = Math.max(dirDamage.head, dirDamage.torso, dirDamage.limb);
+    if (maxDamage > 0) {
+      magnitude = Math.min(1, damage / maxDamage);
+    }
+  }
+
+  HitReactComp.dirX[targetEid] = lx;
+  HitReactComp.dirY[targetEid] = ly;
+  HitReactComp.dirZ[targetEid] = lz;
+  HitReactComp.magnitude[targetEid] = magnitude;
+  HitReactComp.spawnedAtTick[targetEid] = getCurrentFixedTick();
+  HitReactComp.durationTicks[targetEid] = HITREACT_DURATION_TICKS;
+  HitReactComp.active[targetEid] = 1;
 }
