@@ -82,11 +82,10 @@ bladeboyz/
 │   └── utils/
 │       └── math.ts              # Vector utilities, interpolation helpers
 ├── docs/
-│   └── training-dummies-and-bots-spec.md  # Architect spec for issue #99 (training dummies + warmup bots)
+│   ├── combat-fsm-v2.md                      # Combat FSM v2 architecture spec (issue #88)
+│   └── training-dummies-and-bots-spec.md     # Architect spec for issue #99 (training dummies + warmup bots)
 ├── public/
 │   └── (static assets if any)
-├── docs/
-│   └── combat-fsm-v2.md         # Combat FSM v2 architecture spec (issue #88)
 ├── index.html
 ├── package.json
 ├── tsconfig.json
