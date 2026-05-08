@@ -52,6 +52,26 @@ In first-person mode, a **viewmodel** renders your right arm and equipped weapon
 
 > While the inventory is open, mouse look and combat inputs are paused. Close with **I** or **Escape** to resume gameplay.
 
+### Shop (placeholder)
+
+A two-tab shop panel scaffold. The "Weapons (Gold)" tab is a stub
+filled in by #96. The "Premium (USD)" tab shows a "Coming soon"
+placeholder — no real payments are wired. Forward-compatible
+`PaymentProvider` interface lets Stripe etc. plug in later without
+UI changes.
+
+No hotkey is wired yet — open from the dev console:
+
+```js
+window.openShop()    // Open the shop panel
+window.closeShop()   // Close it (Escape also works)
+```
+
+The shop releases pointer lock and pauses input on open, the same
+way the inventory does. The default `MockPaymentProvider` always
+reports `isAvailable() === false`, so any Buy buttons render
+disabled with a "Coming soon" tooltip.
+
 ### Training Dummy Controls
 | Key | Action |
 |-----|--------|
@@ -77,6 +97,9 @@ window.setWeapon('Longsword')    // Swap weapon by name
 window.setWeapon('Dagger')
 window.setWeapon('Mace')
 window.setWeapon('Battleaxe')
+
+window.openShop()                // Open shop panel (placeholder; #96 will add NPC interaction)
+window.closeShop()               // Close shop panel
 
 window.__debugInput = true       // Log every keydown/keyup with paused state
 window.__debugInput = false      // Disable
