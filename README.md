@@ -113,6 +113,24 @@ If WASD doesn't seem to work:
 3. **Enable input logging** — set `window.__debugInput = true` in the console, then press WASD. You should see `[InputManager] keydown KeyW paused? false` for each key. If `paused?` is `true`, an inventory or other overlay is blocking input.
 4. **Hard refresh** if Vite HMR seems to have left stale event listeners (`Ctrl+Shift+R`).
 
+### Movement Architecture
+
+WASD does not move the player directly. The flow is **InputManager → InputSystem → MovementIntent → MovementSystem → Rapier**:
+
+- `InputSystem` (fixed tick) reads raw keys + camera yaw and writes a normalized world-space `MovementIntent` (moveX/moveZ + sprint/crouch/jumpRequested edge flag) to each `Player` entity.
+- `MovementSystem` consumes `MovementIntent`, applies acceleration ramp + sprint/crouch multipliers, integrates `MovementState.verticalVelocity` for gravity/jump, and feeds the result through Rapier's **kinematic character controller** (capsule collider).
+- The character controller handles slope climbing (≤45°), slope sliding (≥30°), autostep (max height 0.3m), and snap-to-ground (0.3m). See `src/core/types.ts` for tuning constants.
+
+This split is the seam where future AI / network controllers plug in — they write `MovementIntent` directly without ever touching the keyboard.
+
+### Spatial Conventions
+
+All character ECS `Position` values represent the entity's **feet** (point of contact with ground). The character mesh's root bone is at y=0 in local space, so `meshGroup.position = ECS Position` with NO offset.
+
+Capsule colliders are offset upward inside the body via `ColliderDesc.capsule(...).setTranslation(0, R+H, 0)` so the bottom hemisphere sits at the body origin (= feet). This applies uniformly to the player and to training dummies.
+
+Spawn Y is resolved by `spawnAtGround(world, x, z)`, which raycasts down from `(x, 50, z)` and returns the surface hit + a small `CHARACTER_CONTROLLER_OFFSET` epsilon. Entity factories never hard-code Y. The arena ground top is at `y = GROUND_TOP_Y = 0.1` (a 25×0.1×25 cuboid centered at origin).
+
 ## Weapons
 
 All weapons are data-driven via `WeaponConfig` objects — damage, timing, turncaps, and tracer geometry are defined in config, not hardcoded in systems. Swap weapons at runtime through the inventory overlay (**I** key) or the console.
@@ -180,7 +198,8 @@ src/
 ├── ecs/
 │   ├── components.ts        # All bitECS component definitions + lookup registries
 │   ├── systems/
-│   │   ├── MovementSystem.ts    # WASD movement with Rapier character controller
+│   │   ├── InputSystem.ts       # Raw input → MovementIntent (the AI/network seam)
+│   │   ├── MovementSystem.ts    # Consumes MovementIntent, drives Rapier character controller
 │   │   ├── CombatSystem.ts      # Combat FSM tick, input handling, state sync
 │   │   ├── InventorySystem.ts   # Weapon equip/swap logic (3D model, FSM, ECS sync)
 │   │   ├── HitboxSystem.ts      # Creates & syncs hitbox sensor colliders to skeleton bones
@@ -191,10 +210,12 @@ src/
 │   │   ├── AnimationSystem.ts   # Procedural pose blending from combat state
 │   │   ├── PhysicsSystem.ts     # Rapier physics step
 │   │   └── DummyDamageObserver.ts  # Floating damage numbers for training dummies
-│   └── entities/
-│       ├── createPlayer.ts      # Player entity factory (mesh, physics, components)
-│       ├── createDummy.ts       # Training dummy factory + management (spawn/reset/block)
-│       └── createArena.ts       # Test arena geometry + physics
+│   ├── entities/
+│   │   ├── createPlayer.ts      # Player entity factory (mesh, kinematic body, MovementIntent)
+│   │   ├── createDummy.ts       # Training dummy factory (mesh, fixed body, capsule)
+│   │   └── createArena.ts       # Test arena geometry + physics
+│   └── utils/
+│       └── spawnAtGround.ts     # Raycast-down feet-Y resolver (used by all entity factories)
 ├── combat/
 │   ├── CombatFSM.ts         # Combat state machine (11 states, data-driven transitions)
 │   ├── states.ts            # CombatState enum (Idle, Windup, Release, Block, etc.)
@@ -247,7 +268,9 @@ Design docs and architecture specs live in [`docs/`](docs/):
 ## Architecture Notes
 
 - **ECS-first**: everything is an entity with composable components. Systems operate on component queries.
-- **Fixed timestep**: game logic runs at 60Hz. Rendering interpolates between ticks.
+- **Fixed timestep**: game logic runs at 60Hz. Rendering interpolates between ticks via `lerp(PreviousPosition, Position, alpha)` — the mesh sync runs in `loop.render` so motion stays smooth at high framerates.
+- **Feet-origin**: ECS `Position` is the entity's feet, capsule colliders are offset upward inside the body. See `src/core/types.ts` for the canonical comment block.
+- **MovementIntent seam**: input → `MovementIntent` component → `MovementSystem`. The same component is the natural plug for AI controllers and network input deserializers.
 - **Data-driven weapons**: all weapon behavior (damage, timing, turncaps) comes from `WeaponConfig` objects.
 - **Tracer-based hits**: no simple raycasts. Weapons have tracer points swept between ticks.
 - **Damage pipeline**: TracerSystem detects hits → DamageSystem resolves block/parry/damage → HealthSystem applies HP changes.
