@@ -82,6 +82,7 @@ bladeboyz/
 │   └── utils/
 │       └── math.ts              # Vector utilities, interpolation helpers
 ├── docs/
+│   ├── animation-architecture.md             # Third-person animation rebuild spec (issue #110, parent #89)
 │   ├── combat-fsm-v2.md                      # Combat FSM v2 architecture spec (issue #88)
 │   └── training-dummies-and-bots-spec.md     # Architect spec for issue #99 (training dummies + warmup bots)
 ├── public/
@@ -155,6 +156,7 @@ npm run lint         # Run ESLint
 - Use `const enum` for state enums where possible for zero-cost abstraction
 - Rapier colliders for hitboxes are **sensors** (no physics response)
 - Character skeletons use Three.js `Bone` / `Skeleton` — procedurally generated, not imported from glTF for scaffolding phase
+- Third-person + viewmodel animation conventions (bone graph, rest-pose Euler XYZ, hybrid keyframe-slerp + arc-swing strategy, layer ownership, tick contract): see `docs/animation-architecture.md` (parent #89). Rebuild PRs implement against that spec — do NOT re-derive from the existing `AnimationSystem.ts` / `ViewmodelAnimationSystem.ts`, which §10 of the spec calls out as buggy.
 
 ### Spatial Conventions (issue #86 — under refactor)
 - **ECS `Position` = entity feet position** (point of contact with ground). The character mesh's root bone is at the feet (`y=0`), so `meshGroup.position = (Position.x, Position.y, Position.z)` is a direct copy with NO offset.
