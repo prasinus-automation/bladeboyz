@@ -3,12 +3,12 @@ import type { GameWorld } from '../../core/types';
 import {
   DamageEvent,
   CombatStateComponent,
-  Health,
   Stamina,
 } from '../components';
 import { CombatState } from '../../combat/states';
 import { AttackDirection, BlockDirection } from '../../combat/directions';
 import { weaponConfigMap } from './TracerSystem';
+import { queueDamage } from './HealthSystem';
 
 // ─── Queries ─────────────────────────────────────────────────────────────────
 
@@ -132,11 +132,17 @@ function handleBlock(targetEid: number, attackerEid: number): void {
 }
 
 /**
- * Unblocked hit — apply damage, push target into HitStun.
+ * Unblocked hit — queue damage for HealthSystem (carrying attacker attribution
+ * for the kill-credit pipeline), then push target into HitStun.
+ *
+ * NOTE: damage is queued (not applied directly) so that HealthSystem owns
+ * the single death-detection path AND can attribute kills via the tick-scoped
+ * last-attacker map. main.ts orders `healthSystemTick` AFTER `DamageSystem`
+ * so this lands same-tick.
  */
 function handleHit(targetEid: number, attackerEid: number, damage: number): void {
-  // Apply damage
-  Health.current[targetEid] = Math.max(0, Health.current[targetEid] - damage);
+  // Queue damage with attacker attribution for kill-credit pipeline.
+  queueDamage({ target: targetEid, amount: damage, attackerEid });
 
   // Push target into HitStun
   const weaponId = CombatStateComponent.weaponId[attackerEid];

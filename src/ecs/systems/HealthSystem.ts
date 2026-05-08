@@ -2,12 +2,24 @@
  * HealthSystem — manages health for all combatant entities.
  *
  * Responsibilities:
- * - Process damage events (from tracer/hit detection system)
+ * - Process damage events (from hit detection or other systems)
  * - Clamp health to [0, max]
- * - Handle death: when health reaches 0, mark entity for respawn
+ * - Handle death: when health reaches 0, mark entity for respawn and
+ *   emit a KillEvent joining the victim with the last attacker that
+ *   hit them this tick (when known)
  * - Respawn after delay (scaffolding: reset to max health after 2 seconds = 120 ticks)
  *
  * Runs in fixedUpdate() at 60Hz.
+ *
+ * Kill attribution model:
+ * - Each tick, the queue of pending DamageEvents is consumed in order.
+ * - For events that carry an `attackerEid`, the most recent attacker wins
+ *   (overwrites prior entries for the same victim within the tick).
+ * - When death is detected for a victim, the attacker map is consulted and
+ *   a KillEvent is recorded in the tick's return value.
+ * - Map is rebuilt every tick (function-local) so it cannot leak across ticks.
+ *
+ * See `docs/gold-currency.md` §8 for the design rationale.
  */
 
 import { defineQuery, type IWorld } from 'bitecs';
@@ -23,6 +35,23 @@ const healthQuery = defineQuery([Health]);
 export interface DamageEvent {
   target: number;
   amount: number;
+  /**
+   * Optional. The entity that dealt the damage. When the damage causes the
+   * target to die this tick, the kill is attributed to this entity.
+   * Omit (or pass undefined) for environmental / unattributed damage.
+   */
+  attackerEid?: number;
+}
+
+/** Information about a death emitted by `healthSystemTick`. */
+export interface KillEvent {
+  /** The entity that died. */
+  victimEid: number;
+  /**
+   * The entity that landed the killing blow this tick, if any.
+   * `undefined` for environmental deaths (no attacker recorded).
+   */
+  attackerEid: number | undefined;
 }
 
 const pendingDamage: DamageEvent[] = [];
@@ -58,20 +87,37 @@ export function isDead(eid: number): boolean {
  * Process one fixed-update tick of the health system.
  *
  * @param ecsWorld - The bitECS world to query entities from
- * @returns Object with arrays of entities that died or respawned this tick
+ * @returns Object with arrays of entities that died, respawned, and a
+ *          parallel `kills` array attributing each death to its last attacker.
  */
-export function healthSystemTick(ecsWorld: IWorld): { died: number[]; respawned: number[] } {
+export function healthSystemTick(ecsWorld: IWorld): {
+  died: number[];
+  respawned: number[];
+  kills: KillEvent[];
+} {
   const died: number[] = [];
   const respawned: number[] = [];
+  const kills: KillEvent[] = [];
   const entities = healthQuery(ecsWorld);
 
-  // Process pending damage
-  for (let i = pendingDamage.length - 1; i >= 0; i--) {
+  // Build the tick-scoped attacker map from this tick's damage queue.
+  // Function-local: the map is GC'd at end of tick — cannot leak across ticks.
+  // Most-recent-attacker-wins semantics: later events overwrite earlier ones.
+  const lastAttackerThisTick = new Map<number, number>();
+
+  // Process pending damage. Iterate in insertion order so the LAST attacker
+  // for a given victim wins (mirrors "last to land a hit gets the kill").
+  for (let i = 0; i < pendingDamage.length; i++) {
     const event = pendingDamage[i];
-    // Skip if already dead
+    // Skip if already dead — the already-dead guard prevents double-attribution
+    // (e.g. a posthumous tick of damage doesn't reassign the kill).
     if (respawnTimers.has(event.target)) continue;
 
     Health.current[event.target] = Math.max(0, Health.current[event.target] - event.amount);
+
+    if (event.attackerEid !== undefined) {
+      lastAttackerThisTick.set(event.target, event.attackerEid);
+    }
   }
   pendingDamage.length = 0;
 
@@ -91,13 +137,17 @@ export function healthSystemTick(ecsWorld: IWorld): { died: number[]; respawned:
         respawnTimers.set(eid, remaining);
       }
     } else if (Health.current[eid] <= 0 && Health.max[eid] > 0) {
-      // Just died
+      // Just died — start respawn timer and record kill attribution
       respawnTimers.set(eid, RESPAWN_DELAY_TICKS);
       died.push(eid);
+      kills.push({
+        victimEid: eid,
+        attackerEid: lastAttackerThisTick.get(eid),
+      });
     }
   }
 
-  return { died, respawned };
+  return { died, respawned, kills };
 }
 
 /** Exported constant for testing */

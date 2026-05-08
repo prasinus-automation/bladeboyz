@@ -108,6 +108,11 @@ export const Health = defineComponent({
   max: Types.f32,
 });
 
+/** Gold currency held by a player entity. */
+export const Gold = defineComponent({
+  amount: Types.ui32,
+});
+
 /** Stamina component */
 export const Stamina = defineComponent({
   current: Types.f32,

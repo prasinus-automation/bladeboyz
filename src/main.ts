@@ -6,6 +6,7 @@ import { createMovementSystem } from './ecs/systems/MovementSystem';
 import { createCombatSystem } from './ecs/systems/CombatSystem';
 import { staminaSystemTick } from './ecs/systems/StaminaSystem';
 import { healthSystemTick } from './ecs/systems/HealthSystem';
+import { awardGoldOnKill } from './economy/goldEconomy';
 import { createPlayer } from './ecs/entities/createPlayer';
 import { createArena } from './ecs/entities/createArena';
 import {
@@ -238,9 +239,6 @@ async function main(): Promise<void> {
     // Stamina system (reads combat state, handles regen/costs)
     staminaSystemTick(world.ecs);
 
-    // Health system (processes damage, handles death/respawn)
-    healthSystemTick(world.ecs);
-
     // Step physics
     world.physicsWorld.step();
 
@@ -250,9 +248,19 @@ async function main(): Promise<void> {
     // Observe damage events (floating numbers) before they're consumed
     dummyDamageObserver(FIXED_TIMESTEP);
 
-    // Tracer hit detection + damage resolution
+    // Tracer hit detection + damage resolution.
+    // DamageSystem queues damage on HealthSystem (with attacker attribution)
+    // so that healthSystemTick (run next) can apply damage, detect deaths,
+    // and emit kill events all in the same tick.
     TracerSystem(world, FIXED_TIMESTEP);
     DamageSystem(world, FIXED_TIMESTEP);
+
+    // Health system: applies queued damage, handles death/respawn, emits
+    // kill events. Must run AFTER DamageSystem so that kills land same-tick.
+    const { kills } = healthSystemTick(world.ecs);
+    for (let i = 0; i < kills.length; i++) {
+      awardGoldOnKill(world.ecs, kills[i].victimEid, kills[i].attackerEid);
+    }
 
     // Dummy health reset timer
     tickDummyHealthReset();

@@ -124,4 +124,90 @@ describe('HealthSystem', () => {
       expect(Health.current[eid2]).toBe(50); // untouched
     });
   });
+
+  describe('kill attribution', () => {
+    it('emits a KillEvent with the attacker when victim dies from attributed damage', () => {
+      const victim = createTestEntity(world, 5);
+      const attacker = createTestEntity(world, 100);
+
+      queueDamage({ target: victim, amount: 10, attackerEid: attacker });
+      const result = healthSystemTick(world);
+
+      expect(result.died).toContain(victim);
+      expect(result.kills).toEqual([{ victimEid: victim, attackerEid: attacker }]);
+    });
+
+    it('emits a KillEvent with attackerEid=undefined for environmental death', () => {
+      const victim = createTestEntity(world, 5);
+
+      // No attackerEid passed
+      queueDamage({ target: victim, amount: 10 });
+      const result = healthSystemTick(world);
+
+      expect(result.died).toContain(victim);
+      expect(result.kills).toHaveLength(1);
+      expect(result.kills[0].victimEid).toBe(victim);
+      expect(result.kills[0].attackerEid).toBeUndefined();
+    });
+
+    it('attributes the kill to the LAST attacker when multiple attackers hit in the same tick', () => {
+      const victim = createTestEntity(world, 100);
+      const a1 = createTestEntity(world, 100);
+      const a2 = createTestEntity(world, 100);
+
+      queueDamage({ target: victim, amount: 50, attackerEid: a1 });
+      queueDamage({ target: victim, amount: 60, attackerEid: a2 }); // killing blow
+      const result = healthSystemTick(world);
+
+      expect(result.died).toContain(victim);
+      expect(result.kills).toEqual([{ victimEid: victim, attackerEid: a2 }]);
+    });
+
+    it('does NOT emit a KillEvent for non-fatal damage', () => {
+      const victim = createTestEntity(world, 100);
+      const attacker = createTestEntity(world, 100);
+
+      queueDamage({ target: victim, amount: 30, attackerEid: attacker });
+      const result = healthSystemTick(world);
+
+      expect(result.died).toEqual([]);
+      expect(result.kills).toEqual([]);
+    });
+
+    it('does not leak attacker attribution across ticks', () => {
+      const victim1 = createTestEntity(world, 100);
+      const victim2 = createTestEntity(world, 5);
+      const attacker = createTestEntity(world, 100);
+
+      // Tick 1: non-fatal hit on victim1 — attacker recorded but no death
+      queueDamage({ target: victim1, amount: 20, attackerEid: attacker });
+      let result = healthSystemTick(world);
+      expect(result.kills).toEqual([]);
+
+      // Tick 2: victim2 dies from environmental damage — must NOT inherit
+      // attacker from tick 1's transient map.
+      queueDamage({ target: victim2, amount: 10 });
+      result = healthSystemTick(world);
+      expect(result.died).toContain(victim2);
+      expect(result.kills).toHaveLength(1);
+      expect(result.kills[0].attackerEid).toBeUndefined();
+    });
+
+    it('skips attribution for damage to already-dead entities (already-dead guard)', () => {
+      const victim = createTestEntity(world, 5);
+      const a1 = createTestEntity(world, 100);
+      const a2 = createTestEntity(world, 100);
+
+      // Tick 1: a1 lands the kill
+      queueDamage({ target: victim, amount: 10, attackerEid: a1 });
+      let result = healthSystemTick(world);
+      expect(result.kills).toEqual([{ victimEid: victim, attackerEid: a1 }]);
+
+      // Tick 2: a2 tries to land posthumous damage — must NOT reattribute
+      queueDamage({ target: victim, amount: 10, attackerEid: a2 });
+      result = healthSystemTick(world);
+      expect(result.died).toEqual([]); // already dead, not detected again
+      expect(result.kills).toEqual([]);
+    });
+  });
 });

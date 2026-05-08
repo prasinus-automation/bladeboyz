@@ -18,6 +18,7 @@ import {
   CharacterModel,
   TracerTag,
   Hitboxes,
+  Gold,
   meshRegistry,
 } from '../components';
 import { registerPhysicsBody } from '../systems/MovementSystem';
@@ -69,6 +70,7 @@ export function createPlayer(
   addComponent(world.ecs, AnimationComp, eid);
   addComponent(world.ecs, TracerTag, eid);
   addComponent(world.ecs, Hitboxes, eid);
+  addComponent(world.ecs, Gold, eid);
 
   // Set initial values
   Position.x[eid] = spawnPos.x;
@@ -88,6 +90,8 @@ export function createPlayer(
   Health.max[eid] = 100;
   Stamina.current[eid] = 100;
   Stamina.max[eid] = 100;
+  // Gold starts at 0. Persistence layer (issue #B) will overwrite on load.
+  Gold.amount[eid] = 0;
   CombatStateComponent.state[eid] = 0; // Idle
   CombatStateComponent.ticksRemaining[eid] = 0;
   const weaponIndex = weaponIdToName.indexOf(startingWeapon);

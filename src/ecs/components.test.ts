@@ -13,6 +13,7 @@ import {
   Hitboxes,
   Health,
   Stamina,
+  Gold,
   IsPlayer,
   BodyRegion,
   meshRegistry,
@@ -119,5 +120,23 @@ describe('ECS Components', () => {
     addComponent(world, Player, eid);
     // Tag components have no data - just test it doesn't throw
     expect(true).toBe(true);
+  });
+
+  it('Gold component initializes amount to 0 by default', () => {
+    const world = createWorld();
+    const eid = addEntity(world);
+    addComponent(world, Gold, eid);
+    // bitECS TypedArray-backed components are zero-initialized.
+    expect(Gold.amount[eid]).toBe(0);
+  });
+
+  it('Gold component can be incremented and read back', () => {
+    const world = createWorld();
+    const eid = addEntity(world);
+    addComponent(world, Gold, eid);
+    Gold.amount[eid] = 25;
+    expect(Gold.amount[eid]).toBe(25);
+    Gold.amount[eid] += 25;
+    expect(Gold.amount[eid]).toBe(50);
   });
 });
