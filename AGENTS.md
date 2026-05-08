@@ -78,7 +78,11 @@ bladeboyz/
 │   │   ├── DeathScreen.ts       # Full-screen death overlay + respawn countdown (#93)
 │   │   ├── Killfeed.ts          # Top-right kill log, fades after 5s (#93)
 │   │   ├── Scoreboard.ts        # Persistent K/D/Gold display (#93)
-│   │   └── DebugOverlay.ts      # FSM state, FPS counter
+│   │   ├── DebugOverlay.ts      # FSM state, FPS counter
+│   │   └── shop/                # Shop overlay scaffold (#100)
+│   │       ├── ShopPanel.ts     # Tab-switcher overlay (mirrors InventoryPanel; backdrop, Escape, click-outside, pointer-lock release via input.paused)
+│   │       ├── PremiumShopTab.ts # USD tab — empty-state by default; Buy buttons disabled when provider.isAvailable() === false
+│   │       └── types.ts         # Currency, ShopItem, ShopTab, PurchaseResult, PaymentProvider, MockPaymentProvider (always reports unavailable)
 │   └── utils/
 │       └── math.ts              # Vector utilities, interpolation helpers
 ├── docs/
@@ -190,6 +194,9 @@ Two architectural drifts cause characters to hover and WASD to feel broken:
 
 ### Arena Authoring (Arena v1, #91)
 Arenas are **code-authored** — pure TypeScript, no glTF or JSON map files. `createArena(world: GameWorld): ArenaSpec` builds Three.js meshes + matching Rapier static colliders (`RigidBodyType.Fixed` + `cuboid`) 1:1 with mesh extents. Lights live inside `createArena()` (not `World.ts`) — they're map data, not engine data. Returned `ArenaSpec` is stored on `GameWorld.arena` for systems (spawn, weapon-pickup, shopkeep AI) to query. See `docs/arena-v1.md` for v1 layout, spawn coordinates, lighting plan, and `weapon_pickup_safe_volume` rules. **Ground top surface MUST stay at `y = 0.1`** to keep `SPAWN_HEIGHT = 0.1 + CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS` in `core/types.ts` correct.
+
+### Shop Panel Scaffold (#100 — PR #140)
+`ShopPanel` is a tab-switcher HTML overlay that mirrors `InventoryPanel` (backdrop, Escape, click-outside, pointer-lock release via `input.paused`). Two default tabs: a stub `Weapons (Gold)` tab (replaced by #96) and `PremiumShopTab` (USD). Tabs implement the `ShopTab` interface (`mount(container)` / `unmount()`) — the panel clears the body container before mounting the next tab; tab impls only need to clean up listeners. Real-money flows go through the **forward-compatible `PaymentProvider` interface** (`isAvailable()`, `start(item): Promise<PurchaseResult>`); the default `MockPaymentProvider` always reports unavailable, so Buy buttons render disabled with a "Coming soon" tooltip. When Stripe lands, replace `MockPaymentProvider` with `StripePaymentProvider` — `PremiumShopTab` works unchanged. No hotkey wired yet; #96 will hook this up to the shopkeep NPC. Dev console exposes `window.openShop()` / `window.closeShop()`. `_suppressClickToPlay` covers both `inventoryPanel.isOpen || shopPanel.isOpen`.
 
 ### Module-Level Singletons
 `fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName`, `inventoryRegistry`, `weaponModelFactories` are all module-level Maps/arrays/objects. Works for single-world but won't scale to multiple worlds.
