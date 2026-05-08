@@ -47,6 +47,8 @@ import { createMaceModel, createDaggerModel, createBattleaxeModel } from './rend
 import { ViewmodelRenderer } from './rendering/ViewmodelRenderer';
 import { viewmodelAnimationSystem } from './rendering/ViewmodelAnimationSystem';
 import type { GameWorld } from './core/types';
+import { GameStateManager, GameState } from './core/GameState';
+import { MenuManager } from './hud/MenuManager';
 
 // Import weapon configs so they auto-register
 import './weapons/longsword';
@@ -154,10 +156,22 @@ async function main(): Promise<void> {
   // HUD (health bar, stamina bar, FSM state label, FPS counter)
   const hud = new HUD();
 
-  // Inventory panel (I key to toggle)
-  const inventoryPanel = new InventoryPanel(input, playerEid);
-  // Suppress click-to-play overlay while inventory is open
-  input._suppressClickToPlay = () => inventoryPanel.isOpen;
+  // ─── Game state + menu manager (#101 foundation) ───
+  // GameStateManager defaults to MAIN_MENU. For now we eagerly transition to
+  // PLAYING since the game still starts directly in the world (issue #2 will
+  // replace this with a real main menu flow).
+  const gameStateManager = new GameStateManager();
+  gameStateManager.state = GameState.PLAYING;
+
+  // MenuManager owns the ESC listener, pointer-lock release, input pause, and
+  // click-to-play suppression for any modal that registers with it.
+  const menuManager = new MenuManager(input, gameStateManager);
+
+  // Inventory panel (I key to toggle). Registers itself with menuManager so
+  // ESC routes to it and pointer-lock / input.paused are managed centrally.
+  const inventoryPanel = new InventoryPanel(input, playerEid, menuManager);
+  // `input._suppressClickToPlay` is now wired by MenuManager (covers all
+  // registered modals, not just inventory). No per-panel wiring needed.
 
   // Initialize debug renderers
   const tracerDebugRenderer = new TracerDebugRenderer(world.scene);

@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { InventoryPanel } from './InventoryPanel';
 import { InputManager } from '../input/InputManager';
+import { MenuManager } from './MenuManager';
+import { GameStateManager, GameState } from '../core/GameState';
 import {
   initInventory,
   addWeaponToInventory,
@@ -357,5 +359,77 @@ describe('InventoryPanel', () => {
       // Panel should remain closed since listener was removed
       expect(panel.isOpen).toBe(false);
     });
+  });
+});
+
+// Separate suite for MenuManager-wired path (issue #101).
+describe('InventoryPanel with MenuManager', () => {
+  let panel: InventoryPanel;
+  let input: InputManager;
+  let mgr: MenuManager;
+  let gsm: GameStateManager;
+  const playerEid = 99;
+
+  beforeEach(() => {
+    resetInventorySystem();
+    ensureTestWeapons();
+    initInventory(playerEid, ['TestSword'], 'TestSword');
+    input = createMockInput();
+    gsm = new GameStateManager();
+    gsm.state = GameState.PLAYING;
+    mgr = new MenuManager(input, gsm);
+    panel = new InventoryPanel(input, playerEid, mgr);
+  });
+
+  afterEach(() => {
+    panel.dispose();
+    mgr.dispose();
+  });
+
+  it('registers itself with MenuManager on construction', () => {
+    expect(mgr.isRegistered('inventory')).toBe(true);
+  });
+
+  it('opening updates MenuManager.getCurrent()', () => {
+    panel.open();
+    expect(mgr.getCurrent()).toBe('inventory');
+    expect(input.paused).toBe(true);
+  });
+
+  it('closing clears MenuManager state', () => {
+    panel.open();
+    panel.close();
+    expect(mgr.getCurrent()).toBeNull();
+    expect(input.paused).toBe(false);
+  });
+
+  it('ESC routed through MenuManager closes the panel', () => {
+    panel.open();
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape' }));
+    expect(panel.isOpen).toBe(false);
+    expect(mgr.getCurrent()).toBeNull();
+  });
+
+  it('does not attach its own ESC handler when MenuManager is provided', () => {
+    panel.open();
+    // Dispose MenuManager so its keydown listener is gone. If InventoryPanel
+    // had attached its own ESC handler too, ESC would still close the panel.
+    mgr.dispose();
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape' }));
+    expect(panel.isOpen).toBe(true);
+  });
+
+  it('KeyI still toggles even when MenuManager is wired', () => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyI' }));
+    expect(panel.isOpen).toBe(true);
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyI' }));
+    expect(panel.isOpen).toBe(false);
+  });
+
+  it('exits pointer lock on open via MenuManager', () => {
+    (document as any).exitPointerLock = vi.fn();
+    panel.open();
+    expect(document.exitPointerLock).toHaveBeenCalled();
+    delete (document as any).exitPointerLock;
   });
 });

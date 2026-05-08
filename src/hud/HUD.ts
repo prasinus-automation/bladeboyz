@@ -17,6 +17,7 @@ import { fsmRegistry } from '../combat/CombatFSM';
 import { HealthBar } from './HealthBar';
 import { StaminaBar } from './StaminaBar';
 import { DirectionIndicator } from './DirectionIndicator';
+import { theme } from './theme';
 
 /** Direction names for debug display */
 const ATTACK_DIR_NAMES: Record<number, string> = {
@@ -55,10 +56,10 @@ export class HUD {
       top: 40px;
       left: 50%;
       transform: translateX(-50%);
-      color: #ff0;
-      font-family: monospace;
+      color: ${theme.status.warn};
+      font-family: ${theme.font};
       font-size: 14px;
-      z-index: 10;
+      z-index: ${theme.z.hud};
       pointer-events: none;
       text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
       display: none;
@@ -72,10 +73,10 @@ export class HUD {
       position: fixed;
       top: 24px;
       right: 8px;
-      color: #0f0;
-      font-family: monospace;
+      color: ${theme.status.good};
+      font-family: ${theme.font};
       font-size: 12px;
-      z-index: 10;
+      z-index: ${theme.z.hud};
       pointer-events: none;
     `;
     document.body.appendChild(this.fpsEl);

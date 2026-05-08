@@ -5,11 +5,18 @@
  * Closing unpauses input; pointer lock re-acquired on next canvas click.
  *
  * Follows the existing HUD pattern: imperative DOM, inline CSS, no framework.
+ *
+ * **As of issue #101**, ESC handling and pointer-lock / input-pause plumbing
+ * are owned by `MenuManager`. The panel still owns its own KeyI toggle and DOM,
+ * and registers itself with the manager so ESC can close it. If no
+ * `MenuManager` is supplied, the panel falls back to its legacy self-managed
+ * behavior (kept for tests and as a safety net).
  */
 
 import { InputManager } from '../input/InputManager';
 import { getInventory, equipWeapon } from '../ecs/systems/InventorySystem';
 import { weaponConfigs } from '../weapons/WeaponConfig';
+import type { MenuManager } from './MenuManager';
 
 
 /** Gear slot placeholder names */
@@ -26,6 +33,7 @@ export class InventoryPanel {
   constructor(
     private input: InputManager,
     private playerEid: number,
+    private menuManager?: MenuManager,
   ) {
     // Semi-transparent backdrop
     this.backdrop = document.createElement('div');
@@ -187,18 +195,32 @@ export class InventoryPanel {
     document.body.appendChild(this.backdrop);
     document.body.appendChild(this.container);
 
-    // Keyboard listener for I and Escape
+    // Keyboard listener for KeyI (toggle).
+    //
+    // ESC handling is owned by MenuManager (see #101). When `menuManager` is
+    // provided we register ourselves so ESC routes here; otherwise we keep the
+    // legacy in-panel ESC handler to preserve backwards-compat for tests and
+    // any caller that hasn't been migrated yet.
+    const ownsEscape = !this.menuManager;
     this._onKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'KeyI') {
         e.preventDefault();
         this.toggle();
-      } else if (e.code === 'Escape' && this._isOpen) {
+      } else if (ownsEscape && e.code === 'Escape' && this._isOpen) {
         e.preventDefault();
         e.stopPropagation();
         this.close();
       }
     };
     document.addEventListener('keydown', this._onKeyDown);
+
+    // Register with MenuManager so it can route ESC to this panel.
+    if (this.menuManager) {
+      this.menuManager.register('inventory', {
+        close: () => this.close(),
+        open: () => this.open(),
+      });
+    }
   }
 
   /** Whether the inventory panel is currently open */
@@ -223,11 +245,16 @@ export class InventoryPanel {
     this.backdrop.style.display = 'block';
     this.container.style.display = 'block';
 
-    // Release pointer lock and pause input
-    if (typeof document.exitPointerLock === 'function') {
-      document.exitPointerLock();
+    if (this.menuManager) {
+      // Delegate pointer-lock release + input pause to MenuManager.
+      this.menuManager.notifyOpen('inventory');
+    } else {
+      // Legacy fallback when no MenuManager is wired (tests, scaffolding).
+      if (typeof document.exitPointerLock === 'function') {
+        document.exitPointerLock();
+      }
+      this.input.paused = true;
     }
-    this.input.paused = true;
   }
 
   /** Close the inventory panel */
@@ -237,8 +264,13 @@ export class InventoryPanel {
     this.backdrop.style.display = 'none';
     this.container.style.display = 'none';
 
-    // Unpause input — pointer lock re-acquired on next canvas click
-    this.input.paused = false;
+    if (this.menuManager) {
+      // MenuManager handles unpausing input. Pointer lock is re-acquired by
+      // the next canvas click (existing main.ts handler).
+      this.menuManager.notifyClose('inventory');
+    } else {
+      this.input.paused = false;
+    }
   }
 
   /** Update the weapon gear slot content based on the equipped weapon */
