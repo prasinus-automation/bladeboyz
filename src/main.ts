@@ -7,7 +7,7 @@ import { createCombatSystem } from './ecs/systems/CombatSystem';
 import { staminaSystemTick } from './ecs/systems/StaminaSystem';
 import { healthSystemTick } from './ecs/systems/HealthSystem';
 import { createPlayer } from './ecs/entities/createPlayer';
-import { createArena } from './ecs/entities/createArena';
+import { createArena } from './arena/createArena';
 import {
   createDummy,
   removeDummy,
