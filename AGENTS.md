@@ -69,6 +69,9 @@ bladeboyz/
 │   │   └── DebugRenderer.ts     # Wireframe, hitbox, physics debug drawing
 │   ├── inventory/
 │   │   └── InventoryData.ts     # Inventory side-table (inventoryRegistry Map<eid, InventoryData>)
+│   ├── economy/
+│   │   ├── Wallet.ts            # In-memory player gold balance + onGoldChange pubsub (#107)
+│   │   └── Prices.ts            # weaponPrices side-table + getWeaponPrice() (#107)
 │   ├── hud/
 │   │   ├── HUD.ts               # HUD manager
 │   │   ├── HealthBar.ts
@@ -78,6 +81,7 @@ bladeboyz/
 │   │   ├── DeathScreen.ts       # Full-screen death overlay + respawn countdown (#93)
 │   │   ├── Killfeed.ts          # Top-right kill log, fades after 5s (#93)
 │   │   ├── Scoreboard.ts        # Persistent K/D/Gold display (#93)
+│   │   ├── GoldCounter.ts       # Top-right gold balance HUD, subscribes to Wallet (#107)
 │   │   ├── DebugOverlay.ts      # FSM state, FPS counter
 │   │   └── shop/                # Shop overlay scaffold (#100)
 │   │       ├── ShopPanel.ts     # Tab-switcher overlay (mirrors InventoryPanel; backdrop, Escape, click-outside, pointer-lock release via input.paused)
@@ -198,8 +202,16 @@ Arenas are **code-authored** — pure TypeScript, no glTF or JSON map files. `cr
 ### Shop Panel Scaffold (#100 — PR #140)
 `ShopPanel` is a tab-switcher HTML overlay that mirrors `InventoryPanel` (backdrop, Escape, click-outside, pointer-lock release via `input.paused`). Two default tabs: a stub `Weapons (Gold)` tab (replaced by #96) and `PremiumShopTab` (USD). Tabs implement the `ShopTab` interface (`mount(container)` / `unmount()`) — the panel clears the body container before mounting the next tab; tab impls only need to clean up listeners. Real-money flows go through the **forward-compatible `PaymentProvider` interface** (`isAvailable()`, `start(item): Promise<PurchaseResult>`); the default `MockPaymentProvider` always reports unavailable, so Buy buttons render disabled with a "Coming soon" tooltip. When Stripe lands, replace `MockPaymentProvider` with `StripePaymentProvider` — `PremiumShopTab` works unchanged. No hotkey wired yet; #96 will hook this up to the shopkeep NPC. Dev console exposes `window.openShop()` / `window.closeShop()`. `_suppressClickToPlay` covers both `inventoryPanel.isOpen || shopPanel.isOpen`.
 
+### Economy Foundation (#107 — PR #142)
+Minimal scaffolding for the shop feature, deliberately scoped narrower than the full Gold currency design (#95). Three pieces:
+- **`src/economy/Wallet.ts`** — module-level gold balance (default `200`). API: `getGold()`, `addGold(amount)` (ignores ≤0), `spendGold(amount)` (returns `false` and does NOT deduct on insufficient funds; no subscriber notify on failure), `setGold(amount)` (clamps negatives to 0), `onGoldChange(cb): () => void` (returns unsubscribe fn — pattern matches `InventorySystem.onEquip` but with cleanup ergonomics for HUD `dispose()`), `resetWallet()` (test helper). Pure data + pubsub, no DOM/Three.js/ECS.
+- **`src/economy/Prices.ts`** — `weaponPrices` side-table (`Dagger 0, Mace 100, Longsword 150, Battleaxe 200`) + `getWeaponPrice(name)` returning `undefined` for unknown weapons. Kept separate from `WeaponConfig` so weapon configs stay pure-combat data. **When adding a new weapon, also add a price entry** — missing entries treat the weapon as not-for-sale.
+- **`src/hud/GoldCounter.ts`** — top-right HUD div (`top: 48px right: 16px`, z-index 10) stacking below camera-mode/FPS labels and below modal overlays (200+). Subscribes to `Wallet` in constructor, unsubscribes in `dispose()`, brief color pulse on change. Owned by `HUD.ts`.
+- **Starter inventory** is now `['Dagger']` only (was all four weapons). Mace/Longsword/Battleaxe must be acquired through the shopkeep — `initInventory(playerEid, ['Dagger'], 'Dagger')` in `main.ts`. Note: this contradicts the "default starter weapon is **Longsword**" line in the Spawn/Death/Respawn section above; the respawn-default behavior should be reconciled with the starter inventory in a future PR (the player can't currently respawn with a weapon they don't own).
+- Out of scope here (belongs to #95): earning gold from kills/time, persistence (localStorage/server), negative balance/debt.
+
 ### Module-Level Singletons
-`fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName`, `inventoryRegistry`, `weaponModelFactories` are all module-level Maps/arrays/objects. Works for single-world but won't scale to multiple worlds.
+`fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName`, `inventoryRegistry`, `weaponModelFactories`, `Wallet.goldBalance` are all module-level Maps/arrays/scalars. Works for single-world but won't scale to multiple worlds.
 
 ## Gotchas
 - **Rapier3D WASM must be initialized async** before creating the physics world — use `import RAPIER from '@dimforge/rapier3d-compat'` then `await RAPIER.init()`
