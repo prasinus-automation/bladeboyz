@@ -21,6 +21,7 @@ bladeboyz/
 │   ├── core/
 │   │   ├── GameLoop.ts          # Fixed-timestep game loop (60Hz fixed + variable render)
 │   │   ├── World.ts             # Singleton owning ECS world, Three.js scene, Rapier world
+│   │   ├── tickCounter.ts       # Module-level fixed-tick counter (advanceFixedTick / getCurrentFixedTick) — used for tick-stamped events like HitReactComp.spawnedAtTick (#120)
 │   │   └── types.ts             # Shared type definitions
 │   ├── ecs/
 │   │   ├── components.ts        # bitECS component definitions
@@ -34,6 +35,7 @@ bladeboyz/
 │   │   │   ├── StaminaSystem.ts
 │   │   │   ├── HealthSystem.ts  # Damage application, death detection, respawn timer (#93)
 │   │   │   ├── InteractionSystem.ts # Per-tick proximity check; caches nearest in-range interactable per player (#113)
+│   │   │   ├── HitReactSystem.ts # Clears expired HitReactComp entries (active=1 → 0 once tick >= spawnedAtTick + durationTicks) (#120)
 │   │   │   ├── AnimationSystem.ts
 │   │   │   └── ...
 │   │   ├── entities/            # Entity factory/spawner functions
@@ -251,8 +253,17 @@ First slice of parent #94 (drop-on-death / pickup / despawn). Foundation only �
 - **Death-event seam**: `main.ts` now destructures `{ died, respawned }` from `healthSystemTick(world.ecs)` and leaves a `TODO(#A2): weaponPickupSystem(world, currentTick, died, ...)` placeholder. Foundation only — no system call wired.
 - **Out of scope** (#A2): drop-on-death logic, proximity pickup check, KeyE wiring, despawn-timer system. **Out of scope** (#B): ground-flat orientation polish per weapon, spin animation, blink/fade rendering, HUD prompt, README controls update.
 
+### Animation Foundation (#120 — PR #152)
+Backend groundwork for the animation rebuild (#89, #110). Five pieces, all additive:
+- **`CombatFSM.getPhaseTotal()` / `getPhaseT()`** — phase math is now the FSM's responsibility (was a `computePhaseTotal` heuristic in `CombatSystem.ts`). `getPhaseTotal()` returns the total ticks for the current state (`windup[dir]`, `release[dir]`, `recovery[dir]` or `comboRecovery[dir]` for combo Recovery, `parryWindow`, `hitStunTicks`, `parryStunTicks`, `3` for Feint, `0` for Idle/Block). `getPhaseT()` returns normalized progress in `[0, 1]`, clamped. **Single source of truth** — call these rather than re-deriving from weapon config.
+- **`CombatStateComp.phaseT: f32`** — synced each fixed tick from `fsm.getPhaseT()` alongside the existing `phaseElapsed`/`phaseTotal` (ui16). AnimationSystem reads `phaseT` to drive pose interpolation. Per the FSM v2 spec, this field will move onto the unified `CombatState` component when #88 lands.
+- **`HitReactComp` + `HitReactSystem`** (`src/ecs/components.ts`, `src/ecs/systems/HitReactSystem.ts`) — `{dirX, dirY, dirZ: f32, magnitude: f32, spawnedAtTick: ui32, durationTicks: ui16, active: ui8}`. `DamageSystem.handleHit` populates it on every successful unblocked hit, rotating the world-space attacker→target delta into the target's body-local frame via `-yaw` around Y; magnitude is `damage / max-direction-damage` clamped to `[0, 1]`; duration is **12 ticks (~200ms)**. Successful blocks/parries do NOT touch the component (sentinel test in `HitReactSystem.test.ts`). `HitReactSystem` runs **after** `DamageSystem` in `main.ts` so a fresh stamp doesn't get cleared the same tick it's written.
+- **`src/core/tickCounter.ts`** — module-level fixed-tick counter (`currentFixedTick`). `advanceFixedTick()` is called **once at the top of `fixedUpdate`** in `main.ts` before any system that stamps events. Read via `getCurrentFixedTick()`; reset via `resetFixedTick()` (test helper). NOT incremented from variable-rate update/render — must advance in lockstep with the fixed timestep so consumers can compare `currentTick` to a previously-stamped `spawnedAtTick + durationTicks` with tick-precise semantics.
+- **Dummies have a CombatFSM** — `createDummy` now registers a `CombatFSM` in `fsmRegistry` so `CombatSystem`'s existing all-entities loop ticks dummies and populates `phaseElapsed`/`phaseTotal`/`phaseT` for them just like the player. `toggleDummyBlock`, `cycleDummyBlockDirection`, and `resetAllDummies` all route through the FSM transition API (Idle → Block now goes through `ParryWindow` first, exactly like the player). New `CombatFSM.setBlockDirection()` setter lets the cycle helper update direction without re-entering ParryWindow.
+- **Bonus — combo recovery now actually works**: a latent bug where `_isComboRecovery` was never set to `true` was papered over by the old `computePhaseTotal` heuristic (`ticksRemaining <= comboRecovery → comboRecovery`). Fixed via a new `_currentSwingIsCombo` flag set on `_enterWindup(dir, fromCombo=true)` (combo path only) and consumed at Release expiry → `_enterRecovery(this._currentSwingIsCombo)`. Weapon configs' `comboRecovery` values are now actually applied as designed.
+
 ### Module-Level Singletons
-`fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName`, `inventoryRegistry`, `weaponModelFactories`, `Wallet.goldBalance`, `shopkeepRegistry`, `InteractionSystem.nearbyByPlayer`, `pickupRegistry`, `MovementSystem.bodyByEid` / `colliderByEid` / `movementTick`, `InputSystem.prevJumpKeyDown` are all module-level Maps/arrays/scalars. Works for single-world but won't scale to multiple worlds. The `prevJumpKeyDown` edge-trigger state is the one that will need to become per-controller when multiplayer lands.
+`fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName`, `inventoryRegistry`, `weaponModelFactories`, `Wallet.goldBalance`, `shopkeepRegistry`, `InteractionSystem.nearbyByPlayer`, `pickupRegistry`, `MovementSystem.bodyByEid` / `colliderByEid` / `movementTick`, `InputSystem.prevJumpKeyDown`, `tickCounter.currentFixedTick` are all module-level Maps/arrays/scalars. Works for single-world but won't scale to multiple worlds. The `prevJumpKeyDown` edge-trigger state is the one that will need to become per-controller when multiplayer lands; `currentFixedTick` will likely need to live on `GameWorld` once a server runs multiple worlds in one process.
 
 ## Gotchas
 - **Rapier3D WASM must be initialized async** before creating the physics world — use `import RAPIER from '@dimforge/rapier3d-compat'` then `await RAPIER.init()`
