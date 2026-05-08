@@ -25,7 +25,8 @@ bladeboyz/
 │   ├── ecs/
 │   │   ├── components.ts        # bitECS component definitions
 │   │   ├── systems/             # ECS systems (one file per system)
-│   │   │   ├── MovementSystem.ts
+│   │   │   ├── InputSystem.ts   # Raw input → MovementIntent (the AI/network seam — #104)
+│   │   │   ├── MovementSystem.ts # Consumes MovementIntent, drives Rapier kinematic character controller
 │   │   │   ├── CombatSystem.ts
 │   │   │   ├── InventorySystem.ts
 │   │   │   ├── TracerSystem.ts
@@ -35,11 +36,13 @@ bladeboyz/
 │   │   │   ├── InteractionSystem.ts # Per-tick proximity check; caches nearest in-range interactable per player (#113)
 │   │   │   ├── AnimationSystem.ts
 │   │   │   └── ...
-│   │   └── entities/            # Entity factory/spawner functions
-│   │       ├── createPlayer.ts
-│   │       ├── createDummy.ts
-│   │       ├── createShopkeep.ts # Static non-combatant NPC (Position/Rotation/CharacterModel only) + shopkeepRegistry side-table (#113)
-│   │       └── ...
+│   │   ├── entities/            # Entity factory/spawner functions
+│   │   │   ├── createPlayer.ts  # Player factory: kinematic body + capsule (offset upward), MovementIntent component, Y resolved by spawnAtGround
+│   │   │   ├── createDummy.ts   # Training dummy factory: fixed body + capsule (same offset as player), Y resolved by spawnAtGround
+│   │   │   ├── createShopkeep.ts # Static non-combatant NPC (Position/Rotation/CharacterModel only) + shopkeepRegistry side-table (#113)
+│   │   │   └── ...
+│   │   └── utils/
+│   │       └── spawnAtGround.ts # Raycast-down feet-Y resolver used by all entity factories (#104)
 │   ├── events/
 │   │   └── EventBus.ts          # In-process event bus for DeathEvent, RespawnEvent, DamageDealt (#93)
 │   ├── world/
@@ -101,6 +104,9 @@ bladeboyz/
 │   ├── combat-fsm-v2.md                      # Combat FSM v2 architecture spec (issue #88)
 │   ├── gold-currency.md                      # Gold currency design doc (issue #95)
 │   ├── input-pipeline.md                     # Input pipeline architecture spec (issue #102)
+│   ├── networking/                           # Multiplayer architecture spec set (parent #92)
+│   │   ├── README.md                         # Index + read-order for the four-doc set
+│   │   └── 01-transport-and-authority.md     # Transport, topology, tickrate, authority model (#116)
 │   ├── spawn-death-respawn.md                # Spawn/death/respawn loop design (issue #93)
 │   └── training-dummies-and-bots-spec.md     # Training dummies + warmup bots (issue #99)
 ├── public/
@@ -140,14 +146,17 @@ No simple raycasts. Weapons have tracer points along the blade. During Release p
 ### Input Pipeline
 All keyboard / mouse / pointer-lock signals are owned by `InputManager`; gameplay systems read via a typed action-based API (`isActionDown`, `isActionJustPressed`, `getMouseDelta`). A three-state mode FSM (`Menu` / `Playing` / `OverlayOpen`) gates whether gameplay polls return live state — outside `Playing` they return false / 0. No system attaches its own raw `addEventListener('keydown')` (target state — current code still has scattered listeners that downstream tickets will migrate). Default keymap lives in `src/input/keybinds.ts`. Full spec: [`docs/input-pipeline.md`](docs/input-pipeline.md).
 
-### Character Controller (planned — issue #86)
-Movement is a Rapier `KinematicCharacterController` driven by `MovementSystem` in `fixedUpdate` at 60Hz. Player uses a `kinematicPositionBased` rigid body with a capsule collider; dummies use a `fixed` body with a capsule collider (static obstacle). The controller provides slope handling, autostep, and snap-to-ground. Gravity is applied manually in MovementSystem because Rapier's solver does not apply forces to kinematic/fixed bodies.
+### Character Controller (SHIPPED — #104 / PR #150)
+Movement is a Rapier `KinematicCharacterController` driven by `MovementSystem` in `fixedUpdate` at 60Hz. Player uses a `kinematicPositionBased` rigid body with a capsule collider; dummies use a `fixed` body with a capsule collider (static obstacle the player collides with). The controller provides slope handling (≤45° climb / ≥30° slide), autostep (max height 0.3m), and snap-to-ground (0.3m). Tuning constants live in `src/core/types.ts` (`MAX_SLOPE_CLIMB_ANGLE`, `MIN_SLOPE_SLIDE_ANGLE`, `AUTOSTEP_MAX_HEIGHT`, `AUTOSTEP_MIN_WIDTH`, `SNAP_TO_GROUND_DISTANCE`). Gravity is applied manually in MovementSystem (`MovementState.verticalVelocity`) because Rapier's solver does not apply forces to kinematic/fixed bodies.
+
+**Input → MovementIntent → MovementSystem split** (the AI/network seam): raw input is no longer read inside `MovementSystem`. `InputSystem` (one fixed tick before MovementSystem) translates raw `InputManager` queries + camera yaw into a normalized world-space `MovementIntent { moveX, moveZ, sprint, crouch, jumpRequested }` component on each `Player` entity. `MovementSystem` only consumes `MovementIntent`. This is the seam where future AI controllers and network input deserializers plug in — they write `MovementIntent` directly without ever touching the keyboard. Sprint is policy-gated in `InputSystem` (Shift + W + !Crouch only); jump is edge-triggered on Space rising edge and cleared by `MovementSystem` after consumption.
 
 **Tick contract**:
-1. `combatSystem()` → ticks FSMs, syncs combat state (and `CameraController.maxTurnRate`)
-2. `movementSystem(dt)` → reads input + camera yaw, computes desired movement, calls `characterController.computeColliderMovement()`, calls `body.setNextKinematicTranslation()`, writes ECS `Position`
-3. `world.physicsWorld.step()` → Rapier integrates kinematic translations and runs sensor queries
-4. Mesh sync runs in `render(alpha)` with `lerp(PreviousPosition, Position, alpha)` — NOT in fixedUpdate (avoids 60Hz position snapping)
+1. `inputSystem(dt)` → translates raw input into `MovementIntent` for each `Player`
+2. `combatSystem()` → ticks FSMs, syncs combat state (and `CameraController.maxTurnRate`)
+3. `movementSystem(dt)` → reads `MovementIntent`, applies acceleration ramp + gravity, calls `characterController.computeColliderMovement()`, calls `body.setNextKinematicTranslation()`, **reads back `body.translation()` post-write** to write ECS `Position` (avoids divergence when Rapier clamps the kinematic step), clears `MovementIntent.jumpRequested`. Transitionally mirrors `verticalVelocity` to legacy `Velocity.y` so AnimationSystem's airborne-pose detection keeps working until that system migrates.
+4. `world.physicsWorld.step()` → Rapier integrates kinematic translations and runs sensor queries
+5. Mesh sync runs in `render(alpha)` with `lerp(PreviousPosition, Position, alpha)` — NOT in fixedUpdate (avoids 60Hz position snapping at 144Hz vsync)
 
 ### Spawn / Death / Respawn Loop (designed in #93 — see [docs/spawn-death-respawn.md](docs/spawn-death-respawn.md))
 Entity lifecycle is **separate from CombatFSM**: it's a higher-level state expressed via `DeadTag` + `RespawnPending` components plus `Health.current`. States: `Alive → Dying (1 tick) → Dead → Respawning (1 tick) → Alive`. Death fires a `DeathEvent` on the in-process `EventBus`; killfeed/scoreboard/death-screen consume it. Respawn timer is **180 ticks (3 s)**, default starter weapon is **Longsword**, spawn-point selection is **random weighted-away-from-enemies** (min distance 8.0, max-min fallback). `CombatSystem` and `MovementSystem` both early-out on `DeadTag` so dead entities don't read input or move. **Continuous deathmatch — no rounds for MVP.** See the design doc for full state diagram and event payloads.
@@ -179,13 +188,14 @@ npm run lint         # Run ESLint
 - Character skeletons use Three.js `Bone` / `Skeleton` — procedurally generated, not imported from glTF for scaffolding phase
 - Third-person + viewmodel animation conventions (bone graph, rest-pose Euler XYZ, hybrid keyframe-slerp + arc-swing strategy, layer ownership, tick contract): see `docs/animation-architecture.md` (parent #89). Rebuild PRs implement against that spec — do NOT re-derive from the existing `AnimationSystem.ts` / `ViewmodelAnimationSystem.ts`, which §10 of the spec calls out as buggy.
 
-### Spatial Conventions (issue #86 — under refactor)
-- **ECS `Position` = entity feet position** (point of contact with ground). The character mesh's root bone is at the feet (`y=0`), so `meshGroup.position = (Position.x, Position.y, Position.z)` is a direct copy with NO offset.
-- **Capsule collider** is offset upward inside the rigid body via `ColliderDesc.capsule(...).setTranslation(0, CAPSULE_RADIUS + CAPSULE_HALF_HEIGHT, 0)` so the capsule's bottom hemisphere sits at the body origin (= feet).
-- **Forward = -Z** (Three.js convention). Yaw=0 looks down -Z. `moveZ = -strafe*sin(yaw) - forward*cos(yaw)`.
-- **Spawn**: always raycast down from `(x, 50, z)` and place feet at `hit.toi` (with a small `+CHARACTER_CONTROLLER_OFFSET` epsilon). Never hard-code Y in spawn-position arrays.
-- **Ground**: arena ground is a fixed cuboid centered at y=0 with half-height 0.1, so its top surface is at **y = 0.1**. Visual ground plane sits at y=0 (mid-cuboid).
-- This convention applies to **all** characters (player, dummies, future NPCs). Entity factories must not invent their own offset.
+### Spatial Conventions (SHIPPED — #104 / PR #150)
+- **ECS `Position` = entity feet position** (point of contact with ground). The character mesh's root bone is at the feet (`y=0` in local space), so `meshGroup.position = (Position.x, Position.y, Position.z)` is a direct copy with NO offset.
+- **Capsule collider** is offset upward inside the rigid body via `ColliderDesc.capsule(...).setTranslation(0, CAPSULE_RADIUS + CAPSULE_HALF_HEIGHT, 0)` so the capsule's bottom hemisphere sits at the body origin (= feet). With `R=0.3, H=0.7` the offset is `(0, 1.0, 0)`. This is enforced by tests in `createPlayer.test.ts` and `createDummy.test.ts`.
+- **Forward = -Z** (Three.js convention). Yaw=0 looks down -Z. `moveX = strafe*cos(yaw) - forward*sin(yaw); moveZ = -strafe*sin(yaw) - forward*cos(yaw)`. The yaw rotation lives in `InputSystem`, not `MovementSystem`.
+- **Spawn**: always use `spawnAtGround(world, x, z)` from `src/ecs/utils/spawnAtGround.ts`. It raycasts down from `(x, 50, z)` and returns `hit.toi + CHARACTER_CONTROLLER_OFFSET`, falling back to `GROUND_TOP_Y + offset` when the raycast misses or the host environment lacks Rapier (tests). Never hard-code Y in spawn-position arrays. `createPlayer` and `createDummy` both use it; `createShopkeep` still uses the deprecated `SPAWN_HEIGHT` default and is a follow-up cleanup.
+- **Ground**: arena ground is a fixed cuboid centered at y=0 with half-height 0.1, so its top surface is at **y = 0.1 = `GROUND_TOP_Y`** (exported from `core/types.ts`). Visual ground plane sits at y=0 (mid-cuboid).
+- **Constants**: `GROUND_TOP_Y` (0.1), `CHARACTER_CONTROLLER_OFFSET` (0.02), `CAPSULE_HALF_HEIGHT` (0.7), `CAPSULE_RADIUS` (0.3) all live in `core/types.ts`. `SPAWN_HEIGHT` is a **deprecated alias of `GROUND_TOP_Y`** kept for one cycle — its semantics changed from capsule-center (1.1) to feet (0.1). New code should use `spawnAtGround()` or `GROUND_TOP_Y` directly.
+- This convention applies to **all** characters (player, dummies, shopkeep, future NPCs). Entity factories must not invent their own offset.
 
 ## Known Issues / Architectural Debt
 
@@ -204,15 +214,11 @@ The tracer-based hit detection pipeline (`TracerSystem` → `DamageSystem` → `
 ### First-Person Viewmodel (IMPLEMENTED — PR #57, skeletal PR #68, animation PR #70, anchor fix #81)
 `ViewmodelRenderer` (`src/rendering/ViewmodelRenderer.ts`) renders a procedural right arm + weapon in FPS mode using Two-pass Layer architecture: Layer 0 = world, Layer 1 = viewmodel. Separate `PerspectiveCamera` (FOV 70, near 0.01). Weapon swaps automatically via `onEquip` listener. `CameraController.setViewmodel()` toggles visibility on F5 camera mode switch. **Bone-driven skeletal arm** (PR #68): arm is built from a `THREE.Bone` hierarchy (`vm_upper_arm_R → vm_forearm_R → vm_hand_R → vm_weapon_attach`) with `THREE.SkinnedMesh` parts. `bones` record exposed with canonical names (without `vm_` prefix) for animation system use — keys match AnimationData.ts bone names. `weapon_attach` bone pre-rotated `Math.PI * 0.85` on X (angled slightly forward for natural grip). **Anchor convention** (#81): the shoulder bone (`vm_upper_arm_R`) is positioned at the group origin `(0, 0, 0)`, so the entire visible arm hangs DOWN into the viewport via negative-Y child offsets (forearm at `-UPPER_ARM_H`, hand at `-FOREARM_H` from forearm, etc.). `ARM_OFFSET = (0.25, -0.10, -0.4)` places the group origin (= shoulder anchor) slightly below the camera, so the arm enters the screen from the lower-right corner. Do NOT raise the shoulder above the group origin — that's the bug fixed in #81 (upper-arm box clipped into the top-third of the viewport). **Viewmodel animation** (PR #70): `ViewmodelAnimationSystem` (`src/rendering/ViewmodelAnimationSystem.ts`) drives bone poses based on `CombatStateComp` — per-weapon pose lookup via `getViewmodelPose()`, quaternion slerp crossfade blending (~80ms, matching AnimationSystem), `effectiveBlend = max(phaseBlend, crossfadeBlend)` pattern, idle sway (sinusoidal bob on hand_R + forearm_R z-axis). Runs in `update(dt)` after `animationSystem()`. Zero per-frame allocations.
 
-### Character Controller / Hover Bug (BEING FIXED — issue #86)
-Two architectural drifts cause characters to hover and WASD to feel broken:
-1. **Origin convention drift**: `createPlayer.ts` creates a capsule whose origin is the **center**, but the mesh group's root bone is at the **feet**. `main.ts` syncs `meshGroup.position = ECS Position`, so the mesh's feet end up at the capsule's center → visible character floats by `CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS = 1.0m` above the ground. `SPAWN_HEIGHT = 1.1` is the capsule center, not the feet.
-2. **Dummy has no rigid body**: `createDummy.ts` does not call `world.physicsWorld.createRigidBody()` — it only sets ECS `Position` and creates hitbox sensors. With no body and no ground contact, dummies float wherever `Position.y` is set (currently `SPAWN_HEIGHT = 1.1`).
-
-**Resolution** (issue #86 plan): adopt feet-origin convention everywhere (see "Spatial Conventions" above), give dummies a fixed-body capsule collider, add a `spawnAtGround()` helper that raycasts down to place feet on terrain. Move mesh sync out of fixedUpdate into render with interpolation.
+### Character Controller / Hover Bug (RESOLVED — #104 / PR #150)
+The two architectural drifts (player capsule origin = center vs. mesh root = feet, dummy with no rigid body) are fixed in PR #150. Player and dummy capsule colliders are now offset upward inside their bodies (`setTranslation(0, R+H, 0)`) so body origin = feet; dummies have a `RigidBodyType.Fixed` capsule body so the player can collide with them; `spawnAtGround(world, x, z)` resolves Y by raycasting down from y=50; mesh sync moved from `fixedUpdate` to `render(alpha)` with `lerp(PreviousPosition, Position, alpha)` so motion stays smooth at high framerates. Tests in `createPlayer.test.ts`, `createDummy.test.ts`, and `spawnAtGround.test.ts` pin all of these invariants. Follow-up: `createShopkeep` should also call `spawnAtGround` rather than defaulting to the deprecated `SPAWN_HEIGHT` alias.
 
 ### Arena Authoring (Arena v1, #91)
-Arenas are **code-authored** — pure TypeScript, no glTF or JSON map files. `createArena(world: GameWorld): ArenaSpec` builds Three.js meshes + matching Rapier static colliders (`RigidBodyType.Fixed` + `cuboid`) 1:1 with mesh extents. Lights live inside `createArena()` (not `World.ts`) — they're map data, not engine data. Returned `ArenaSpec` is stored on `GameWorld.arena` for systems (spawn, weapon-pickup, shopkeep AI) to query. See `docs/arena-v1.md` for v1 layout, spawn coordinates, lighting plan, and `weapon_pickup_safe_volume` rules. **Ground top surface MUST stay at `y = 0.1`** to keep `SPAWN_HEIGHT = 0.1 + CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS` in `core/types.ts` correct.
+Arenas are **code-authored** — pure TypeScript, no glTF or JSON map files. `createArena(world: GameWorld): ArenaSpec` builds Three.js meshes + matching Rapier static colliders (`RigidBodyType.Fixed` + `cuboid`) 1:1 with mesh extents. Lights live inside `createArena()` (not `World.ts`) — they're map data, not engine data. Returned `ArenaSpec` is stored on `GameWorld.arena` for systems (spawn, weapon-pickup, shopkeep AI) to query. See `docs/arena-v1.md` for v1 layout, spawn coordinates, lighting plan, and `weapon_pickup_safe_volume` rules. **Ground top surface MUST stay at `y = 0.1`** because that's `GROUND_TOP_Y` in `core/types.ts` — both `spawnAtGround`'s fallback path and the feet-origin convention assume it.
 
 ### Shop Panel Scaffold (#100 — PR #140)
 `ShopPanel` is a tab-switcher HTML overlay that mirrors `InventoryPanel` (backdrop, Escape, click-outside, pointer-lock release via `input.paused`). Two default tabs: a stub `Weapons (Gold)` tab (replaced by #96) and `PremiumShopTab` (USD). Tabs implement the `ShopTab` interface (`mount(container)` / `unmount()`) — the panel clears the body container before mounting the next tab; tab impls only need to clean up listeners. Real-money flows go through the **forward-compatible `PaymentProvider` interface** (`isAvailable()`, `start(item): Promise<PurchaseResult>`); the default `MockPaymentProvider` always reports unavailable, so Buy buttons render disabled with a "Coming soon" tooltip. When Stripe lands, replace `MockPaymentProvider` with `StripePaymentProvider` — `PremiumShopTab` works unchanged. No hotkey wired yet; #96 will hook this up to the shopkeep NPC. Dev console exposes `window.openShop()` / `window.closeShop()`. `_suppressClickToPlay` covers both `inventoryPanel.isOpen || shopPanel.isOpen`.
@@ -233,7 +239,7 @@ Three pieces ship the proximity-interact loop:
 - **KeyE wiring**: `main.ts` `keydown` switch dispatches `KeyE` → bails on `input.paused` (so E during inventory/shop overlay is a no-op) → calls `getNearbyInteractable(playerEid)` → if non-null, calls a local `openShop(eid)` stub (logs + `showNotification('Shop opened (UI placeholder)')`). **The stub deliberately does not call `shopPanel.open()`** — wiring this to the real shop overlay (already shipped in #100/#140) is a follow-up so #113 could land in parallel; the README "Interaction" section calls this out.
 
 ### Module-Level Singletons
-`fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName`, `inventoryRegistry`, `weaponModelFactories`, `Wallet.goldBalance`, `shopkeepRegistry`, `InteractionSystem.nearbyByPlayer` are all module-level Maps/arrays/scalars. Works for single-world but won't scale to multiple worlds.
+`fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName`, `inventoryRegistry`, `weaponModelFactories`, `Wallet.goldBalance`, `shopkeepRegistry`, `InteractionSystem.nearbyByPlayer`, `MovementSystem.bodyByEid` / `colliderByEid` / `movementTick`, `InputSystem.prevJumpKeyDown` are all module-level Maps/arrays/scalars. Works for single-world but won't scale to multiple worlds. The `prevJumpKeyDown` edge-trigger state is the one that will need to become per-controller when multiplayer lands.
 
 ## Gotchas
 - **Rapier3D WASM must be initialized async** before creating the physics world — use `import RAPIER from '@dimforge/rapier3d-compat'` then `await RAPIER.init()`
@@ -247,3 +253,5 @@ Three pieces ship the proximity-interact loop:
 - **`weaponIdToName` in CombatSystem.ts (line 28) is a hardcoded array** — when adding new weapons, update this array AND ensure the weapon's numeric index matches `CombatStateComponent.weaponId[eid]`
 - **Pointer Lock must be released** when showing any UI overlay (inventory, menus) — call `document.exitPointerLock()`. Re-request on close via user gesture (click on canvas).
 - **Side-table pattern** for non-numeric data: `meshRegistry` (Map<number, CharacterModelData>), `fsmRegistry` (Map<number, CombatFSM>), `hitboxColliderRegistry` — use the same pattern for inventory/equipment data
+- **`SPAWN_HEIGHT` is now a deprecated alias of `GROUND_TOP_Y` (= 0.1)** — semantics changed from capsule-center (1.1) to feet (0.1) in PR #150. Existing call sites still compile but new code should use `spawnAtGround()` for spawn Y or `GROUND_TOP_Y` for the literal.
+- **`MovementIntent` is the AI/network seam** — `MovementSystem` no longer reads `InputManager`. To make an entity move, write to `MovementIntent { moveX, moveZ, sprint, crouch, jumpRequested }`. `jumpRequested` is edge-triggered (cleared by `MovementSystem` after consumption). For player input, `InputSystem` does this each fixed tick. AI controllers / network deserializers will use the same component.

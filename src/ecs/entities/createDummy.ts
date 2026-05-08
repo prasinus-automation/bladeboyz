@@ -1,12 +1,15 @@
 import { addEntity, addComponent, removeEntity } from 'bitecs';
 import {
   Position,
+  PreviousPosition,
   Rotation,
+  PreviousRotation,
   Velocity,
   CharacterModel,
   Health,
   Stamina,
   Hitboxes,
+  PhysicsBody,
   CombatStateComp,
   CombatStateComponent,
   AnimationComp,
@@ -18,9 +21,10 @@ import {
 import { createCharacterModel } from '../../rendering/CharacterModel';
 import { createHitboxes } from '../systems/HitboxSystem';
 import { weaponBoneMap } from '../systems/TracerSystem';
+import { spawnAtGround } from '../utils/spawnAtGround';
 import { CombatState } from '../../combat/states';
 import { BlockDirection } from '../../combat/directions';
-import { SPAWN_HEIGHT } from '../../core/types';
+import { CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS } from '../../core/types';
 import { CombatInput, createFSM, fsmRegistry, removeFSM } from '../../combat/CombatFSM';
 import { weaponConfigs } from '../../weapons/WeaponConfig';
 import { weaponIdToName } from '../systems/CombatSystem';
@@ -42,8 +46,17 @@ const HEALTH_RESET_TICKS = 180;
  * Create a training dummy entity with full character model, hitboxes,
  * combat state, health, and stamina. Faces toward +Z (player spawn).
  *
+ * Dummies are static obstacles: they get a `RigidBodyType.Fixed` body with
+ * a capsule collider so the player can collide with (and be stopped by)
+ * them. The capsule is offset upward inside the body so the body's origin
+ * is at the FEET — same convention as the player. Y is resolved via
+ * `spawnAtGround` (raycast from y=50 down) when not provided.
+ *
+ * Dummies are NOT registered in `MovementSystem.bodyByEid` — that map is
+ * for kinematic-controlled entities only. They have no `MovementIntent`.
+ *
  * A `CombatFSM` is registered for the dummy so `CombatSystem` will tick
- * its state every fixed update — `phaseElapsed/phaseTotal` populate
+ * its state every fixed update — `phaseElapsed/phaseTotal/phaseT` populate
  * during combat phases just like for the player. Dummies don't read
  * input, so their FSM stays in `Idle` until something external (a parry
  * trigger, `toggleDummyBlock`, etc.) drives a transition.
@@ -53,19 +66,22 @@ const HEALTH_RESET_TICKS = 180;
 export function createDummy(
   world: GameWorld,
   x = 0,
-  y = SPAWN_HEIGHT,
   z = -3,
   color = 0xcc4444,
+  yOverride?: number,
   startingWeapon = 'Dagger',
 ): number {
   const eid = addEntity(world.ecs);
 
   addComponent(world.ecs, Position, eid);
+  addComponent(world.ecs, PreviousPosition, eid);
   addComponent(world.ecs, Rotation, eid);
+  addComponent(world.ecs, PreviousRotation, eid);
   addComponent(world.ecs, CharacterModel, eid);
   addComponent(world.ecs, Health, eid);
   addComponent(world.ecs, Stamina, eid);
   addComponent(world.ecs, Hitboxes, eid);
+  addComponent(world.ecs, PhysicsBody, eid);
   addComponent(world.ecs, Velocity, eid);
   addComponent(world.ecs, CombatStateComp, eid);
   addComponent(world.ecs, CombatStateComponent, eid);
@@ -73,12 +89,20 @@ export function createDummy(
   addComponent(world.ecs, HitReactComp, eid);
   addComponent(world.ecs, TracerTag, eid);
 
+  // Resolve feet Y (raycast unless explicit override)
+  const feetY =
+    typeof yOverride === 'number' ? yOverride : spawnAtGround(world, x, z).y;
+
   Position.x[eid] = x;
-  Position.y[eid] = y;
+  Position.y[eid] = feetY;
   Position.z[eid] = z;
+  PreviousPosition.x[eid] = x;
+  PreviousPosition.y[eid] = feetY;
+  PreviousPosition.z[eid] = z;
 
   // Face toward +Z (player spawn at z=0)
   Rotation.y[eid] = Math.PI;
+  PreviousRotation.y[eid] = Math.PI;
 
   Health.current[eid] = 100;
   Health.max[eid] = 100;
@@ -101,8 +125,24 @@ export function createDummy(
     createFSM(eid, dummyWeapon);
   }
 
+  // Fixed-body capsule collider. Same offset convention as the player so
+  // the body origin (Position) is at feet. Without a body the dummy would
+  // float wherever Position.y was set (the bug from the AGENTS.md "Hover
+  // Bug" entry — issue #86 / #104).
+  const bodyDesc = world.rapier.RigidBodyDesc.fixed().setTranslation(x, feetY, z);
+  const body = world.physicsWorld.createRigidBody(bodyDesc);
+  const colliderDesc = world.rapier.ColliderDesc.capsule(
+    CAPSULE_HALF_HEIGHT,
+    CAPSULE_RADIUS,
+  ).setTranslation(0, CAPSULE_RADIUS + CAPSULE_HALF_HEIGHT, 0);
+  const collider = world.physicsWorld.createCollider(colliderDesc, body);
+  PhysicsBody.bodyHandle[eid] = body.handle;
+  PhysicsBody.colliderHandle[eid] = collider.handle;
+  // NOTE: do NOT call registerPhysicsBody — that's for kinematic-controlled
+  // entities only (player). Dummies don't move; MovementSystem skips them.
+
   const { group, skeleton, bones } = createCharacterModel(color);
-  group.position.set(x, y, z);
+  group.position.set(x, feetY, z);
   group.rotation.y = Math.PI; // face player
   CharacterModel.id[eid] = eid;
   meshRegistry.set(eid, { group, skeleton, bones });
