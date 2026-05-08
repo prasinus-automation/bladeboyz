@@ -110,7 +110,8 @@ bladeboyz/
 │   │   ├── README.md                         # Index + read-order for the four-doc set
 │   │   └── 01-transport-and-authority.md     # Transport, topology, tickrate, authority model (#116)
 │   ├── spawn-death-respawn.md                # Spawn/death/respawn loop design (issue #93)
-│   └── training-dummies-and-bots-spec.md     # Training dummies + warmup bots (issue #99)
+│   ├── training-dummies-and-bots-spec.md     # Training dummies + warmup bots (issue #99)
+│   └── viewmodel-architecture.md             # FP viewmodel rebuild spec (issue #115, parent #90)
 ├── public/
 │   └── (static assets if any)
 ├── index.html
@@ -189,6 +190,7 @@ npm run lint         # Run ESLint
 - Rapier colliders for hitboxes are **sensors** (no physics response)
 - Character skeletons use Three.js `Bone` / `Skeleton` — procedurally generated, not imported from glTF for scaffolding phase
 - Third-person + viewmodel animation conventions (bone graph, rest-pose Euler XYZ, hybrid keyframe-slerp + arc-swing strategy, layer ownership, tick contract): see `docs/animation-architecture.md` (parent #89). Rebuild PRs implement against that spec — do NOT re-derive from the existing `AnimationSystem.ts` / `ViewmodelAnimationSystem.ts`, which §10 of the spec calls out as buggy.
+- See `docs/viewmodel-architecture.md` for the full FP viewmodel design (two-pass render, anchor convention, bone write-permissions, per-weapon grip data, idle sway / locomotion bob / aim-sway-lag math, weapon-cache pattern). Sub-issues #122 / #125 / #129 implement against it.
 
 ### Spatial Conventions (SHIPPED — #104 / PR #150)
 - **ECS `Position` = entity feet position** (point of contact with ground). The character mesh's root bone is at the feet (`y=0` in local space), so `meshGroup.position = (Position.x, Position.y, Position.z)` is a direct copy with NO offset.
