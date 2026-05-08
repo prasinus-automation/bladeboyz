@@ -40,6 +40,9 @@ bladeboyz/
 │   ├── animation/
 │   │   ├── AnimationData.ts     # Third-person combat animation poses (per-direction, per-phase)
 │   │   └── ViewmodelAnimationData.ts # First-person viewmodel poses — per-weapon × per-direction × per-phase
+│   ├── arena/
+│   │   ├── types.ts             # ArenaSpec, SpawnPoint, ShopkeepStallSpec, Volume3D interfaces
+│   │   └── createArena.ts       # Code-authored arena geometry + Rapier static colliders + lights (returns ArenaSpec)
 │   ├── combat/
 │   │   ├── CombatFSM.ts         # Combat state machine definition
 │   │   ├── states.ts            # State enum and transition logic
@@ -165,6 +168,9 @@ Two architectural drifts cause characters to hover and WASD to feel broken:
 2. **Dummy has no rigid body**: `createDummy.ts` does not call `world.physicsWorld.createRigidBody()` — it only sets ECS `Position` and creates hitbox sensors. With no body and no ground contact, dummies float wherever `Position.y` is set (currently `SPAWN_HEIGHT = 1.1`).
 
 **Resolution** (issue #86 plan): adopt feet-origin convention everywhere (see "Spatial Conventions" above), give dummies a fixed-body capsule collider, add a `spawnAtGround()` helper that raycasts down to place feet on terrain. Move mesh sync out of fixedUpdate into render with interpolation.
+
+### Arena Authoring (Arena v1, #91)
+Arenas are **code-authored** — pure TypeScript, no glTF or JSON map files. `createArena(world: GameWorld): ArenaSpec` builds Three.js meshes + matching Rapier static colliders (`RigidBodyType.Fixed` + `cuboid`) 1:1 with mesh extents. Lights live inside `createArena()` (not `World.ts`) — they're map data, not engine data. Returned `ArenaSpec` is stored on `GameWorld.arena` for systems (spawn, weapon-pickup, shopkeep AI) to query. See `docs/arena-v1.md` for v1 layout, spawn coordinates, lighting plan, and `weapon_pickup_safe_volume` rules. **Ground top surface MUST stay at `y = 0.1`** to keep `SPAWN_HEIGHT = 0.1 + CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS` in `core/types.ts` correct.
 
 ### Module-Level Singletons
 `fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName`, `inventoryRegistry`, `weaponModelFactories` are all module-level Maps/arrays/objects. Works for single-world but won't scale to multiple worlds.
