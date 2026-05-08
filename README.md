@@ -52,6 +52,13 @@ In first-person mode, a **viewmodel** renders your right arm and equipped weapon
 
 > While the inventory is open, mouse look and combat inputs are paused. Close with **I** or **Escape** to resume gameplay.
 
+### Interaction
+| Key | Action |
+|-----|--------|
+| **E** | Interact (when prompt shown) — e.g. open the shop while standing near the shopkeep |
+
+> A **shopkeep NPC** stands at one corner of the arena. Walk close enough and a "Press [E] to shop" prompt appears above their head; pressing **E** triggers the shop-open hook. The interaction pipeline is wired but the hook currently stubs out to a HUD notification — connecting it to the real shop overlay (below) is a follow-up.
+
 ### Shop (placeholder)
 
 A two-tab shop panel scaffold. The "Weapons (Gold)" tab is a stub
@@ -212,10 +219,12 @@ src/
 │   │   └── DummyDamageObserver.ts  # Floating damage numbers for training dummies
 │   ├── entities/
 │   │   ├── createPlayer.ts      # Player entity factory (mesh, kinematic body, MovementIntent)
-│   │   ├── createDummy.ts       # Training dummy factory (mesh, fixed body, capsule)
-│   │   └── createArena.ts       # Test arena geometry + physics
+│   │   └── createDummy.ts       # Training dummy factory (mesh, fixed body, capsule)
 │   └── utils/
 │       └── spawnAtGround.ts     # Raycast-down feet-Y resolver (used by all entity factories)
+├── arena/
+│   ├── types.ts                 # ArenaSpec, SpawnPoint, ShopkeepStallSpec, Volume3D
+│   └── createArena.ts           # Code-authored arena: lights (#117), geometry/spawns (#112)
 ├── combat/
 │   ├── CombatFSM.ts         # Combat state machine (11 states, data-driven transitions)
 │   ├── states.ts            # CombatState enum (Idle, Windup, Release, Block, etc.)
@@ -275,4 +284,5 @@ Design docs and architecture specs live in [`docs/`](docs/):
 - **Tracer-based hits**: no simple raycasts. Weapons have tracer points swept between ticks.
 - **Damage pipeline**: TracerSystem detects hits → DamageSystem resolves block/parry/damage → HealthSystem applies HP changes.
 - **First-person viewmodel**: two-pass render layer architecture (Layer 0 = world, Layer 1 = viewmodel) with a dedicated camera for depth-correct weapon rendering. Bone-driven animation via `ViewmodelAnimationSystem` — per-weapon unique poses, quaternion slerp crossfade blending matching the world animation system.
+- **Arena lighting (Arena v1, #117)**: lights are map data, owned by `createArena()`, not the engine. The v1 rig is a warm directional "sun" against a sky/ground `HemisphereLight` tint plus a low ambient fill — no shadows, no skybox texture. Sky color matches `scene.background`; ground color matches the arena floor.
 - **bitECS components are numbers-only**: complex data (meshes, skeletons) lives in `Map<number, ...>` side-tables.

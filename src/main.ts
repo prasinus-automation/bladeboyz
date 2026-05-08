@@ -8,7 +8,7 @@ import { createCombatSystem } from './ecs/systems/CombatSystem';
 import { staminaSystemTick } from './ecs/systems/StaminaSystem';
 import { healthSystemTick } from './ecs/systems/HealthSystem';
 import { createPlayer } from './ecs/entities/createPlayer';
-import { createArena } from './ecs/entities/createArena';
+import { createArena } from './arena/createArena';
 import {
   createDummy,
   removeDummy,
@@ -18,6 +18,11 @@ import {
   tickDummyHealthReset,
   activeDummies,
 } from './ecs/entities/createDummy';
+import { createShopkeep } from './ecs/entities/createShopkeep';
+import {
+  interactionSystem,
+  getNearbyInteractable,
+} from './ecs/systems/InteractionSystem';
 import { animationSystem } from './ecs/systems/AnimationSystem';
 import { DebugOverlay } from './hud/DebugOverlay';
 import { HUD } from './hud/HUD';
@@ -28,12 +33,13 @@ import { hitboxSystem } from './ecs/systems/HitboxSystem';
 import { TracerDebugRenderer } from './rendering/TracerDebugRenderer';
 import { FloatingDamage } from './hud/FloatingDamage';
 import { DummyHealthBar } from './hud/DummyHealthBar';
+import { WorldLabel } from './hud/WorldLabel';
 import { createDummyDamageObserver } from './ecs/systems/DummyDamageObserver';
 import { showNotification } from './hud/DebugNotification';
 import { InventoryPanel } from './hud/InventoryPanel';
 import { ShopPanel } from './hud/shop/ShopPanel';
 import { MockPaymentProvider } from './hud/shop/types';
-import { FIXED_TIMESTEP } from './core/types';
+import { FIXED_TIMESTEP, SPAWN_HEIGHT } from './core/types';
 import { Position, PreviousPosition, meshRegistry } from './ecs/components';
 import { lerp } from './utils/math';
 import { createFSM, fsmRegistry } from './combat/CombatFSM';
@@ -148,6 +154,14 @@ async function main(): Promise<void> {
   createDummy(world, 0, -4, 0xcc4444);
   dummySpawnIdx = 1;
 
+  // Spawn shopkeep NPC at far corner of arena. Walking distance from origin
+  // is intentional — proves the interact prompt only shows up close.
+  // NOTE: SPAWN_HEIGHT is now a deprecated alias of GROUND_TOP_Y (= 0.1) per
+  // #104's feet-origin convention. The shopkeep mesh root is at feet (y=0
+  // local), so passing 0.1 puts its feet on the ground — fixing what was
+  // previously a floating shopkeep at y=1.1.
+  createShopkeep(world, 8, SPAWN_HEIGHT, 8, { name: 'Shopkeep' });
+
   // Input + movement systems (input writes MovementIntent; movement consumes it)
   const inputSystem = createInputSystem(world, input, cameraController);
   const movementSystem = createMovementSystem(world, cameraController);
@@ -184,6 +198,17 @@ async function main(): Promise<void> {
   const dummyHealthBar = new DummyHealthBar(world.camera);
   const dummyDamageObserver = createDummyDamageObserver(world, floatingDamage);
 
+  // Shopkeep nameplate + "Press [E] to shop" prompt
+  const worldLabel = new WorldLabel(world.camera);
+
+  // Stub: the dependent shop-UI issue replaces this with the real overlay
+  // open. For now it just logs and surfaces a HUD notification so we can
+  // confirm the proximity + KeyE wiring works end-to-end.
+  function openShop(shopkeepEid: number): void {
+    console.log('shop opened for', shopkeepEid);
+    showNotification('Shop opened (UI placeholder)');
+  }
+
   // ─── Keybind handler (T, Y, J, K, number keys) ───
   window.addEventListener('keydown', (e: KeyboardEvent) => {
     switch (e.code) {
@@ -204,6 +229,16 @@ async function main(): Promise<void> {
         resetAllDummies(world);
         showNotification('All dummies reset');
         break;
+      case 'KeyE': {
+        // Bail out if input is paused (e.g. inventory open) so pressing E
+        // with another overlay up doesn't trigger weird state.
+        if (input.paused) break;
+        const target = getNearbyInteractable(playerEid);
+        if (target !== null) {
+          openShop(target);
+        }
+        break;
+      }
     }
   });
 
@@ -280,6 +315,9 @@ async function main(): Promise<void> {
     // Dummy health reset timer
     tickDummyHealthReset();
 
+    // Update nearest-interactable cache (for KeyE handler + WorldLabel prompt)
+    interactionSystem(playerEid);
+
     // NOTE: mesh sync MOVED OUT of fixedUpdate — see loop.render below.
     // Syncing mesh positions in fixedUpdate snaps them at 60Hz; in render
     // we lerp between PreviousPosition and Position so motion stays smooth
@@ -323,6 +361,7 @@ async function main(): Promise<void> {
     tracerDebugRenderer.update();
     floatingDamage.update();
     dummyHealthBar.update();
+    worldLabel.update(getNearbyInteractable(playerEid));
     cameraController.updateCamera(playerEid, alpha);
 
     // Pass 1: Render world scene (Layer 0) with world camera

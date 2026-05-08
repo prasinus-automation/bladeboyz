@@ -32,11 +32,13 @@ bladeboyz/
 │   │   │   ├── HitboxSystem.ts
 │   │   │   ├── StaminaSystem.ts
 │   │   │   ├── HealthSystem.ts  # Damage application, death detection, respawn timer (#93)
+│   │   │   ├── InteractionSystem.ts # Per-tick proximity check; caches nearest in-range interactable per player (#113)
 │   │   │   ├── AnimationSystem.ts
 │   │   │   └── ...
 │   │   └── entities/            # Entity factory/spawner functions
 │   │       ├── createPlayer.ts
 │   │       ├── createDummy.ts
+│   │       ├── createShopkeep.ts # Static non-combatant NPC (Position/Rotation/CharacterModel only) + shopkeepRegistry side-table (#113)
 │   │       └── ...
 │   ├── events/
 │   │   └── EventBus.ts          # In-process event bus for DeathEvent, RespawnEvent, DamageDealt (#93)
@@ -84,6 +86,7 @@ bladeboyz/
 │   │   ├── Killfeed.ts          # Top-right kill log, fades after 5s (#93)
 │   │   ├── Scoreboard.ts        # Persistent K/D/Gold display (#93)
 │   │   ├── GoldCounter.ts       # Top-right gold balance HUD, subscribes to Wallet (#107)
+│   │   ├── WorldLabel.ts        # World-anchored HTML overlay — shopkeep nameplate + "Press [E] to shop" prompt (#113)
 │   │   ├── DebugOverlay.ts      # FSM state, FPS counter
 │   │   └── shop/                # Shop overlay scaffold (#100)
 │   │       ├── ShopPanel.ts     # Tab-switcher overlay (mirrors InventoryPanel; backdrop, Escape, click-outside, pointer-lock release via input.paused)
@@ -98,6 +101,9 @@ bladeboyz/
 │   ├── combat-fsm-v2.md                      # Combat FSM v2 architecture spec (issue #88)
 │   ├── gold-currency.md                      # Gold currency design doc (issue #95)
 │   ├── input-pipeline.md                     # Input pipeline architecture spec (issue #102)
+│   ├── networking/                           # Multiplayer architecture spec set (parent #92)
+│   │   ├── README.md                         # Index + read-order for the four-doc set
+│   │   └── 01-transport-and-authority.md     # Transport, topology, tickrate, authority model (#116)
 │   ├── spawn-death-respawn.md                # Spawn/death/respawn loop design (issue #93)
 │   └── training-dummies-and-bots-spec.md     # Training dummies + warmup bots (issue #99)
 ├── public/
@@ -222,8 +228,15 @@ Minimal scaffolding for the shop feature, deliberately scoped narrower than the 
 - **Starter inventory** is now `['Dagger']` only (was all four weapons). Mace/Longsword/Battleaxe must be acquired through the shopkeep — `initInventory(playerEid, ['Dagger'], 'Dagger')` in `main.ts`. Note: this contradicts the "default starter weapon is **Longsword**" line in the Spawn/Death/Respawn section above; the respawn-default behavior should be reconciled with the starter inventory in a future PR (the player can't currently respawn with a weapon they don't own).
 - Out of scope here (belongs to #95): earning gold from kills/time, persistence (localStorage/server), negative balance/debt.
 
+### Shopkeep NPC + Interaction Pipeline (#113 — PR #147)
+Three pieces ship the proximity-interact loop:
+- **`createShopkeep(world, x, y, z, opts?)`** — non-combatant entity factory. Adds **only** `Position`, `Rotation`, `CharacterModel` (no `Velocity`, `Health`, `Stamina`, `Hitboxes`, `CombatStateComp`, no Rapier body). Verified via `hasComponent` in tests — shopkeeps are deliberately not hittable. Body color `0xddaa44` (gold) distinguishes from dummies (red) / player (blue). Faces toward origin via `Rotation.y = atan2(-x, -z)`. String `name` lives in module-level **`shopkeepRegistry: Map<eid, {name, interactRadius}>`** side-table (bitECS components are TypedArrays). One spawned at `(8, SPAWN_HEIGHT, 8)` on game start.
+- **`InteractionSystem`** — ticks per fixedUpdate (called from main loop after `tickDummyHealthReset`), iterates `shopkeepRegistry` and computes 3D Euclidean distance from player Position. Caches the nearest in-range eid in module-level `nearbyByPlayer: Map<eid, eid|null>`. API: `interactionSystem(playerEid)` to tick, `getNearbyInteractable(playerEid)` for consumers, `clearInteractionCache(eid?)` for tests/cleanup. **Distance check, not a Rapier sensor** — single shopkeep makes per-tick distance ~5ns; switch to a sensor approach if interactable count grows beyond ~10.
+- **`WorldLabel` HUD class** — world-anchored HTML overlay (`#world-label-container`, fixed/pointer-events:none/z-index 14), updated each render frame. Mirrors `DummyHealthBar.ts`'s projection pattern: `Vector3.project(camera)` → NDC → pixel coords; hides when `proj.z > 1` (behind camera). Renders **two divs per shopkeep**: persistent gold nameplate at head height (`+1.6m`) and a conditional "Press [E] to shop" prompt at `+1.2m` shown only when `nearbyInteractableEid === eid`. Single reused `Vector3` — zero per-frame allocations. Auto-removes labels for shopkeeps deleted from `shopkeepRegistry`.
+- **KeyE wiring**: `main.ts` `keydown` switch dispatches `KeyE` → bails on `input.paused` (so E during inventory/shop overlay is a no-op) → calls `getNearbyInteractable(playerEid)` → if non-null, calls a local `openShop(eid)` stub (logs + `showNotification('Shop opened (UI placeholder)')`). **The stub deliberately does not call `shopPanel.open()`** — wiring this to the real shop overlay (already shipped in #100/#140) is a follow-up so #113 could land in parallel; the README "Interaction" section calls this out.
+
 ### Module-Level Singletons
-`fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName`, `inventoryRegistry`, `weaponModelFactories`, `Wallet.goldBalance` are all module-level Maps/arrays/scalars. Works for single-world but won't scale to multiple worlds.
+`fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName`, `inventoryRegistry`, `weaponModelFactories`, `Wallet.goldBalance`, `shopkeepRegistry`, `InteractionSystem.nearbyByPlayer` are all module-level Maps/arrays/scalars. Works for single-world but won't scale to multiple worlds.
 
 ## Gotchas
 - **Rapier3D WASM must be initialized async** before creating the physics world — use `import RAPIER from '@dimforge/rapier3d-compat'` then `await RAPIER.init()`
