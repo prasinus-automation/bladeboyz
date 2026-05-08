@@ -31,15 +31,23 @@ bladeboyz/
 │   │   │   ├── TracerSystem.ts
 │   │   │   ├── HitboxSystem.ts
 │   │   │   ├── StaminaSystem.ts
+│   │   │   ├── HealthSystem.ts  # Damage application, death detection, respawn timer (#93)
 │   │   │   ├── AnimationSystem.ts
 │   │   │   └── ...
 │   │   └── entities/            # Entity factory/spawner functions
 │   │       ├── createPlayer.ts
 │   │       ├── createDummy.ts
 │   │       └── ...
+│   ├── events/
+│   │   └── EventBus.ts          # In-process event bus for DeathEvent, RespawnEvent, DamageDealt (#93)
+│   ├── world/
+│   │   └── SpawnPoints.ts       # Spawn-point registry + selectSpawnPoint() weighted-random selector (#93)
 │   ├── animation/
 │   │   ├── AnimationData.ts     # Third-person combat animation poses (per-direction, per-phase)
 │   │   └── ViewmodelAnimationData.ts # First-person viewmodel poses — per-weapon × per-direction × per-phase
+│   ├── arena/
+│   │   ├── types.ts             # ArenaSpec, SpawnPoint, ShopkeepStallSpec, Volume3D interfaces
+│   │   └── createArena.ts       # Code-authored arena geometry + Rapier static colliders + lights (returns ArenaSpec)
 │   ├── combat/
 │   │   ├── CombatFSM.ts         # Combat state machine definition
 │   │   ├── states.ts            # State enum and transition logic
@@ -69,13 +77,24 @@ bladeboyz/
 │   │   ├── StaminaBar.ts
 │   │   ├── DirectionIndicator.ts # Mordhau-style compass-rose crosshair overlay (attack/block direction)
 │   │   ├── InventoryPanel.ts    # Tab inventory UI overlay (HTML/CSS, pointer lock toggle)
-│   │   └── DebugOverlay.ts      # FSM state, FPS counter
+│   │   ├── DeathScreen.ts       # Full-screen death overlay + respawn countdown (#93)
+│   │   ├── Killfeed.ts          # Top-right kill log, fades after 5s (#93)
+│   │   ├── Scoreboard.ts        # Persistent K/D/Gold display (#93)
+│   │   ├── DebugOverlay.ts      # FSM state, FPS counter
+│   │   └── shop/                # Shop overlay scaffold (#100)
+│   │       ├── ShopPanel.ts     # Tab-switcher overlay (mirrors InventoryPanel; backdrop, Escape, click-outside, pointer-lock release via input.paused)
+│   │       ├── PremiumShopTab.ts # USD tab — empty-state by default; Buy buttons disabled when provider.isAvailable() === false
+│   │       └── types.ts         # Currency, ShopItem, ShopTab, PurchaseResult, PaymentProvider, MockPaymentProvider (always reports unavailable)
 │   └── utils/
 │       └── math.ts              # Vector utilities, interpolation helpers
 ├── docs/
-│   ├── MVP.md                   # MVP rebuild roadmap (issue #85)
-│   ├── gold-currency.md         # Gold currency design doc (issue #95)
-│   └── input-pipeline.md        # Input pipeline architecture spec (issue #102)
+│   ├── MVP.md                                # Foundation rebuild roadmap (issue #85)
+│   ├── arena-v1.md                           # Arena v1 layout, spawns, lighting (issue #91)
+│   ├── combat-fsm-v2.md                      # Combat FSM v2 architecture spec (issue #88)
+│   ├── gold-currency.md                      # Gold currency design doc (issue #95)
+│   ├── input-pipeline.md                     # Input pipeline architecture spec (issue #102)
+│   ├── spawn-death-respawn.md                # Spawn/death/respawn loop design (issue #93)
+│   └── training-dummies-and-bots-spec.md     # Training dummies + warmup bots (issue #99)
 ├── public/
 │   └── (static assets if any)
 ├── index.html
@@ -100,7 +119,9 @@ Everything is an entity with composable components. No god-objects. Systems oper
 - All combat timing is in **fixed-update ticks**, not wall-clock time
 
 ### Combat State Machine
-Each combatant has a per-entity FSM. States: `Idle`, `Windup`, `Release`, `Recovery`, `Block`, `ParryWindow`, `Riposte`, `Feint`, `Clash`, `Stunned`, `HitStun`. Transitions are data-driven from weapon config. **Turncap wiring** (PR #78): `CombatSystem` syncs `CameraController.maxTurnRate` from `FSM.getCurrentTurncap()` every fixed tick. Camera turn rate is capped during Windup/Release/Recovery/Feint per weapon config turncap values; uncapped (Infinity) during Idle/Block/ParryWindow/HitStun/Stunned.
+Each combatant has a per-entity FSM. **Currently shipped** (v1, 11 states): `Idle`, `Windup`, `Release`, `Recovery`, `Block`, `ParryWindow`, `Riposte`, `Feint`, `Clash`, `Stunned`, `HitStun`. Transitions are data-driven from weapon config. **Turncap wiring** (PR #78): `CombatSystem` syncs `CameraController.maxTurnRate` from `FSM.getCurrentTurncap()` every fixed tick. Camera turn rate is capped during Windup/Release/Recovery/Feint per weapon config turncap values; uncapped (Infinity) during Idle/Block/ParryWindow/HitStun/Stunned.
+
+**FSM v2 (in flight, see `docs/combat-fsm-v2.md` and issue #88)**: trims to 7 states (`Idle, Windup, Release, Recovery, Blocking, Parry, HitStun`), 4 directions (`Overhead, Left, Right, Stab` — `Underhand` removed), unified `CombatState` component (replaces dual `CombatStateComponent`/`CombatStateComp`), all state writes funnel through the FSM (no more direct writes from `DamageSystem`/`StaminaSystem`). Implementation gated on #85.
 
 ### Data-Driven Weapons
 Weapon behavior comes entirely from `WeaponConfig` objects — no hardcoded weapon logic in systems.
@@ -119,6 +140,9 @@ Movement is a Rapier `KinematicCharacterController` driven by `MovementSystem` i
 2. `movementSystem(dt)` → reads input + camera yaw, computes desired movement, calls `characterController.computeColliderMovement()`, calls `body.setNextKinematicTranslation()`, writes ECS `Position`
 3. `world.physicsWorld.step()` → Rapier integrates kinematic translations and runs sensor queries
 4. Mesh sync runs in `render(alpha)` with `lerp(PreviousPosition, Position, alpha)` — NOT in fixedUpdate (avoids 60Hz position snapping)
+
+### Spawn / Death / Respawn Loop (designed in #93 — see [docs/spawn-death-respawn.md](docs/spawn-death-respawn.md))
+Entity lifecycle is **separate from CombatFSM**: it's a higher-level state expressed via `DeadTag` + `RespawnPending` components plus `Health.current`. States: `Alive → Dying (1 tick) → Dead → Respawning (1 tick) → Alive`. Death fires a `DeathEvent` on the in-process `EventBus`; killfeed/scoreboard/death-screen consume it. Respawn timer is **180 ticks (3 s)**, default starter weapon is **Longsword**, spawn-point selection is **random weighted-away-from-enemies** (min distance 8.0, max-min fallback). `CombatSystem` and `MovementSystem` both early-out on `DeadTag` so dead entities don't read input or move. **Continuous deathmatch — no rounds for MVP.** See the design doc for full state diagram and event payloads.
 
 ## Build / Run / Test Commands
 ```bash
@@ -156,8 +180,11 @@ npm run lint         # Run ESLint
 
 ## Known Issues / Architectural Debt
 
-### Two Combat State Components (SYNCED — no longer broken)
-Two ECS components track combat state: `CombatStateComponent` (authoritative — synced from FSM by CombatSystem, used by HUD/StaminaSystem/DamageSystem) and `CombatStateComp` (animation mirror — has `phaseElapsed`/`phaseTotal`, used by AnimationSystem). **Both are now synced by CombatSystem** after FSM tick (fixed in PR #36). `computePhaseTotal()` in CombatSystem.ts derives phase duration from FSM state + weapon config. Long-term, these should be unified into a single component.
+### Two Combat State Components (SYNCED — slated for unification in FSM v2)
+Two ECS components track combat state: `CombatStateComponent` (authoritative — synced from FSM by CombatSystem, used by HUD/StaminaSystem/DamageSystem) and `CombatStateComp` (animation mirror — has `phaseElapsed`/`phaseTotal`, used by AnimationSystem). **Both are now synced by CombatSystem** after FSM tick (fixed in PR #36). `computePhaseTotal()` in CombatSystem.ts derives phase duration from FSM state + weapon config. **FSM v2 collapses these into a single `CombatState` component** — see `docs/combat-fsm-v2.md` §9.
+
+### Direct State Writes Bypass the FSM (FSM v2 will fix)
+`DamageSystem.ts` (lines 109, 128, 146) and `StaminaSystem.ts` (lines 99-100) write `CombatStateComponent.state` directly without dispatching an FSM input. This desyncs the FSM in `fsmRegistry` from the ECS component. FSM v2 routes every state change through `FSM.transition(input)` — see `docs/combat-fsm-v2.md` §7.
 
 ### Two Disconnected Inventory Modules (PARTIALLY RESOLVED — `InventoryData.ts` is dead code)
 `src/inventory/InventoryData.ts` is a lightweight UI-only side-table that was originally consumed by `InventoryPanel.ts`. `src/ecs/systems/InventorySystem.ts` is the real system with full equip logic (3D model swap, FSM update, ECS sync). **`InventoryPanel.ts` now correctly imports from `InventorySystem.ts`** (line 11 — `getInventory`, `equipWeapon`). `InventoryData.ts` is unused dead code referenced only by its own tests; remove in a cleanup PR.
@@ -174,6 +201,12 @@ Two architectural drifts cause characters to hover and WASD to feel broken:
 2. **Dummy has no rigid body**: `createDummy.ts` does not call `world.physicsWorld.createRigidBody()` — it only sets ECS `Position` and creates hitbox sensors. With no body and no ground contact, dummies float wherever `Position.y` is set (currently `SPAWN_HEIGHT = 1.1`).
 
 **Resolution** (issue #86 plan): adopt feet-origin convention everywhere (see "Spatial Conventions" above), give dummies a fixed-body capsule collider, add a `spawnAtGround()` helper that raycasts down to place feet on terrain. Move mesh sync out of fixedUpdate into render with interpolation.
+
+### Arena Authoring (Arena v1, #91)
+Arenas are **code-authored** — pure TypeScript, no glTF or JSON map files. `createArena(world: GameWorld): ArenaSpec` builds Three.js meshes + matching Rapier static colliders (`RigidBodyType.Fixed` + `cuboid`) 1:1 with mesh extents. Lights live inside `createArena()` (not `World.ts`) — they're map data, not engine data. Returned `ArenaSpec` is stored on `GameWorld.arena` for systems (spawn, weapon-pickup, shopkeep AI) to query. See `docs/arena-v1.md` for v1 layout, spawn coordinates, lighting plan, and `weapon_pickup_safe_volume` rules. **Ground top surface MUST stay at `y = 0.1`** to keep `SPAWN_HEIGHT = 0.1 + CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS` in `core/types.ts` correct.
+
+### Shop Panel Scaffold (#100 — PR #140)
+`ShopPanel` is a tab-switcher HTML overlay that mirrors `InventoryPanel` (backdrop, Escape, click-outside, pointer-lock release via `input.paused`). Two default tabs: a stub `Weapons (Gold)` tab (replaced by #96) and `PremiumShopTab` (USD). Tabs implement the `ShopTab` interface (`mount(container)` / `unmount()`) — the panel clears the body container before mounting the next tab; tab impls only need to clean up listeners. Real-money flows go through the **forward-compatible `PaymentProvider` interface** (`isAvailable()`, `start(item): Promise<PurchaseResult>`); the default `MockPaymentProvider` always reports unavailable, so Buy buttons render disabled with a "Coming soon" tooltip. When Stripe lands, replace `MockPaymentProvider` with `StripePaymentProvider` — `PremiumShopTab` works unchanged. No hotkey wired yet; #96 will hook this up to the shopkeep NPC. Dev console exposes `window.openShop()` / `window.closeShop()`. `_suppressClickToPlay` covers both `inventoryPanel.isOpen || shopPanel.isOpen`.
 
 ### Module-Level Singletons
 `fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName`, `inventoryRegistry`, `weaponModelFactories` are all module-level Maps/arrays/objects. Works for single-world but won't scale to multiple worlds.
