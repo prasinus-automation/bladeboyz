@@ -476,6 +476,44 @@ describe('AnimationSystem', () => {
     expect(dot).toBeGreaterThan(0.999);
   });
 
+  it('dummy-style entity without MovementState defaults to Idle (not Jumping)', () => {
+    // Regression test for the polarity bug: AnimationSystem used to read
+    // `MovementState.grounded[eid] === 1` directly off the bitECS TypedArray,
+    // which returned 0 for entities that don't have the component (dummies).
+    // 0 === 1 → false → `isGrounded === false` → movementKey === 'jump'.
+    // Dummies would render in mid-jump pose every frame.
+    //
+    // Fix: use `hasComponent(world.ecs, MovementState, eid)` and default to
+    // "stationary, grounded, not crouching" when the component is absent.
+    const dummyEid = addEntity(world.ecs);
+    addComponent(world.ecs, CharacterModel, dummyEid);
+    addComponent(world.ecs, CombatStateComp, dummyEid);
+    addComponent(world.ecs, AnimationComp, dummyEid);
+    addComponent(world.ecs, HitReactComp, dummyEid);
+    // NOTE: MovementState deliberately NOT added — matches createDummy.ts.
+
+    const { group, skeleton, bones } = createCharacterModel(0xff0000);
+    CharacterModel.id[dummyEid] = dummyEid;
+    meshRegistry.set(dummyEid, { group, skeleton, bones });
+
+    CombatStateComp.state[dummyEid] = CombatState.Idle;
+    AnimationComp.crossfadeT[dummyEid] = 1;
+    AnimationComp.movementState[dummyEid] = MovementStateEnum.Idle;
+    AnimationComp.prevCombatState[dummyEid] = CombatState.Idle;
+
+    // Run a few frames so `movementState` settles.
+    for (let i = 0; i < 5; i++) animationSystem(world, 1 / 60);
+
+    // The bug: this would land on `MovementStateEnum.Jumping` (= 3).
+    expect(AnimationComp.movementState[dummyEid]).toBe(MovementStateEnum.Idle);
+    expect(AnimationComp.movementState[dummyEid]).not.toBe(
+      MovementStateEnum.Jumping,
+    );
+
+    // Sanity: the original entity (which DOES have MovementState) is also Idle.
+    expect(AnimationComp.movementState[eid]).toBe(MovementStateEnum.Idle);
+  });
+
   it('legs and arms do NOT fight: combat windup leaves legs free for movement', () => {
     // The legacy bug: combat pose for upper body would slerp legs toward
     // identity even while the walk cycle was driving them. The rebuild's

@@ -27,7 +27,7 @@
  */
 
 import * as THREE from 'three';
-import { defineQuery } from 'bitecs';
+import { defineQuery, hasComponent } from 'bitecs';
 import {
   CharacterModel,
   CombatStateComp,
@@ -111,7 +111,6 @@ const animatedQuery = defineQuery([
 
 const _euler = new THREE.Euler();
 const _swayQuat = new THREE.Quaternion();
-const _targetQuat = new THREE.Quaternion();
 
 // ── Module-level state ───────────────────────────────────
 
@@ -303,12 +302,22 @@ export function animationSystem(world: GameWorld, dt: number): void {
     const direction = CombatStateComp.direction[eid];
     const phaseT = CombatStateComp.phaseT[eid];
 
-    // MovementState fields default to 0 when the component isn't on this
-    // entity (bitECS TypedArray semantics) — that maps to "idle, grounded,
-    // not crouching", which is exactly what dummies should look like.
-    const speedFactor = MovementState.speedFactor[eid];
-    const isCrouching = MovementState.crouching[eid] === 1;
-    const isGrounded = MovementState.grounded[eid] === 1;
+    // Defensive: not every animatable entity has `MovementState` (dummies
+    // don't — only `createPlayer` adds it). For those, default to
+    // "stationary, grounded, not crouching" — the natural idle pose.
+    //
+    // The bitECS slot polarity matters here: `MovementState.grounded === 1`
+    // means "on the ground" (see MovementSystem.ts), so reading the raw
+    // TypedArray slot for an entity without the component gives 0 = airborne.
+    // We must explicitly default to grounded when the component is absent;
+    // otherwise dummies render in mid-jump pose every frame.
+    //
+    // Bonus: also handles the player's first-frame airborne state, where
+    // `createPlayer.ts` initializes `grounded = 0` before MovementSystem ticks.
+    const hasMovement = hasComponent(world.ecs, MovementState, eid);
+    const speedFactor = hasMovement ? MovementState.speedFactor[eid] : 0;
+    const isCrouching = hasMovement && MovementState.crouching[eid] === 1;
+    const isGrounded = !hasMovement || MovementState.grounded[eid] === 1;
 
     // ── 2. State-change snapshot ──
     const prevState = AnimationComp.prevCombatState[eid] as CombatState;
@@ -483,9 +492,6 @@ export function animationSystem(world: GameWorld, dt: number): void {
       }
     }
 
-    // Suppress "unused" warning for the prepared targetQuat — kept around
-    // for any future helper that needs it without re-allocating.
-    void _targetQuat;
   }
 }
 
