@@ -41,6 +41,8 @@ import {
   weaponModelFactories as defaultWeaponModelFactories,
   type WeaponModelResult,
 } from './WeaponModels';
+import { ARM_OFFSET, AIM_SWAY_TAU_SECONDS } from './ViewmodelTuning';
+import { updateBob, resetBob } from './ViewmodelBob';
 
 /** Render layer index for viewmodel meshes */
 export const VIEWMODEL_LAYER = 1;
@@ -63,17 +65,13 @@ const DEBUG_AXES_SIZE = 0.05;
 const DEBUG_BONE_NAMES = ['upper_arm_R', 'forearm_R', 'hand_R', 'weapon_attach'] as const;
 
 /**
- * Arm offset from camera in camera-local space (lower-right of view).
- *
- * The shoulder bone sits at the group origin (see upperArmBone.position below),
- * so this offset places the *shoulder* at camera-local (x, y, z). With y just
- * slightly below the camera (-0.10), the visible arm geometry hangs DOWN into
- * the lower-right quadrant of the viewport from a shoulder anchor that is
- * at-or-below the eye line — the canonical FPS placement. Avoid raising y
- * above the camera (positive) or the upper-arm box will clip into the top of
- * the viewport (this was the bug fixed in #81).
+ * `ARM_OFFSET` lives in `./ViewmodelTuning` per doc §2.2 — every visual-tuning
+ * knob lives in one place. The shoulder bone sits at the viewmodel group
+ * origin; `ARM_OFFSET` is the camera-local offset applied each frame so the
+ * shoulder ends up just below the eye line and the arm hangs into the lower
+ * right of the viewport. Avoid raising `y` above 0 — that's the bug fixed in
+ * #81 (upper-arm box clipped into the top of the viewport).
  */
-const ARM_OFFSET = new THREE.Vector3(0.25, -0.1, -0.4);
 
 /**
  * Default grip rotation applied when a weapon's `WeaponModelResult` does not
@@ -538,20 +536,88 @@ export class ViewmodelRenderer {
   }
 
   /**
-   * Sync viewmodel position with the world camera.
-   * Called each frame during render(). Copies camera position/quaternion
-   * and offsets the arm group in camera-local space.
+   * Sync viewmodel position + rotation with the world camera, applying:
+   *   1. Aim-sway lag (rotational low-pass, doc §7) — the viewmodel quaternion
+   *      slerps toward the camera quaternion with `alpha = 1 - exp(-dt / TAU)`,
+   *      so fast aim flicks lag slightly and feel weighty.
+   *   2. Locomotion bob (doc §6) — `{dx, dy}` from `ViewmodelBob` is added to
+   *      `ARM_OFFSET` in camera-local space BEFORE the camera quaternion is
+   *      applied (so the bob plays out in the player's frame of reference).
+   *
+   * Position is **always snapped exactly** to `cameraPosition + offset`. We do
+   * NOT lag position — that would cause forward-and-back drift when the player
+   * moves (the camera moves first, the arm catches up; eye reads as
+   * seasickness, not weight). Locomotion bob is the correct vehicle for
+   * positional motion.
+   *
+   * Both the viewmodel CAMERA's quaternion and the GROUP's quaternion are
+   * lagged in lockstep — without that, snapping the camera but lagging the
+   * group would cause the arm to swim in screen space.
+   *
+   * Called every render frame. Frame-rate-independent (the slerp blend factor
+   * uses `1 - exp(-dt / TAU)`, so the perceived lag is identical at 30 Hz vs
+   * 144 Hz).
+   *
+   * @param worldCamera The world camera to sync from (read-only).
+   * @param dt          Frame delta in seconds.
+   * @param velX        Player's world-space X velocity (m/s). For the bob.
+   * @param velZ        Player's world-space Z velocity (m/s). For the bob.
    */
-  syncWithCamera(worldCamera: THREE.PerspectiveCamera): void {
-    // Copy world camera transform to viewmodel camera
+  syncWithCamera(
+    worldCamera: THREE.PerspectiveCamera,
+    dt: number,
+    velX: number,
+    velZ: number,
+  ): void {
+    // ── 1. Position (always snapped exactly) ──
+    // Copy camera position to the viewmodel camera (no positional lag — see
+    // doc §7.3 for why position must NOT be lagged).
+    this.camera.position.copy(worldCamera.position);
+
+    // Add bob to ARM_OFFSET in camera-local space, then rotate into world
+    // space using the WORLD camera quaternion (not the lagged viewmodel
+    // quaternion). The bob is meant to ride on top of the actual aim — using
+    // the lagged quat here would couple the bob to the lag and feel mushy.
+    const bob = updateBob(dt, velX, velZ);
+    _worldOffset.set(
+      ARM_OFFSET.x + bob.dx,
+      ARM_OFFSET.y + bob.dy,
+      ARM_OFFSET.z,
+    );
+    _worldOffset.applyQuaternion(worldCamera.quaternion);
+    this.group.position.copy(worldCamera.position).add(_worldOffset);
+
+    // ── 2. Rotation (lagged via slerp, doc §7) ──
+    // alpha = 1 - exp(-dt/TAU). At dt=TAU, alpha ≈ 0.63 (one time constant).
+    // Sub-millisecond dt yields a ~zero alpha (no rotation change).
+    const alpha = dt > 0 ? 1 - Math.exp(-dt / AIM_SWAY_TAU_SECONDS) : 0;
+    this.group.quaternion.slerp(worldCamera.quaternion, alpha);
+    // Slerp the viewmodel CAMERA in lockstep with the group — without this,
+    // snapping the camera but lagging the group makes the arm swim in screen
+    // space (the camera frame moves under the arm).
+    this.camera.quaternion.slerp(worldCamera.quaternion, alpha);
+  }
+
+  /**
+   * Hard-copy the world camera quaternion onto the viewmodel group + viewmodel
+   * camera, bypassing the aim-sway lag for one frame. Use after large camera
+   * teleports (respawn, dev console teleport) so the viewmodel doesn't visibly
+   * catch up over ~5 frames after the jump.
+   *
+   * Also resets the locomotion bob accumulator so a respawn doesn't carry over
+   * a stale stride from the previous life.
+   *
+   * @param worldCamera The world camera whose orientation to snap to.
+   */
+  snap(worldCamera: THREE.PerspectiveCamera): void {
     this.camera.position.copy(worldCamera.position);
     this.camera.quaternion.copy(worldCamera.quaternion);
-
-    // Position arm group relative to camera using camera-local offset
-    // Convert ARM_OFFSET from camera-local space to world space
+    this.group.quaternion.copy(worldCamera.quaternion);
+    // Position is recomputed via ARM_OFFSET so the snap state is self-
+    // consistent without bob (bob is reset to zero).
     _worldOffset.copy(ARM_OFFSET).applyQuaternion(worldCamera.quaternion);
     this.group.position.copy(worldCamera.position).add(_worldOffset);
-    this.group.quaternion.copy(worldCamera.quaternion);
+    resetBob();
   }
 
   /**

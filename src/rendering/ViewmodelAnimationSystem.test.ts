@@ -188,8 +188,8 @@ describe('ViewmodelAnimationSystem', () => {
     });
   });
 
-  describe('idle sway', () => {
-    it('applies sinusoidal sway to hand bone during idle', () => {
+  describe('idle sway (multi-bone, mutually-prime — doc §5)', () => {
+    it('applies sway to hand bone during idle (motion visible over time)', () => {
       // Run multiple frames at idle
       const handQuats: THREE.Quaternion[] = [];
       for (let i = 0; i < 30; i++) {
@@ -197,15 +197,33 @@ describe('ViewmodelAnimationSystem', () => {
         handQuats.push(viewmodel.bones['hand_R'].quaternion.clone());
       }
 
-      // Hand quaternion should vary slightly over time due to sway
+      // Hand quaternion should vary over time due to sway
       const first = handQuats[0];
       const last = handQuats[handQuats.length - 1];
-      // They should differ slightly due to sinusoidal sway
       const angleDiff = first.angleTo(last);
       expect(angleDiff).toBeGreaterThan(0);
     });
 
-    it('does not apply sway during combat states', () => {
+    it('applies sway to all three animatable bones (upper_arm, forearm, hand)', () => {
+      // Sample initial then-and-later pose for each bone — at least one of the
+      // 5 channels writes to each of the three bones.
+      const startQuats: Record<string, THREE.Quaternion> = {};
+      for (const name of ['upper_arm_R', 'forearm_R', 'hand_R']) {
+        startQuats[name] = viewmodel.bones[name].quaternion.clone();
+      }
+      // Run through many frames so all the slow-cycle channels diverge
+      for (let i = 0; i < 200; i++) {
+        viewmodelAnimationSystem(viewmodel, eid, 0.016, WEAPON_ID_TO_NAME);
+      }
+      for (const name of ['upper_arm_R', 'forearm_R', 'hand_R']) {
+        const angle = viewmodel.bones[name].quaternion.angleTo(startQuats[name]);
+        // Each bone gets at least one sway channel — its quat must drift
+        // somewhere over the test window.
+        expect(angle).toBeGreaterThan(0.0001);
+      }
+    });
+
+    it('disables sway during combat states (no per-frame quat drift)', () => {
       CombatStateComp.state[eid] = CombatState.Windup;
       CombatStateComp.direction[eid] = Direction.Left;
       CombatStateComp.phaseTotal[eid] = 60;
@@ -217,15 +235,83 @@ describe('ViewmodelAnimationSystem', () => {
       }
 
       // After full blend, consecutive frames should produce same pose
-      // (no sway applied in non-idle states)
       const q1 = viewmodel.bones['hand_R'].quaternion.clone();
       viewmodelAnimationSystem(viewmodel, eid, 0.016, WEAPON_ID_TO_NAME);
       const q2 = viewmodel.bones['hand_R'].quaternion.clone();
 
-      // Should be very similar (only micro slerp progress changes)
       const diff = q1.angleTo(q2);
       // Without sway, the diff should be extremely small (slerp approaching target)
       expect(diff).toBeLessThan(0.01);
+    });
+
+    it('disables sway during HitStun, Block, Recovery, and Parry states', () => {
+      // Doc §5: "Applies only when combatState === Idle" — every other state
+      // is gated off, including Block, HitStun, Parry, etc.
+      const nonIdleStates: CombatState[] = [
+        CombatState.Blocking,
+        CombatState.HitStun,
+        CombatState.Parry,
+        CombatState.Recovery,
+      ];
+      for (const state of nonIdleStates) {
+        // Reset the system so blend-progress doesn't carry pose drift
+        // between sub-cases.
+        resetViewmodelAnimationSystem();
+        CombatStateComp.state[eid] = state;
+        CombatStateComp.direction[eid] = Direction.Left;
+        CombatStateComp.phaseTotal[eid] = 60;
+        CombatStateComp.phaseElapsed[eid] = 30;
+        for (let i = 0; i < 30; i++) {
+          viewmodelAnimationSystem(viewmodel, eid, 0.016, WEAPON_ID_TO_NAME);
+        }
+        const q1 = viewmodel.bones['hand_R'].quaternion.clone();
+        viewmodelAnimationSystem(viewmodel, eid, 0.016, WEAPON_ID_TO_NAME);
+        const q2 = viewmodel.bones['hand_R'].quaternion.clone();
+        const diff = q1.angleTo(q2);
+        expect(diff).toBeLessThan(0.01);
+      }
+    });
+
+    it('uses mutually-prime frequencies — pose at t=0 differs from pose at t=large', () => {
+      // Capture pose after one frame (small sway accumulated)
+      viewmodelAnimationSystem(viewmodel, eid, 0.001, WEAPON_ID_TO_NAME);
+      const earlyHand = viewmodel.bones['hand_R'].quaternion.clone();
+
+      // Run for several seconds — the channels' phases will all be different
+      // because of the mutually-prime frequencies. Eventually pose must vary.
+      for (let i = 0; i < 5000; i++) {
+        viewmodelAnimationSystem(viewmodel, eid, 0.001, WEAPON_ID_TO_NAME);
+      }
+      const lateHand = viewmodel.bones['hand_R'].quaternion.clone();
+
+      // Different pose — proves the sinusoids are advancing.
+      const diff = earlyHand.angleTo(lateHand);
+      expect(diff).toBeGreaterThan(0.001);
+    });
+
+    it('amplitudes stay within ~0.02 rad envelope (≤ ~1.2°)', () => {
+      // The sum of all channel amplitudes per bone is small (<0.020 rad).
+      // Run for a long time and confirm no bone's quaternion drifts further
+      // than that envelope from the slerp-converged Idle pose.
+      // Step 1: settle the slerp (sway is on but the slerp is converging).
+      for (let i = 0; i < 200; i++) {
+        viewmodelAnimationSystem(viewmodel, eid, 0.016, WEAPON_ID_TO_NAME);
+      }
+      // Step 2: capture the "no-sway" reference pose by running with the
+      // sway gated off. We can't easily do that without modifying the system,
+      // so instead we measure the quat at one specific time and verify that
+      // any subsequent sway-driven drift stays within a tiny envelope.
+      const handAt0 = viewmodel.bones['hand_R'].quaternion.clone();
+      let maxAngle = 0;
+      for (let i = 0; i < 500; i++) {
+        viewmodelAnimationSystem(viewmodel, eid, 0.016, WEAPON_ID_TO_NAME);
+        const ang = viewmodel.bones['hand_R'].quaternion.angleTo(handAt0);
+        if (ang > maxAngle) maxAngle = ang;
+      }
+      // Two sway channels touch hand_R (X amplitude 0.008, Z amplitude 0.005);
+      // the worst-case combined excursion measured as a quaternion-angle is
+      // bounded by ~hypot(0.008, 0.005) ≈ 0.0094 rad. Allow 0.025 envelope.
+      expect(maxAngle).toBeLessThan(0.025);
     });
   });
 
