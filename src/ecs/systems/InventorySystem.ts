@@ -21,6 +21,13 @@ export interface InventoryData {
   weapons: string[];
   /** Currently equipped weapon name, or null if unarmed */
   equippedWeapon: string | null;
+  /**
+   * The "permanent" starter weapon that should NOT be dropped on death (#94 / #A2).
+   * Defaults to the initially-equipped weapon when not specified at init time —
+   * keeps existing callsites backward-compatible. Null means "drop everything"
+   * (no protected starter).
+   */
+  starterWeapon: string | null;
 }
 
 /** Event emitted when a weapon is equipped */
@@ -82,15 +89,24 @@ function emitEquipEvent(event: EquipEvent): void {
  * @param entityId - The ECS entity ID
  * @param weapons - Array of weapon names available
  * @param equippedWeapon - Initially equipped weapon name (or null)
+ * @param starterWeapon - The permanent starter weapon (won't be dropped on
+ *   death, see #94). Defaults to `equippedWeapon` when omitted, which
+ *   preserves the legacy behavior of "the first weapon you spawn with is
+ *   yours forever". Pass `null` explicitly for "no protected starter".
  */
 export function initInventory(
   entityId: number,
   weapons: string[],
   equippedWeapon: string | null = null,
+  starterWeapon?: string | null,
 ): void {
   inventoryRegistry.set(entityId, {
     weapons: [...weapons],
     equippedWeapon,
+    // `starterWeapon` is intentionally `string | null | undefined` at the
+    // call boundary so we can distinguish "omitted" (default to
+    // equippedWeapon) from "explicit null" (no protected starter).
+    starterWeapon: starterWeapon === undefined ? equippedWeapon : starterWeapon,
   });
 }
 
@@ -104,6 +120,7 @@ export function getInventory(entityId: number): InventoryData | null {
   return {
     weapons: [...data.weapons],
     equippedWeapon: data.equippedWeapon,
+    starterWeapon: data.starterWeapon,
   };
 }
 

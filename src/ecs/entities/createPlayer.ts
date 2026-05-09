@@ -15,6 +15,7 @@ import {
   CombatStateComp,
   CombatStateComponent,
   AnimationComp,
+  HitReactComp,
   CharacterModel,
   TracerTag,
   Hitboxes,
@@ -80,6 +81,7 @@ export function createPlayer(
   addComponent(world.ecs, CombatStateComp, eid);
   addComponent(world.ecs, CombatStateComponent, eid);
   addComponent(world.ecs, AnimationComp, eid);
+  addComponent(world.ecs, HitReactComp, eid);
   addComponent(world.ecs, TracerTag, eid);
   addComponent(world.ecs, Hitboxes, eid);
 

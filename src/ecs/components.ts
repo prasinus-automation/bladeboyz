@@ -166,6 +166,27 @@ export const Hitbox = defineComponent({
 export const TracerTag = defineComponent();
 
 /**
+ * WeaponPickup — marks an entity as a ground-spawned weapon pickup.
+ *
+ * Numeric only (bitECS constraint). The string `weaponName` and the
+ * Three.js Group/Material refs live in the side-table `pickupRegistry`
+ * (see `src/inventory/PickupRegistry.ts`).
+ *
+ * - weaponId: index into `weaponIdToName` (CombatSystem.ts) — used for
+ *   networking-friendly serialization once that lands.
+ * - spawnTick: tick the pickup was created on (for despawn timer + age math).
+ * - despawnTick: tick the pickup will be auto-removed (consumed by #A2).
+ *
+ * See parent issue #94 for the full lifecycle and #109 for the foundation
+ * scope. No behavior here — drop/pickup/despawn live in #A2.
+ */
+export const WeaponPickup = defineComponent({
+  weaponId: Types.ui8,
+  spawnTick: Types.ui32,
+  despawnTick: Types.ui32,
+});
+
+/**
  * DamageEvent component — written by TracerSystem, consumed by DamageSystem.
  * Represents a pending damage event to be processed in the same tick.
  */
@@ -192,6 +213,7 @@ export const DamageEvent = defineComponent({
  * - direction: AttackDirection or BlockDirection (context-dependent on state)
  * - phaseElapsed: ticks elapsed in current phase
  * - phaseTotal: total ticks for current phase (from weapon config)
+ * - phaseT: normalized phase progress in [0, 1] (mirrors CombatFSM.getPhaseT())
  * - weaponId: index into weaponRegistry for timing lookups
  */
 export const CombatStateComp = defineComponent({
@@ -199,7 +221,33 @@ export const CombatStateComp = defineComponent({
   direction: Types.ui8,
   phaseElapsed: Types.ui16,
   phaseTotal: Types.ui16,
+  phaseT: Types.f32,
   weaponId: Types.ui8,
+});
+
+/**
+ * HitReactComp — populated by DamageSystem on every successful hit.
+ * Read by AnimationSystem to drive a directional stagger lean.
+ *
+ * `dirX/dirY/dirZ` form a unit vector in the target's body-local space
+ * pointing FROM the attacker TO the target (i.e., the direction the hit
+ * pushes the target). Stored as 3 separate floats because bitECS only
+ * supports scalar fields.
+ *
+ * `magnitude` is normalized in [0, 1] (typically `damage / weapon.maxDamage`).
+ *
+ * `active = 1` until `currentTick >= spawnedAtTick + durationTicks`,
+ * at which point HitReactSystem clears it to 0. Animation reads `active`
+ * to decide whether to apply the lean.
+ */
+export const HitReactComp = defineComponent({
+  dirX: Types.f32,
+  dirY: Types.f32,
+  dirZ: Types.f32,
+  magnitude: Types.f32,
+  spawnedAtTick: Types.ui32,
+  durationTicks: Types.ui16,
+  active: Types.ui8,
 });
 
 /**

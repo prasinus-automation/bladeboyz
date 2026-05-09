@@ -21,6 +21,7 @@ bladeboyz/
 │   ├── core/
 │   │   ├── GameLoop.ts          # Fixed-timestep game loop (60Hz fixed + variable render)
 │   │   ├── World.ts             # Singleton owning ECS world, Three.js scene, Rapier world
+│   │   ├── tickCounter.ts       # Module-level fixed-tick counter (advanceFixedTick / getCurrentFixedTick) — used for tick-stamped events like HitReactComp.spawnedAtTick (#120)
 │   │   └── types.ts             # Shared type definitions
 │   ├── ecs/
 │   │   ├── components.ts        # bitECS component definitions
@@ -34,12 +35,14 @@ bladeboyz/
 │   │   │   ├── StaminaSystem.ts
 │   │   │   ├── HealthSystem.ts  # Damage application, death detection, respawn timer (#93)
 │   │   │   ├── InteractionSystem.ts # Per-tick proximity check; caches nearest in-range interactable per player (#113)
+│   │   │   ├── HitReactSystem.ts # Clears expired HitReactComp entries (active=1 → 0 once tick >= spawnedAtTick + durationTicks) (#120)
 │   │   │   ├── AnimationSystem.ts
 │   │   │   └── ...
 │   │   ├── entities/            # Entity factory/spawner functions
 │   │   │   ├── createPlayer.ts  # Player factory: kinematic body + capsule (offset upward), MovementIntent component, Y resolved by spawnAtGround
 │   │   │   ├── createDummy.ts   # Training dummy factory: fixed body + capsule (same offset as player), Y resolved by spawnAtGround
 │   │   │   ├── createShopkeep.ts # Static non-combatant NPC (Position/Rotation/CharacterModel only) + shopkeepRegistry side-table (#113)
+│   │   │   ├── createWeaponPickup.ts # Ground weapon pickup factory + remover (#109, foundation for #94)
 │   │   │   └── ...
 │   │   └── utils/
 │   │       └── spawnAtGround.ts # Raycast-down feet-Y resolver used by all entity factories (#104)
@@ -75,7 +78,8 @@ bladeboyz/
 │   │   ├── ViewmodelAnimationSystem.ts # Viewmodel bone animation (reads CombatStateComp, per-weapon poses)
 │   │   └── DebugRenderer.ts     # Wireframe, hitbox, physics debug drawing
 │   ├── inventory/
-│   │   └── InventoryData.ts     # Inventory side-table (inventoryRegistry Map<eid, InventoryData>)
+│   │   ├── InventoryData.ts     # Legacy UI-only side-table (DEAD CODE — see "Two Disconnected Inventory Modules" below)
+│   │   └── PickupRegistry.ts    # Side-table for ground weapon pickups: pickupRegistry Map<eid, PickupData> (#109)
 │   ├── economy/
 │   │   ├── Wallet.ts            # In-memory player gold balance + onGoldChange pubsub (#107)
 │   │   ├── Prices.ts            # weaponPrices side-table + getWeaponPrice() (#107)
@@ -110,7 +114,8 @@ bladeboyz/
 │   │   ├── README.md                         # Index + read-order for the four-doc set
 │   │   └── 01-transport-and-authority.md     # Transport, topology, tickrate, authority model (#116)
 │   ├── spawn-death-respawn.md                # Spawn/death/respawn loop design (issue #93)
-│   └── training-dummies-and-bots-spec.md     # Training dummies + warmup bots (issue #99)
+│   ├── training-dummies-and-bots-spec.md     # Training dummies + warmup bots (issue #99)
+│   └── viewmodel-architecture.md             # FP viewmodel rebuild spec (issue #115, parent #90)
 ├── public/
 │   └── (static assets if any)
 ├── index.html
@@ -189,6 +194,7 @@ npm run lint         # Run ESLint
 - Rapier colliders for hitboxes are **sensors** (no physics response)
 - Character skeletons use Three.js `Bone` / `Skeleton` — procedurally generated, not imported from glTF for scaffolding phase
 - Third-person + viewmodel animation conventions (bone graph, rest-pose Euler XYZ, hybrid keyframe-slerp + arc-swing strategy, layer ownership, tick contract): see `docs/animation-architecture.md` (parent #89). Rebuild PRs implement against that spec — do NOT re-derive from the existing `AnimationSystem.ts` / `ViewmodelAnimationSystem.ts`, which §10 of the spec calls out as buggy.
+- See `docs/viewmodel-architecture.md` for the full FP viewmodel design (two-pass render, anchor convention, bone write-permissions, per-weapon grip data, idle sway / locomotion bob / aim-sway-lag math, weapon-cache pattern). Sub-issues #122 / #125 / #129 implement against it.
 
 ### Spatial Conventions (SHIPPED — #104 / PR #150)
 - **ECS `Position` = entity feet position** (point of contact with ground). The character mesh's root bone is at the feet (`y=0` in local space), so `meshGroup.position = (Position.x, Position.y, Position.z)` is a direct copy with NO offset.
@@ -202,7 +208,7 @@ npm run lint         # Run ESLint
 ## Known Issues / Architectural Debt
 
 ### Two Combat State Components (SYNCED — slated for unification in FSM v2)
-Two ECS components track combat state: `CombatStateComponent` (authoritative — synced from FSM by CombatSystem, used by HUD/StaminaSystem/DamageSystem) and `CombatStateComp` (animation mirror — has `phaseElapsed`/`phaseTotal`, used by AnimationSystem). **Both are now synced by CombatSystem** after FSM tick (fixed in PR #36). `computePhaseTotal()` in CombatSystem.ts derives phase duration from FSM state + weapon config. **FSM v2 collapses these into a single `CombatState` component** — see `docs/combat-fsm-v2.md` §9.
+Two ECS components track combat state: `CombatStateComponent` (authoritative — synced from FSM by CombatSystem, used by HUD/StaminaSystem/DamageSystem) and `CombatStateComp` (animation mirror — has `phaseElapsed`/`phaseTotal`/`phaseT`, used by AnimationSystem). **Both are now synced by CombatSystem** after FSM tick (fixed in PR #36). Phase math (`getPhaseTotal()` / `getPhaseT()`) lives on `CombatFSM` — `CombatSystem` mirrors those values onto `CombatStateComp` each tick. **FSM v2 collapses these into a single `CombatState` component** — see `docs/combat-fsm-v2.md` §9.
 
 ### Direct State Writes Bypass the FSM (FSM v2 will fix)
 `DamageSystem.ts` (lines 109, 128, 146) and `StaminaSystem.ts` (lines 99-100) write `CombatStateComponent.state` directly without dispatching an FSM input. This desyncs the FSM in `fsmRegistry` from the ECS component. FSM v2 routes every state change through `FSM.transition(input)` — see `docs/combat-fsm-v2.md` §7.
@@ -236,7 +242,7 @@ Minimal scaffolding for the shop feature, deliberately scoped narrower than the 
 - **`src/economy/Wallet.ts`** — module-level gold balance (default `200`). API: `getGold()`, `addGold(amount)` (ignores ≤0), `spendGold(amount)` (returns `false` and does NOT deduct on insufficient funds; no subscriber notify on failure), `setGold(amount)` (clamps negatives to 0), `onGoldChange(cb): () => void` (returns unsubscribe fn — pattern matches `InventorySystem.onEquip` but with cleanup ergonomics for HUD `dispose()`), `resetWallet()` (test helper). Pure data + pubsub, no DOM/Three.js/ECS.
 - **`src/economy/Prices.ts`** — `weaponPrices` side-table (`Dagger 0, Mace 100, Longsword 150, Battleaxe 200`) + `getWeaponPrice(name)` returning `undefined` for unknown weapons. Kept separate from `WeaponConfig` so weapon configs stay pure-combat data. **When adding a new weapon, also add a price entry** — missing entries treat the weapon as not-for-sale.
 - **`src/hud/GoldCounter.ts`** — top-right HUD div (`top: 48px right: 16px`, z-index 10) stacking below camera-mode/FPS labels and below modal overlays (200+). Subscribes to `Wallet` in constructor, unsubscribes in `dispose()`, brief color pulse on change. Owned by `HUD.ts`.
-- **Starter inventory** is now `['Dagger']` only (was all four weapons). Mace/Longsword/Battleaxe must be acquired through the shopkeep — `initInventory(playerEid, ['Dagger'], 'Dagger')` in `main.ts`. Note: this contradicts the "default starter weapon is **Longsword**" line in the Spawn/Death/Respawn section above; the respawn-default behavior should be reconciled with the starter inventory in a future PR (the player can't currently respawn with a weapon they don't own).
+- **Starter inventory** is now `['Dagger']` only (was all four weapons). Mace/Longsword/Battleaxe must be acquired through the shopkeep — `initInventory(playerEid, ['Dagger'], 'Dagger', 'Dagger')` in `main.ts`. The 4th arg is the **permanent `starterWeapon`** (added in #109 / PR #151) — the weapon that won't be dropped on death (#94). When omitted it defaults to `equippedWeapon`; pass `null` explicitly for "no protected starter". Note: this still contradicts the "default starter weapon is **Longsword**" line in the Spawn/Death/Respawn section above; the respawn-default behavior should be reconciled with the starter inventory in a future PR (the player can't currently respawn with a weapon they don't own).
 - Out of scope here (belongs to #95): earning gold from kills/time, persistence (localStorage/server), negative balance/debt.
 
 ### Shopkeep NPC + Interaction Pipeline (#113 — PR #147)
@@ -246,8 +252,26 @@ Three pieces ship the proximity-interact loop:
 - **`WorldLabel` HUD class** — world-anchored HTML overlay (`#world-label-container`, fixed/pointer-events:none/z-index 14), updated each render frame. Mirrors `DummyHealthBar.ts`'s projection pattern: `Vector3.project(camera)` → NDC → pixel coords; hides when `proj.z > 1` (behind camera). Renders **two divs per shopkeep**: persistent gold nameplate at head height (`+1.6m`) and a conditional "Press [E] to shop" prompt at `+1.2m` shown only when `nearbyInteractableEid === eid`. Single reused `Vector3` — zero per-frame allocations. Auto-removes labels for shopkeeps deleted from `shopkeepRegistry`.
 - **KeyE wiring**: `main.ts` `keydown` switch dispatches `KeyE` → bails on `input.paused` (so E during inventory/shop overlay is a no-op) → calls `getNearbyInteractable(playerEid)` → if non-null, defensively closes any open inventory and calls `shopPanel.open(target)`. (Originally landed as a placeholder log in #113; rewired to the real overlay in #123.)
 
+### Weapon Pickup Foundation (#109 — PR #151)
+First slice of parent #94 (drop-on-death / pickup / despawn). Foundation only — no behavior yet. Three pieces:
+- **`WeaponPickup` component** (`src/ecs/components.ts`) — numeric-only per bitECS constraint: `weaponId: ui8` (index into `weaponIdToName`, used for networking-friendly serialization once that lands), `spawnTick: ui32`, `despawnTick: ui32`. The string `weaponName` and Three.js refs live in the side-table.
+- **`pickupRegistry`** (`src/inventory/PickupRegistry.ts`) — module-level `Map<eid, PickupData>` mirroring `meshRegistry` / `fsmRegistry` / `shopkeepRegistry`. `PickupData = { weaponName: string, group: THREE.Group, materials: THREE.Material[] }`. **Materials are cached at spawn time** so #B's blink/fade pass in the last 5s of life doesn't re-traverse every frame. `resetPickupRegistry()` is a test helper, not for game code.
+- **`createWeaponPickup(world, args)` / `removeWeaponPickup(world, eid)`** (`src/ecs/entities/createWeaponPickup.ts`) — factory + remover, mirror of `removeDummy` / `removeShopkeep`. Resolves `weaponId` via `weaponIdToName.indexOf` (falls back to `0` when name is unknown — `pickupRegistry.weaponName` is the source of truth). Mesh is built via a local `createGroundPickupModel` stub that calls `weaponModelFactories[name]()` and lays the group flat (`rotation.x = -π/2`); **#B replaces this stub with a real implementation in `WeaponModels.ts`** with weapon-specific orientation tuning + spin animation hooks. `removeWeaponPickup` traverses the group disposing geometries/materials, removes from scene, deletes from registry, then `removeEntity`. Safe to call with unknown eid.
+- **`InventoryData.starterWeapon`** — new `string | null` field on the runtime `InventoryData` (`src/ecs/systems/InventorySystem.ts`, **NOT** the dead-code `src/inventory/InventoryData.ts`). `initInventory(eid, weapons, equippedWeapon, starterWeapon?)` — when omitted defaults to `equippedWeapon` (backward compat with all existing callsites), pass `null` explicitly for "no protected starter". `#A2`'s drop-on-death system reads this to skip dropping the starter (otherwise the floor floods with daggers).
+- **Death-event seam**: `main.ts` now destructures `{ died, respawned }` from `healthSystemTick(world.ecs)` and leaves a `TODO(#A2): weaponPickupSystem(world, currentTick, died, ...)` placeholder. Foundation only — no system call wired.
+- **Out of scope** (#A2): drop-on-death logic, proximity pickup check, KeyE wiring, despawn-timer system. **Out of scope** (#B): ground-flat orientation polish per weapon, spin animation, blink/fade rendering, HUD prompt, README controls update.
+
+### Animation Foundation (#120 — PR #152)
+Backend groundwork for the animation rebuild (#89, #110). Five pieces, all additive:
+- **`CombatFSM.getPhaseTotal()` / `getPhaseT()`** — phase math is now the FSM's responsibility (was a `computePhaseTotal` heuristic in `CombatSystem.ts`). `getPhaseTotal()` returns the total ticks for the current state (`windup[dir]`, `release[dir]`, `recovery[dir]` or `comboRecovery[dir]` for combo Recovery, `parryWindow`, `hitStunTicks`, `parryStunTicks`, `3` for Feint, `0` for Idle/Block). `getPhaseT()` returns normalized progress in `[0, 1]`, clamped. **Single source of truth** — call these rather than re-deriving from weapon config.
+- **`CombatStateComp.phaseT: f32`** — synced each fixed tick from `fsm.getPhaseT()` alongside the existing `phaseElapsed`/`phaseTotal` (ui16). AnimationSystem reads `phaseT` to drive pose interpolation. Per the FSM v2 spec, this field will move onto the unified `CombatState` component when #88 lands.
+- **`HitReactComp` + `HitReactSystem`** (`src/ecs/components.ts`, `src/ecs/systems/HitReactSystem.ts`) — `{dirX, dirY, dirZ: f32, magnitude: f32, spawnedAtTick: ui32, durationTicks: ui16, active: ui8}`. `DamageSystem.handleHit` populates it on every successful unblocked hit, rotating the world-space attacker→target delta into the target's body-local frame via `-yaw` around Y; magnitude is `damage / max-direction-damage` clamped to `[0, 1]`; duration is **12 ticks (~200ms)**. Successful blocks/parries do NOT touch the component (sentinel test in `HitReactSystem.test.ts`). `HitReactSystem` runs **after** `DamageSystem` in `main.ts` so a fresh stamp doesn't get cleared the same tick it's written.
+- **`src/core/tickCounter.ts`** — module-level fixed-tick counter (`currentFixedTick`). `advanceFixedTick()` is called **once at the top of `fixedUpdate`** in `main.ts` before any system that stamps events. Read via `getCurrentFixedTick()`; reset via `resetFixedTick()` (test helper). NOT incremented from variable-rate update/render — must advance in lockstep with the fixed timestep so consumers can compare `currentTick` to a previously-stamped `spawnedAtTick + durationTicks` with tick-precise semantics.
+- **Dummies have a CombatFSM** — `createDummy` now registers a `CombatFSM` in `fsmRegistry` so `CombatSystem`'s existing all-entities loop ticks dummies and populates `phaseElapsed`/`phaseTotal`/`phaseT` for them just like the player. `toggleDummyBlock`, `cycleDummyBlockDirection`, and `resetAllDummies` all route through the FSM transition API (Idle → Block now goes through `ParryWindow` first, exactly like the player). New `CombatFSM.setBlockDirection()` setter lets the cycle helper update direction without re-entering ParryWindow.
+- **Bonus — combo recovery now actually works**: a latent bug where `_isComboRecovery` was never set to `true` was papered over by the old `computePhaseTotal` heuristic (`ticksRemaining <= comboRecovery → comboRecovery`). Fixed via a new `_currentSwingIsCombo` flag set on `_enterWindup(dir, fromCombo=true)` (combo path only) and consumed at Release expiry → `_enterRecovery(this._currentSwingIsCombo)`. Weapon configs' `comboRecovery` values are now actually applied as designed.
+
 ### Module-Level Singletons
-`fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName`, `inventoryRegistry`, `weaponModelFactories`, `Wallet.goldBalance`, `shopkeepRegistry`, `InteractionSystem.nearbyByPlayer`, `MovementSystem.bodyByEid` / `colliderByEid` / `movementTick`, `InputSystem.prevJumpKeyDown` are all module-level Maps/arrays/scalars. Works for single-world but won't scale to multiple worlds. The `prevJumpKeyDown` edge-trigger state is the one that will need to become per-controller when multiplayer lands.
+`fsmRegistry`, `meshRegistry`, `hitboxColliderRegistry`, `weaponIdToName`, `inventoryRegistry`, `weaponModelFactories`, `Wallet.goldBalance`, `shopkeepRegistry`, `InteractionSystem.nearbyByPlayer`, `pickupRegistry`, `MovementSystem.bodyByEid` / `colliderByEid` / `movementTick`, `InputSystem.prevJumpKeyDown`, `tickCounter.currentFixedTick` are all module-level Maps/arrays/scalars. Works for single-world but won't scale to multiple worlds. The `prevJumpKeyDown` edge-trigger state is the one that will need to become per-controller when multiplayer lands; `currentFixedTick` will likely need to live on `GameWorld` once a server runs multiple worlds in one process.
 
 ## Gotchas
 - **Rapier3D WASM must be initialized async** before creating the physics world — use `import RAPIER from '@dimforge/rapier3d-compat'` then `await RAPIER.init()`
@@ -257,7 +281,7 @@ Three pieces ship the proximity-interact loop:
 - **Vite HMR** with Three.js requires careful disposal of scenes/renderers to avoid memory leaks on hot reload
 - **Rapier debug renderer** needs `@dimforge/rapier3d-compat` not `@dimforge/rapier3d` for browser compatibility
 - The deploy workflow (`.github/workflows/deploy-staging.yml`) expects a `Dockerfile` and maps port 3000 internally → 3010 externally
-- **CombatSystem syncs both `CombatStateComponent` and `CombatStateComp`** — `computePhaseTotal()` derives phase duration. AnimationSystem reads from `CombatStateComp` (`phaseElapsed`, `phaseTotal`, `state`, `direction`).
+- **CombatSystem syncs both `CombatStateComponent` and `CombatStateComp`** — phase math (`getPhaseTotal` / `getPhaseT`) lives on the FSM. AnimationSystem reads from `CombatStateComp` (`phaseElapsed`, `phaseTotal`, `phaseT`, `state`, `direction`).
 - **`weaponIdToName` in CombatSystem.ts (line 28) is a hardcoded array** — when adding new weapons, update this array AND ensure the weapon's numeric index matches `CombatStateComponent.weaponId[eid]`
 - **Pointer Lock must be released** when showing any UI overlay (inventory, menus) — call `document.exitPointerLock()`. Re-request on close via user gesture (click on canvas).
 - **Side-table pattern** for non-numeric data: `meshRegistry` (Map<number, CharacterModelData>), `fsmRegistry` (Map<number, CombatFSM>), `hitboxColliderRegistry` — use the same pattern for inventory/equipment data

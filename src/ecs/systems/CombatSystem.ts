@@ -12,9 +12,9 @@
 import { defineQuery, type IWorld } from 'bitecs';
 import { CombatStateComponent, CombatStateComp, Player } from '../components';
 import { CombatState } from '../../combat/states';
-import { CombatInput, fsmRegistry, type CombatFSM } from '../../combat/CombatFSM';
+import { CombatInput, fsmRegistry } from '../../combat/CombatFSM';
 import { detectAttackDirection, detectBlockDirection } from '../../combat/directions';
-import type { InputManager, MouseDeltaEntry } from '../../input/InputManager';
+import type { InputManager } from '../../input/InputManager';
 import type { CameraController } from '../../rendering/CameraController';
 import { queueStaminaCost } from './StaminaSystem';
 import { weaponConfigs } from '../../weapons/WeaponConfig';
@@ -58,41 +58,6 @@ let prevRightMouseDown = false;
 export function resetCombatInputState(): void {
   prevLeftMouseDown = false;
   prevRightMouseDown = false;
-}
-
-// ── Phase total computation ─────────────────────────────
-
-/**
- * Compute the total ticks for the current FSM phase from the weapon config.
- * Returns 0 for states without a fixed duration (Idle, Block).
- */
-export function computePhaseTotal(state: CombatState, fsm: CombatFSM): number {
-  const config = fsm.weaponConfig;
-  const atkDir = fsm.attackDirection;
-  switch (state) {
-    case CombatState.Windup:
-      return config.windup[atkDir];
-    case CombatState.Release:
-    case CombatState.Riposte:
-      return config.release[atkDir];
-    case CombatState.Recovery:
-      // Could be normal or combo recovery — use the larger as an approximation
-      // since FSM doesn't expose _isComboRecovery. We can derive it:
-      // if ticksRemaining <= comboRecovery ticks, it's a combo recovery.
-      return fsm.ticksRemaining <= config.comboRecovery[atkDir]
-        ? config.comboRecovery[atkDir]
-        : config.recovery[atkDir];
-    case CombatState.Feint:
-      return 3; // Feint always has 3-tick duration (see CombatFSM._handleFeint)
-    case CombatState.ParryWindow:
-      return config.parryWindow;
-    case CombatState.HitStun:
-      return config.hitStunTicks;
-    case CombatState.Stunned:
-      return config.parryStunTicks;
-    default:
-      return 0; // Idle, Block — no fixed phase duration
-  }
 }
 
 // ── System factory ───────────────────────────────────────
@@ -180,11 +145,12 @@ export function createCombatSystem(
       } else {
         CombatStateComp.direction[eid] = fsm.attackDirection;
       }
-      // Compute phaseTotal and phaseElapsed from FSM + weapon config
-      const phaseTotal = computePhaseTotal(fsm.state, fsm);
+      // Compute phase fields from FSM (single source of truth for phase math)
+      const phaseTotal = fsm.getPhaseTotal();
       CombatStateComp.phaseTotal[eid] = phaseTotal;
       CombatStateComp.phaseElapsed[eid] =
         phaseTotal > 0 ? phaseTotal - fsm.ticksRemaining : 0;
+      CombatStateComp.phaseT[eid] = fsm.getPhaseT();
       CombatStateComp.weaponId[eid] = CombatStateComponent.weaponId[eid];
 
       // Drain and forward stamina events
