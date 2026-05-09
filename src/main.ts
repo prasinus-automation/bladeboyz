@@ -57,8 +57,7 @@ import {
   onEquip,
   registerWeaponModelFactory,
 } from './ecs/systems/InventorySystem';
-import { createLongswordModel } from './rendering/CharacterModel';
-import { createMaceModel, createDaggerModel, createBattleaxeModel } from './rendering/WeaponModels';
+import { weaponModelFactories } from './rendering/WeaponModels';
 import { ViewmodelRenderer } from './rendering/ViewmodelRenderer';
 import { viewmodelAnimationSystem } from './rendering/ViewmodelAnimationSystem';
 import type { GameWorld } from './core/types';
@@ -128,11 +127,13 @@ async function main(): Promise<void> {
   // Register combat FSM for the player entity using the default starter weapon
   createFSM(playerEid, weaponConfigs['Longsword']);
 
-  // Register weapon model factories
-  registerWeaponModelFactory('Longsword', createLongswordModel);
-  registerWeaponModelFactory('Mace', createMaceModel);
-  registerWeaponModelFactory('Dagger', createDaggerModel);
-  registerWeaponModelFactory('Battleaxe', createBattleaxeModel);
+  // Register weapon model factories with InventorySystem (3rd-person model
+  // swap on equip). Single source of truth: the canonical registry lives
+  // in `src/rendering/WeaponModels.ts`. ViewmodelRenderer reads from the
+  // same registry by default — see #125 cleanup.
+  for (const [name, factory] of Object.entries(weaponModelFactories)) {
+    registerWeaponModelFactory(name, factory);
+  }
 
   // Initialize player inventory.
   //
@@ -152,14 +153,11 @@ async function main(): Promise<void> {
   initInventory(playerEid, ['Longsword'], 'Longsword', 'Longsword');
 
   // ─── First-person viewmodel ───
+  // ViewmodelRenderer defaults `weaponFactories` to the canonical
+  // `weaponModelFactories` registry exported from `./rendering/WeaponModels`,
+  // so we no longer inline the factory list here (#125 cleanup).
   const viewmodel = new ViewmodelRenderer(world.scene, world.camera.aspect, {
     initialWeapon: 'Longsword',
-    weaponFactories: {
-      Longsword: createLongswordModel,
-      Mace: createMaceModel,
-      Dagger: createDaggerModel,
-      Battleaxe: createBattleaxeModel,
-    },
   });
   cameraController.setViewmodel(viewmodel);
 
