@@ -59,8 +59,12 @@ import {
 } from './ecs/systems/InventorySystem';
 import { createLongswordModel } from './rendering/CharacterModel';
 import { createMaceModel, createDaggerModel, createBattleaxeModel } from './rendering/WeaponModels';
-import { ViewmodelRenderer } from './rendering/ViewmodelRenderer';
+import { ViewmodelRenderer, getArmOffset } from './rendering/ViewmodelRenderer';
 import { viewmodelAnimationSystem } from './rendering/ViewmodelAnimationSystem';
+import { ViewmodelDebugOverlay } from './hud/ViewmodelDebugOverlay';
+import { CombatStateComp } from './ecs/components';
+import { COMBAT_STATE_NAMES, CombatState } from './combat/states';
+import type * as THREE from 'three';
 import type { GameWorld } from './core/types';
 
 // Import weapon configs so they auto-register
@@ -173,6 +177,41 @@ async function main(): Promise<void> {
     showNotification(`Equipped: ${event.weaponName}`);
     viewmodel.swapWeapon(event.weaponName);
   });
+
+  // ─── --debug-viewmodel toggle (issue #122) ───
+  //
+  // Initial state: URL query param `?debug-viewmodel=...` (presence is enough).
+  // Runtime: F7 keydown flips it. The URL is just an initial seed — F7 is the
+  // source of truth once the app is running.
+  const viewmodelDebugOverlay = new ViewmodelDebugOverlay();
+  let viewmodelDebugEnabled = false;
+  if (typeof location !== 'undefined') {
+    viewmodelDebugEnabled = new URLSearchParams(location.search).has('debug-viewmodel');
+  }
+  function applyViewmodelDebug(enabled: boolean): void {
+    viewmodelDebugEnabled = enabled;
+    viewmodel.setDebugMode(enabled);
+    viewmodelDebugOverlay.setVisible(enabled);
+    showNotification(`Viewmodel debug: ${enabled ? 'ON' : 'OFF'}`);
+  }
+  // Apply initial state without firing a toast (toast is only on user-initiated
+  // toggles — boot-time URL is silent).
+  if (viewmodelDebugEnabled) {
+    viewmodel.setDebugMode(true);
+    viewmodelDebugOverlay.setVisible(true);
+  }
+
+  window.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.code === 'F7') {
+      e.preventDefault();
+      applyViewmodelDebug(!viewmodelDebugEnabled);
+    }
+  });
+
+  // Pre-allocated euler-record object so the per-frame snapshot doesn't
+  // allocate. Bones expose `.rotation` as a `THREE.Euler` directly so we
+  // just alias them in the snapshot — no copy needed.
+  const _boneEulers: Record<string, THREE.Euler> = {};
 
   // Spawn initial training dummy (Y resolved by spawnAtGround raycast)
   createDummy(world, 0, -4, 0xcc4444);
@@ -389,6 +428,40 @@ async function main(): Promise<void> {
     viewmodelAnimationSystem(viewmodel, playerEid, dt, weaponIdToName);
     debugOverlay.update(dt, playerEid, cameraController);
     hud.update(dt, playerEid);
+
+    // --debug-viewmodel overlay update. setVisible(false) makes update() a
+    // no-op, so the only cost when disabled is the boolean check below
+    // (snapshot is built only on the enabled branch).
+    if (viewmodelDebugEnabled) {
+      const stateNum = CombatStateComp.state[playerEid];
+      const dirNum = CombatStateComp.direction[playerEid];
+      // Direction labels — context-dependent on state. For Block/ParryWindow
+      // the number is a BlockDirection; otherwise an AttackDirection. Keep
+      // this lookup local to the overlay to avoid coupling HUD's internal
+      // tables.
+      const isBlockState =
+        stateNum === CombatState.Block || stateNum === CombatState.ParryWindow;
+      const dirLabel = isBlockState
+        ? (['Left', 'Right', 'Top', 'Bottom'][dirNum] ?? String(dirNum))
+        : (['Left', 'Right', 'Overhead', 'Stab'][dirNum] ?? String(dirNum));
+      _boneEulers['upper_arm_R'] = viewmodel.bones['upper_arm_R'].rotation;
+      _boneEulers['forearm_R'] = viewmodel.bones['forearm_R'].rotation;
+      _boneEulers['hand_R'] = viewmodel.bones['hand_R'].rotation;
+      _boneEulers['weapon_attach'] = viewmodel.bones['weapon_attach'].rotation;
+      viewmodelDebugOverlay.update({
+        weaponName: viewmodel.getCurrentWeaponName() ?? '?',
+        combatState: COMBAT_STATE_NAMES[stateNum] ?? String(stateNum),
+        direction: dirLabel,
+        phaseElapsed: CombatStateComp.phaseElapsed[playerEid],
+        phaseTotal: CombatStateComp.phaseTotal[playerEid],
+        boneEulers: _boneEulers,
+        armOffset: getArmOffset(),
+        fov: viewmodel.camera.fov,
+        // Aim-sway lag is reserved for sub-issue #129 (inertia + bob + sway).
+        // Until that lands, leave as null — overlay renders 'n/a'.
+        aimSwayDeg: null,
+      });
+    }
   };
 
   loop.render = (alpha: number) => {

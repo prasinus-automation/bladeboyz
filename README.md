@@ -108,6 +108,10 @@ The shop releases pointer lock and pauses input on open, the same way the invent
 | **F4** | Toggle FSM state overlay (shows combat state, HP, stamina per entity) |
 | **F5** | Toggle first-person / third-person camera |
 | **F6** | Toggle tracer debug lines |
+| **F7** | Toggle viewmodel diagnostic mode (per-bone axes + on-screen pose readout) |
+
+You can also start the page with `?debug-viewmodel=1` in the URL to enable the
+viewmodel diagnostic mode at boot — F7 still toggles it at runtime.
 
 ### Console Commands
 Open the browser dev console (`F12`) and use:
@@ -312,6 +316,7 @@ src/
 │   ├── DummyHealthBar.ts    # Floating health bars above training dummies
 │   ├── WorldLabel.ts        # World-anchored HTML overlay (shopkeep nameplate + prompt)
 │   ├── DebugOverlay.ts      # FPS counter, position, movement state (top-left)
+│   ├── ViewmodelDebugOverlay.ts # Bottom-left bone/state readout for --debug-viewmodel (#122)
 │   └── DebugNotification.ts # Brief toast notifications for toggle states
 └── utils/
     └── math.ts              # Vector utilities, interpolation helpers
