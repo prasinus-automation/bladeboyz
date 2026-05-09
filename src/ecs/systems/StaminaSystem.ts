@@ -78,7 +78,11 @@ export function staminaSystemTick(ecsWorld: IWorld): number[] {
       const event = pendingCosts[j];
       if (event.entity !== eid) continue;
 
-      const cost = event.weaponConfig.staminaCost[event.type];
+      // FSM v2 (#131): `staminaCost.feint` became optional, so `cost` can
+      // be `undefined` for weapons that omit it. Treat omitted as 0 — same
+      // behavior as the v1 schema, where missing fields would have surfaced
+      // a runtime NaN. Migration of the 'feint' branch itself is FSM v2 — B.
+      const cost = event.weaponConfig.staminaCost[event.type] ?? 0;
       Stamina.current[eid] = Math.max(0, Stamina.current[eid] - cost);
       hadCost = true;
 

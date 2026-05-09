@@ -18,7 +18,7 @@ import type { Pose, BoneRotation, CombatAnimation } from './AnimationData';
 /** Per-weapon viewmodel pose set */
 export interface ViewmodelWeaponAnims {
   idle: Pose;
-  attacks: Record<number, CombatAnimation>;   // 5 AttackDirection × 3 phases
+  attacks: Record<number, CombatAnimation>;   // 4 AttackDirection × 3 phases (FSM v2)
   blocks: Record<number, Pose>;               // 4 BlockDirection
   parry: Pose;
   stunned: Pose;
@@ -82,23 +82,6 @@ const LONGSWORD_ATTACKS: Record<number, CombatAnimation> = {
       upper_arm_R: { x: -20 * DEG, z: -5 * DEG },
       forearm_R:   { x: -50 * DEG },
       hand_R:      { x: 5 * DEG },
-    },
-    recovery: {
-      upper_arm_R: { x: -30 * DEG, z: -8 * DEG },
-      forearm_R:   { x: -35 * DEG },
-      hand_R:      { x: -5 * DEG, z: -5 * DEG },
-    },
-  },
-  [AttackDirection.Underhand as number]: {
-    windup: {
-      upper_arm_R: { x: 15 * DEG, z: -20 * DEG },
-      forearm_R:   { x: -10 * DEG },
-      hand_R:      { x: 10 * DEG },
-    },
-    release: {
-      upper_arm_R: { x: -90 * DEG, z: -10 * DEG },
-      forearm_R:   { x: -20 * DEG },
-      hand_R:      { x: -5 * DEG },
     },
     recovery: {
       upper_arm_R: { x: -30 * DEG, z: -8 * DEG },
@@ -236,23 +219,6 @@ const MACE_ATTACKS: Record<number, CombatAnimation> = {
       hand_R:      { x: -5 * DEG, z: -8 * DEG, y: 5 * DEG },
     },
   },
-  [AttackDirection.Underhand as number]: {
-    windup: {
-      upper_arm_R: { x: 20 * DEG, z: -25 * DEG },
-      forearm_R:   { x: -8 * DEG },
-      hand_R:      { x: 15 * DEG, y: 10 * DEG },
-    },
-    release: {
-      upper_arm_R: { x: -95 * DEG, z: -12 * DEG },
-      forearm_R:   { x: -15 * DEG },
-      hand_R:      { x: -8 * DEG, y: -5 * DEG },
-    },
-    recovery: {
-      upper_arm_R: { x: -28 * DEG, z: -10 * DEG },
-      forearm_R:   { x: -30 * DEG },
-      hand_R:      { x: -5 * DEG, z: -8 * DEG, y: 5 * DEG },
-    },
-  },
   [AttackDirection.Stab as number]: {
     windup: {
       upper_arm_R: { x: -45 * DEG, z: -12 * DEG },
@@ -375,23 +341,6 @@ const DAGGER_ATTACKS: Record<number, CombatAnimation> = {
       upper_arm_R: { x: -20 * DEG, z: -3 * DEG },
       forearm_R:   { x: -45 * DEG },
       hand_R:      { x: 5 * DEG },
-    },
-    recovery: {
-      upper_arm_R: { x: -22 * DEG, z: -5 * DEG },
-      forearm_R:   { x: -45 * DEG },
-      hand_R:      { x: -8 * DEG, z: -3 * DEG },
-    },
-  },
-  [AttackDirection.Underhand as number]: {
-    windup: {
-      upper_arm_R: { x: 5 * DEG, z: -15 * DEG },
-      forearm_R:   { x: -12 * DEG },
-      hand_R:      { x: 8 * DEG },
-    },
-    release: {
-      upper_arm_R: { x: -70 * DEG, z: -8 * DEG },
-      forearm_R:   { x: -20 * DEG },
-      hand_R:      { x: -5 * DEG },
     },
     recovery: {
       upper_arm_R: { x: -22 * DEG, z: -5 * DEG },
@@ -528,23 +477,6 @@ const BATTLEAXE_ATTACKS: Record<number, CombatAnimation> = {
       upper_arm_R: { x: -10 * DEG, z: -5 * DEG },
       forearm_R:   { x: -60 * DEG },
       hand_R:      { x: 12 * DEG },
-    },
-    recovery: {
-      upper_arm_R: { x: -32 * DEG, z: -12 * DEG },
-      forearm_R:   { x: -25 * DEG },
-      hand_R:      { x: -5 * DEG, z: -10 * DEG },
-    },
-  },
-  [AttackDirection.Underhand as number]: {
-    windup: {
-      upper_arm_R: { x: 25 * DEG, z: -30 * DEG },
-      forearm_R:   { x: -5 * DEG },
-      hand_R:      { x: 15 * DEG },
-    },
-    release: {
-      upper_arm_R: { x: -100 * DEG, z: -12 * DEG },
-      forearm_R:   { x: -15 * DEG },
-      hand_R:      { x: -10 * DEG },
     },
     recovery: {
       upper_arm_R: { x: -32 * DEG, z: -12 * DEG },

@@ -22,7 +22,6 @@ export const dagger: WeaponConfig = {
     [AttackDirection.Left]: { head: 22, torso: 16, limb: 10 },
     [AttackDirection.Right]: { head: 22, torso: 16, limb: 10 },
     [AttackDirection.Overhead]: { head: 25, torso: 18, limb: 12 },
-    [AttackDirection.Underhand]: { head: 20, torso: 15, limb: 10 },
     [AttackDirection.Stab]: { head: 22, torso: 18, limb: 11 },
   },
 
@@ -33,7 +32,6 @@ export const dagger: WeaponConfig = {
     [AttackDirection.Left]: 12,      // ~200ms
     [AttackDirection.Right]: 12,     // ~200ms
     [AttackDirection.Overhead]: 16,  // ~267ms
-    [AttackDirection.Underhand]: 13, // ~217ms
     [AttackDirection.Stab]: 10,      // ~167ms -- fastest attack
   },
 
@@ -44,7 +42,6 @@ export const dagger: WeaponConfig = {
     [AttackDirection.Left]: 8,       // ~133ms
     [AttackDirection.Right]: 8,      // ~133ms
     [AttackDirection.Overhead]: 10,  // ~167ms
-    [AttackDirection.Underhand]: 8,  // ~133ms
     [AttackDirection.Stab]: 7,       // ~117ms
   },
 
@@ -55,7 +52,6 @@ export const dagger: WeaponConfig = {
     [AttackDirection.Left]: 20,      // ~333ms
     [AttackDirection.Right]: 20,     // ~333ms
     [AttackDirection.Overhead]: 26,  // ~433ms
-    [AttackDirection.Underhand]: 23, // ~383ms
     [AttackDirection.Stab]: 18,      // ~300ms
   },
 
@@ -66,12 +62,15 @@ export const dagger: WeaponConfig = {
     [AttackDirection.Left]: 13,      // ~217ms
     [AttackDirection.Right]: 13,     // ~217ms
     [AttackDirection.Overhead]: 18,  // ~300ms
-    [AttackDirection.Underhand]: 15, // ~250ms
     [AttackDirection.Stab]: 12,      // ~200ms
   },
 
   // -- Parry window (ticks) ------------------------------
   parryWindow: 8,
+
+  // -- Parry recovery / block-break stagger (FSM v2) -----
+  parryRecovery: 8,
+  blockBreakStunTicks: 24,
 
   // -- Stamina costs -------------------------------------
   // Low costs allow sustained aggression.
@@ -80,7 +79,6 @@ export const dagger: WeaponConfig = {
     attack: 8,
     block: 6,
     parry: 3,
-    feint: 10,
   },
 
   // -- Turncaps (radians per tick) -----------------------
@@ -90,6 +88,7 @@ export const dagger: WeaponConfig = {
     windup: 0.10,
     release: 0.05,
     recovery: 0.07,
+    hitStun: 0.005, // nearly locked — staggered
   },
 
   // -- Tracer points (local space) -----------------------

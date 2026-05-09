@@ -75,7 +75,11 @@ export const IDLE_POSE: Pose = {
   spine: { x: 2 * DEG },
 };
 
-// ── Combat Animations (5 directions × 3 phases) ─────────
+// ── Combat Animations (4 directions × 3 phases) ─────────
+//
+// FSM v2 (#88, #131): trimmed from 5 directions to 4 — `Underhand` was
+// removed because it animated similarly to `Overhead` and added detection
+// noise. The full per-weapon pose-data refresh is issue #139's scope.
 
 const ATTACK_ANIMATIONS: Record<number, CombatAnimation> = {
   // ── Left Swing ──
@@ -145,29 +149,6 @@ const ATTACK_ANIMATIONS: Record<number, CombatAnimation> = {
       shoulder_L: { x: -20 * DEG, z: 10 * DEG },
       upper_arm_L: { x: -30 * DEG },
       forearm_L: { x: -30 * DEG },
-    },
-    recovery: IDLE_POSE,
-  },
-
-  // ── Underhand ──
-  [AttackDirection.Underhand as number]: {
-    windup: {
-      // Sword low, behind/below
-      chest: { x: 10 * DEG },
-      shoulder_R: { x: 20 * DEG, z: -30 * DEG },
-      upper_arm_R: { x: 30 * DEG },
-      forearm_R: { x: -10 * DEG },
-      shoulder_L: { x: 10 * DEG, z: 20 * DEG },
-      upper_arm_L: { x: 10 * DEG },
-    },
-    release: {
-      // Sweep upward
-      chest: { x: -10 * DEG },
-      shoulder_R: { x: -120 * DEG, z: -15 * DEG },
-      upper_arm_R: { x: -20 * DEG },
-      forearm_R: { x: -20 * DEG },
-      shoulder_L: { x: -80 * DEG, z: 10 * DEG },
-      upper_arm_L: { x: -10 * DEG },
     },
     recovery: IDLE_POSE,
   },

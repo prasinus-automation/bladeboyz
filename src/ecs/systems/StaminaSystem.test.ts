@@ -20,6 +20,11 @@ const mockWeapon: WeaponConfig = {
   recovery: {} as any,
   comboRecovery: {} as any,
   parryWindow: 8,
+  parryRecovery: 10,
+  blockBreakStunTicks: 28,
+  // FSM v2 (#131) makes `feint` optional, but `StaminaSystem` still has a
+  // 'feint' code path that the test below exercises — keep the value here
+  // so the test fixture covers that branch until the StaminaSystem migration.
   staminaCost: { attack: 15, block: 10, parry: 5, feint: 20 },
   turncap: {} as any,
   tracerPoints: [],

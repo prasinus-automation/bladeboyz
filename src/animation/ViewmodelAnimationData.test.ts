@@ -13,11 +13,11 @@ const WEAPON_NAMES = ['Longsword', 'Mace', 'Dagger', 'Battleaxe'];
 /** Only these bones should appear in viewmodel poses */
 const ALLOWED_BONES = new Set(['upper_arm_R', 'forearm_R', 'hand_R']);
 
+// FSM v2 (#88, #131): 4 attack directions — Underhand removed.
 const ALL_ATTACK_DIRS = [
   AttackDirection.Left,
   AttackDirection.Right,
   AttackDirection.Overhead,
-  AttackDirection.Underhand,
   AttackDirection.Stab,
 ];
 

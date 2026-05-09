@@ -1,8 +1,10 @@
 /**
  * DirectionIndicator — Mordhau-style compass-rose overlay around the crosshair.
  *
- * Shows 4 cardinal direction wedges (Left, Right, Overhead, Underhand) plus a
- * center ring for Stab. Highlights the active direction based on combat state:
+ * Shows 3 active direction wedges (Left, Right, Overhead) plus a center ring
+ * for Stab. The Bottom wedge is preserved as a block-only indicator (BlockDirection.Bottom)
+ * even though FSM v2 (#88, #131) removed the `Underhand` attack direction.
+ * Highlights the active direction based on combat state:
  *   - Idle: dim white preview of current mouse-detected direction
  *   - Windup/Release: red/orange highlight on committed attack direction
  *   - Block/ParryWindow: blue/cyan highlight on committed block direction
@@ -15,16 +17,19 @@ import { CombatStateComponent } from '../ecs/components';
 
 // Direction enums are const enum so we duplicate the numeric values here
 // to avoid import issues (const enums are erased at compile time).
-// AttackDirection: Left=0, Right=1, Overhead=2, Underhand=3, Stab=4
+// AttackDirection: Left=0, Right=1, Overhead=2, Stab=3 (FSM v2 — Underhand removed)
 // BlockDirection: Left=0, Right=1, Top=2, Bottom=3
 // CombatState: Idle=0, Windup=1, Release=2, Recovery=3, Block=4, ParryWindow=5,
 //              Riposte=6, Feint=7, Clash=8, Stunned=9, HitStun=10
+
+/** Numeric value of `AttackDirection.Stab` (FSM v2: was 4, now 3). */
+const ATK_STAB = 3;
 
 const enum DirIndex {
   Left = 0,
   Right = 1,
   Top = 2,    // Overhead (attack) / Top (block)
-  Bottom = 3, // Underhand (attack) / Bottom (block)
+  Bottom = 3, // Bottom (block only — Underhand attack direction removed in FSM v2)
 }
 
 /** Combat states where attack direction is shown actively */
@@ -135,11 +140,14 @@ export class DirectionIndicator {
 
     if (isAttackActive) {
       // Attack: map AttackDirection to arrow index or stab
-      if (atkDir === 4) {
-        // Stab
+      if (atkDir === ATK_STAB) {
+        // Stab (FSM v2: was 4, now 3)
         isStab = true;
       } else {
-        activeDir = atkDir; // Left=0, Right=1, Overhead=2, Underhand=3 maps directly
+        // Left=0, Right=1, Overhead=2 map directly to arrow indices.
+        // The Bottom arrow (index 3) is no longer reachable via attack
+        // direction — Underhand was removed in FSM v2.
+        activeDir = atkDir;
       }
       activeColor = COLOR_ATTACK;
     } else if (isBlockActive) {
@@ -148,7 +156,7 @@ export class DirectionIndicator {
       activeColor = COLOR_BLOCK;
     } else if (isIdle) {
       // Idle preview from current attack direction
-      if (atkDir === 4) {
+      if (atkDir === ATK_STAB) {
         isStab = true;
       } else {
         activeDir = atkDir;
