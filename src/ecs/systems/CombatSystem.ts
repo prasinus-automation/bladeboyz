@@ -2,7 +2,7 @@
  * CombatSystem — ECS system that bridges input to the per-entity CombatFSM.
  *
  * Runs in fixedUpdate() at 60 Hz. Each tick:
- * 1. Reads input state (mouse buttons, mouse deltas for direction)
+ * 1. Reads input state (mouse buttons, rolling mouse buffer for direction)
  * 2. Calls FSM transitions based on input
  * 3. Ticks the FSM (phaseElapsed countdown + auto-transitions)
  * 4. Syncs FSM state back to the CombatStateComponent for other systems to read
@@ -11,6 +11,11 @@
  * FSM v2 (#135): Feint input is gone — RMB-during-Windup no longer triggers
  * a feint. RMB always evaluates as a Block input now (rejected by the FSM
  * if state is Windup, since canTransition(Block) is false there).
+ *
+ * FSM v2 (#139): direction sampling switched from single-frame
+ * `getMouseDelta()` to the rolling `getAverageDelta(100)` buffer. Both
+ * Attack and Block use the same `detectDirection(input)` call against the
+ * unified 4-value `Direction` enum.
  */
 
 import { defineQuery, hasComponent, type IWorld } from 'bitecs';
@@ -22,7 +27,7 @@ import {
 } from '../components';
 import { CombatState } from '../../combat/states';
 import { CombatInput, fsmRegistry } from '../../combat/CombatFSM';
-import { detectAttackDirection, detectBlockDirection } from '../../combat/directions';
+import { detectDirection } from '../../combat/directions';
 import type { InputManager } from '../../input/InputManager';
 import type { CameraController } from '../../rendering/CameraController';
 import { queueStaminaCost } from './StaminaSystem';
@@ -41,21 +46,6 @@ export const weaponIdToName: string[] = ['Longsword', 'Mace', 'Dagger', 'Battlea
 function getWeaponConfigById(id: number) {
   const name = weaponIdToName[id];
   return name ? weaponConfigs[name] : undefined;
-}
-
-// ── Mouse delta adapter ──────────────────────────────────
-
-/** Convert InputManager's delta buffer to the format expected by direction detection */
-function getMouseDeltasForDirection(input: InputManager): {
-  dx: number;
-  dy: number;
-  time: number;
-}[] {
-  // InputManager exposes getAverageDelta but we need the raw buffer for detection.
-  // Use the accumulated frame delta as a single sample for direction detection.
-  const delta = input.getMouseDelta();
-  const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-  return [{ dx: delta.x, dy: delta.y, time: now }];
 }
 
 // ── Previous input state (for edge detection) ────────────
@@ -94,10 +84,6 @@ export function createCombatSystem(
     prevLeftMouseDown = leftMouseDown;
     prevRightMouseDown = rightMouseDown;
 
-    // Get mouse direction for attack/block detection
-    const deltas = getMouseDeltasForDirection(input);
-    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-
     // Process player entities (input-driven)
     for (const eid of playerEntities) {
       // Dead entities don't read input. processDeaths already reset their
@@ -108,17 +94,22 @@ export function createCombatSystem(
       const fsm = fsmRegistry.get(eid);
       if (!fsm) continue;
 
+      // Direction is sampled at click time from the rolling 100 ms mouse
+      // buffer (FSM v2 #139). Attack and Block use the same algorithm — the
+      // pre-v2 split into `detectAttackDirection`/`detectBlockDirection`
+      // had identical logic, so they're a single `detectDirection` now.
+
       // Attack input (left mouse button press) — FSM handles morph + combo.
       if (leftJustPressed) {
-        const attackDir = detectAttackDirection(deltas, now);
-        fsm.transition(CombatInput.Attack, attackDir);
+        const dir = detectDirection(input);
+        fsm.transition(CombatInput.Attack, dir);
       }
 
       // Block input (right mouse button press). FSM v2: always a Block —
       // Feint is gone, so RMB during Windup just no-ops via `canTransition`.
       if (rightJustPressed) {
-        const blockDir = detectBlockDirection(deltas, now);
-        fsm.transition(CombatInput.Block, blockDir);
+        const dir = detectDirection(input);
+        fsm.transition(CombatInput.Block, dir);
       }
 
       // Release block (right mouse button released)
@@ -140,25 +131,19 @@ export function createCombatSystem(
       // Advance FSM timer (increments phaseElapsed; auto-transitions on phase end).
       fsm.tick();
 
-      // Sync FSM state to ECS component
+      // Sync FSM state to ECS component. With the unified `Direction` enum
+      // (FSM v2 #139), `attackDirection` and `blockDirection` ECS slots both
+      // get the same value — they're a transitional pair until issue C
+      // (#136) collapses CombatStateComponent + CombatStateComp into a
+      // single component with one direction field.
       CombatStateComponent.state[eid] = fsm.state;
       CombatStateComponent.ticksRemaining[eid] = fsm.ticksRemaining;
-      CombatStateComponent.attackDirection[eid] = fsm.attackDirection;
-      CombatStateComponent.blockDirection[eid] = fsm.blockDirection;
+      CombatStateComponent.attackDirection[eid] = fsm.direction;
+      CombatStateComponent.blockDirection[eid] = fsm.direction;
 
       // Sync CombatStateComp (read by AnimationSystem)
       CombatStateComp.state[eid] = fsm.state;
-      // Direction: block direction in defensive states, attack direction otherwise.
-      // FSM v2: Blocking absorbs old Block + ParryWindow; Parry replaces Riposte.
-      const currentState = fsm.state;
-      if (
-        currentState === CombatState.Blocking ||
-        currentState === CombatState.Parry
-      ) {
-        CombatStateComp.direction[eid] = fsm.blockDirection;
-      } else {
-        CombatStateComp.direction[eid] = fsm.attackDirection;
-      }
+      CombatStateComp.direction[eid] = fsm.direction;
       // Phase fields straight from the FSM (single source of truth).
       CombatStateComp.phaseTotal[eid] = fsm.phaseTotal;
       CombatStateComp.phaseElapsed[eid] = fsm.phaseElapsed;

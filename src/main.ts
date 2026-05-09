@@ -11,7 +11,6 @@ import { processDeaths } from './ecs/systems/processDeaths';
 import { EventBus } from './events/EventBus';
 import { createPlayer } from './ecs/entities/createPlayer';
 import { createArena } from './arena/createArena';
-import { seedPlaceholderSpawnPoints } from './world/SpawnPoints';
 import { processRespawns } from './ecs/systems/processRespawns';
 import {
   createDummy,
@@ -44,8 +43,8 @@ import { createDummyDamageObserver } from './ecs/systems/DummyDamageObserver';
 import { showNotification } from './hud/DebugNotification';
 import { InventoryPanel } from './hud/InventoryPanel';
 import { ShopPanel } from './hud/ShopPanel';
-import { FIXED_TIMESTEP, SPAWN_HEIGHT } from './core/types';
-import { Position, PreviousPosition, meshRegistry } from './ecs/components';
+import { FIXED_TIMESTEP } from './core/types';
+import { Position, PreviousPosition, Rotation, meshRegistry } from './ecs/components';
 import { lerp } from './utils/math';
 import { createFSM, fsmRegistry } from './combat/CombatFSM';
 import { weaponConfigs } from './weapons/WeaponConfig';
@@ -64,7 +63,7 @@ import { pickupRenderer } from './rendering/PickupRenderer';
 import { ViewmodelDebugOverlay } from './hud/ViewmodelDebugOverlay';
 import { PickupPrompt } from './hud/PickupPrompt';
 import { CombatStateComp } from './ecs/components';
-import { COMBAT_STATE_NAMES, CombatState } from './combat/states';
+import { COMBAT_STATE_NAMES } from './combat/states';
 import type * as THREE from 'three';
 import type { GameWorld } from './core/types';
 
@@ -82,20 +81,36 @@ for (const [name, config] of Object.entries(weaponConfigs)) {
 
 /** Next dummy spawn index for position cycling */
 let dummySpawnIdx = 0;
-// Y is resolved per-spawn by createDummy → spawnAtGround (raycast).
-const DUMMY_SPAWN_POSITIONS: Array<{ x: number; z: number }> = [
-  { x: 0, z: -4 },
-  { x: 3, z: -4 },
-  { x: -3, z: -4 },
-  { x: 0, z: -7 },
-  { x: 3, z: -7 },
-  { x: -3, z: -7 },
-  { x: 6, z: -4 },
-  { x: -6, z: -4 },
-];
+
+/**
+ * Resolve the dummy spawn-position list from the active arena's interior
+ * spawn points. Issue #112 spec calls out S2/S3/S5/S6 as the four interior
+ * spawns that "work well" for dummies. Falls back to a small inline list
+ * if the arena hasn't been built yet (defensive — main wires the arena
+ * before this is called).
+ */
+function getDummySpawnPositions(world: GameWorld): Array<{ x: number; z: number }> {
+  const arena = world.arena;
+  if (arena) {
+    // Indices 1, 2, 4, 5 = S2, S3, S5, S6 — the four interior spawns,
+    // mirror-symmetric across z = 0. Used as a starting set; J cycles
+    // through them in order.
+    const interior = [1, 2, 4, 5].map((i) => arena.spawnPoints[i].position);
+    return interior.map((p) => ({ x: p.x, z: p.z }));
+  }
+  // Fallback (used only if a test path constructs the world without an
+  // arena). Matches the v0 layout for behavioural compatibility.
+  return [
+    { x: 0, z: -4 },
+    { x: 3, z: -4 },
+    { x: -3, z: -4 },
+    { x: 0, z: -7 },
+  ];
+}
 
 function spawnDummyAtNextPosition(world: GameWorld): void {
-  const pos = DUMMY_SPAWN_POSITIONS[dummySpawnIdx % DUMMY_SPAWN_POSITIONS.length];
+  const positions = getDummySpawnPositions(world);
+  const pos = positions[dummySpawnIdx % positions.length];
   const colors = [0xcc4444, 0xcc8844, 0xcc44cc, 0x44cccc, 0xcccc44];
   const color = colors[dummySpawnIdx % colors.length];
   createDummy(world, pos.x, pos.z, color);
@@ -114,20 +129,30 @@ async function main(): Promise<void> {
   // Camera controller
   const cameraController = new CameraController(world.camera, input);
 
-  // Create arena
-  createArena(world);
+  // Create arena. `createArena` adds the lighting rig + 9 static props
+  // (ground, walls, pillars, shop counter / back wall) AND registers the
+  // 6 arena spawn points into `world/SpawnPoints.ts` (replacing the v0
+  // `seedPlaceholderSpawnPoints()` call). The returned ArenaSpec is the
+  // runtime data store for the spawn-point list, shopkeep stall AABB, and
+  // weapon-pickup safe volume — stored on `world.arena` so other systems
+  // can query it without re-importing.
+  const arena = createArena(world);
+  world.arena = arena;
 
-  // Seed placeholder spawn points BEFORE createPlayer so the registry-driven
-  // spawn path picks one of them. When #91 lands, the real arena layout
-  // registers its own and this call disappears.
-  // TODO(#91): replace placeholders with arena-defined spawn points.
-  seedPlaceholderSpawnPoints();
-
-  // Create player (spawn position picked from spawn-point registry — the
-  // placeholders we just seeded — and Y resolved per the registered point).
+  // Create player at the first arena spawn point (S1 — west side, on the
+  // E-W axis). The createPlayer factory still falls back to the registry
+  // selector when called without an explicit position, but pinning to S1
+  // here keeps initial spawn deterministic and matches the issue spec's
+  // "Replace hardcoded player spawn with arena.spawnPoints[0].position"
+  // direction.
   // Issue #130: default starter weapon is Longsword (was Dagger).
-  const { eid: playerEid, mesh: playerMesh } = createPlayer(world);
+  const spawn0 = arena.spawnPoints[0];
+  const { eid: playerEid, mesh: playerMesh } = createPlayer(world, spawn0.position);
   world.playerEntity = playerEid;
+  // Apply spawn-point facing. createPlayer's explicit-position path leaves
+  // Rotation.y at 0; we'd otherwise spawn the player facing -Z regardless of
+  // which spawn point was used. Mirror what the registry path does.
+  Rotation.y[playerEid] = spawn0.facing;
   cameraController.setPlayerMesh(playerMesh);
 
   // Register combat FSM for the player entity using the default starter weapon
@@ -217,13 +242,14 @@ async function main(): Promise<void> {
   createDummy(world, 0, -4, 0xcc4444);
   dummySpawnIdx = 1;
 
-  // Spawn shopkeep NPC at far corner of arena. Walking distance from origin
-  // is intentional — proves the interact prompt only shows up close.
-  // NOTE: SPAWN_HEIGHT is now a deprecated alias of GROUND_TOP_Y (= 0.1) per
-  // #104's feet-origin convention. The shopkeep mesh root is at feet (y=0
-  // local), so passing 0.1 puts its feet on the ground — fixing what was
-  // previously a floating shopkeep at y=1.1.
-  createShopkeep(world, 8, SPAWN_HEIGHT, 8, { name: 'Shopkeep' });
+  // Spawn shopkeep NPC behind the SW shop counter. Coordinates come from
+  // the arena's documented `shopkeepStall.npcAnchor` so the NPC sits on
+  // the right side of the counter (behind it) rather than the v0
+  // arbitrary `(8, _, 8)` location.
+  // NOTE: SPAWN_HEIGHT is the deprecated alias of GROUND_TOP_Y (= 0.1) per
+  // #104's feet-origin convention. The npcAnchor's y already matches.
+  const npc = arena.shopkeepStall.npcAnchor;
+  createShopkeep(world, npc.x, npc.y, npc.z, { name: 'Shopkeep' });
 
   // Input + movement systems (input writes MovementIntent; movement consumes it)
   const inputSystem = createInputSystem(world, input, cameraController);
@@ -446,15 +472,13 @@ async function main(): Promise<void> {
     if (viewmodelDebugEnabled) {
       const stateNum = CombatStateComp.state[playerEid];
       const dirNum = CombatStateComp.direction[playerEid];
-      // Direction labels — context-dependent on state. For Block/ParryWindow
-      // the number is a BlockDirection; otherwise an AttackDirection. Keep
-      // this lookup local to the overlay to avoid coupling HUD's internal
-      // tables.
-      const isBlockState =
-        stateNum === CombatState.Blocking || stateNum === CombatState.Parry;
-      const dirLabel = isBlockState
-        ? (['Left', 'Right', 'Top', 'Bottom'][dirNum] ?? String(dirNum))
-        : (['Left', 'Right', 'Overhead', 'Stab'][dirNum] ?? String(dirNum));
+      // Direction labels — single unified `Direction` enum after FSM v2 #139
+      // (Overhead=0, Left=1, Right=2, Stab=3). No longer state-dependent —
+      // attack and block share the same enum and the same numeric value.
+      // (Pre-#139 this branched on Block/ParryWindow; those states no
+      // longer exist anyway, having been collapsed into Blocking/Parry.)
+      const dirLabel =
+        ['Overhead', 'Left', 'Right', 'Stab'][dirNum] ?? String(dirNum);
       _boneEulers['upper_arm_R'] = viewmodel.bones['upper_arm_R'].rotation;
       _boneEulers['forearm_R'] = viewmodel.bones['forearm_R'].rotation;
       _boneEulers['hand_R'] = viewmodel.bones['hand_R'].rotation;

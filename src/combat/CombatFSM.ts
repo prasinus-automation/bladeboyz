@@ -1,7 +1,7 @@
 /**
  * CombatFSM — Per-entity finite state machine for directional melee combat.
- * **FSM v2 (#88, #135)** — 7-state model, all writes funneled through
- * `transition()` and `_transitionTo()`.
+ * **FSM v2 (#88, #135, #139)** — 7-state model with unified `Direction`
+ * enum, all writes funneled through `transition()` and `_transitionTo()`.
  *
  * Pure TypeScript logic — no Three.js, no Rapier, no DOM dependencies.
  * All timing is in ticks (1 tick = 1/60th second at 60 Hz fixed update).
@@ -15,14 +15,13 @@
  * `this._state = X` outside `_transitionTo`, you're probably implementing a
  * side effect that should live in the entry helper for state X.
  *
- * Out of scope for #135 (issue B):
+ * Out of scope:
  * - `CombatStateComponent` + `CombatStateComp` unification (issue C, #136)
- * - Direction model unification into a single `Direction` enum (issue D, #139)
  * - DamageSystem dispatching FSM events instead of direct writes (issue E)
  */
 
 import { CombatState } from './states';
-import { AttackDirection, BlockDirection } from './directions';
+import { Direction } from './directions';
 import type { WeaponConfig } from '../weapons/WeaponConfig';
 
 // ── Input types ──────────────────────────────────────────
@@ -32,8 +31,8 @@ import type { WeaponConfig } from '../weapons/WeaponConfig';
  * `FSM.transition(input, payload?)` — no system writes `_state` directly.
  *
  * Payload conventions (`payload?: number`):
- * - `Attack(dir)` — payload is an `AttackDirection`
- * - `Block(dir)` — payload is a `BlockDirection`
+ * - `Attack(dir)` — payload is a `Direction`
+ * - `Block(dir)` — payload is a `Direction`
  * - all others — no payload
  */
 export const enum CombatInput {
@@ -90,8 +89,16 @@ export class CombatFSM {
   private _phaseElapsed = 0;
   private _phaseTotal = 0;
 
-  private _attackDirection: AttackDirection = AttackDirection.Stab;
-  private _blockDirection: BlockDirection = BlockDirection.Top;
+  /**
+   * Unified direction (FSM v2, #139). Represents the most-recent direction
+   * payload from an `Attack` or `Block` input. v1's separate `_attackDirection`
+   * + `_blockDirection` slots were collapsed because the new direction model
+   * uses a single 4-value enum for both attack and block intent.
+   *
+   * Default `Overhead` matches the v1 `_blockDirection = BlockDirection.Top`
+   * default (Top mapped to Overhead in #139's enum unification).
+   */
+  private _direction: Direction = Direction.Overhead;
   private _weaponConfig: WeaponConfig;
 
   /** Pending stamina events produced this tick, consumed by CombatSystem. */
@@ -99,7 +106,8 @@ export class CombatFSM {
 
   /** Buffered Attack input received during Recovery; fires on Recovery end. */
   private _comboBuffered = false;
-  private _comboDirection: AttackDirection = AttackDirection.Stab;
+  /** Direction the buffered combo will swing in. Overwritten on every buffer. */
+  private _comboDirection: Direction = Direction.Overhead;
 
   /**
    * Set true when an Attack is buffered during Recovery; the resulting
@@ -172,23 +180,29 @@ export class CombatFSM {
     return remaining > 0 ? remaining : 0;
   }
 
-  get attackDirection(): AttackDirection {
-    return this._attackDirection;
-  }
-
-  get blockDirection(): BlockDirection {
-    return this._blockDirection;
+  /**
+   * Current direction — single field after FSM v2's direction unification
+   * (#139). The semantic interpretation depends on `state`: in Blocking /
+   * Parry it's the block direction, otherwise it's the attack direction
+   * (or the most recent attack direction in Idle).
+   */
+  get direction(): Direction {
+    return this._direction;
   }
 
   /**
-   * Unified direction getter — returns the block direction in defensive
-   * states (Blocking/Parry), the attack direction otherwise. Forward-compat
-   * with issue D's unified `Direction` enum.
+   * Backward-compat alias of `direction`. Kept so existing CombatSystem
+   * mirroring (which writes the old `attackDirection`/`blockDirection` ECS
+   * slots) doesn't have to fork on state. With the unified enum, both ECS
+   * slots receive the same numeric value.
    */
-  get direction(): AttackDirection | BlockDirection {
-    return this._state === CombatState.Blocking || this._state === CombatState.Parry
-      ? this._blockDirection
-      : this._attackDirection;
+  get attackDirection(): Direction {
+    return this._direction;
+  }
+
+  /** Backward-compat alias of `direction`. Same value as `attackDirection`. */
+  get blockDirection(): Direction {
+    return this._direction;
   }
 
   get weaponConfig(): WeaponConfig {
@@ -238,12 +252,16 @@ export class CombatFSM {
   }
 
   /**
-   * Set the block direction without changing state. Used by the training
-   * dummy debug tool (J key) to cycle which direction it's blocking
-   * mid-block, without re-entering Blocking and re-opening the parry window.
+   * Set the direction without changing state. Used by the training dummy
+   * debug tool (J key) to cycle which direction it's blocking mid-block,
+   * without re-entering Blocking and re-opening the parry window.
+   *
+   * Named `setBlockDirection` for backward-compat with the dummy code; with
+   * FSM v2's unified direction enum (#139) this writes the same `_direction`
+   * field as Attack/Block transitions.
    */
-  setBlockDirection(direction: BlockDirection): void {
-    this._blockDirection = direction;
+  setBlockDirection(direction: Direction): void {
+    this._direction = direction;
   }
 
   // ── Phase math (kept as methods for backward-compat) ─
@@ -335,8 +353,8 @@ export class CombatFSM {
    * Single entry point for state changes. Returns true iff a transition
    * (or in-state side-effect like a buffered combo) actually occurred.
    *
-   * - `Attack`: payload = `AttackDirection`
-   * - `Block`: payload = `BlockDirection`
+   * - `Attack`: payload = `Direction`
+   * - `Block`: payload = `Direction`
    * - others: payload ignored
    */
   transition(input: CombatInput, payload?: number): boolean {
@@ -344,9 +362,11 @@ export class CombatFSM {
 
     switch (input) {
       case CombatInput.Attack:
-        return this._handleAttack((payload ?? AttackDirection.Stab) as AttackDirection);
+        return this._handleAttack((payload ?? Direction.Stab) as Direction);
       case CombatInput.Block:
-        return this._handleBlock((payload ?? BlockDirection.Top) as BlockDirection);
+        // Default to Overhead (formerly BlockDirection.Top) when no payload
+        // is supplied — matches the v1 default-to-Top fallback semantics.
+        return this._handleBlock((payload ?? Direction.Overhead) as Direction);
       case CombatInput.ReleaseBlock:
         return this._handleReleaseBlock();
       case CombatInput.HitReceived:
@@ -408,7 +428,7 @@ export class CombatFSM {
 
   // ── Private: input handlers ──────────────────────────
 
-  private _handleAttack(direction: AttackDirection): boolean {
+  private _handleAttack(direction: Direction): boolean {
     if (this._state === CombatState.Recovery) {
       // Buffer combo — fires when Recovery ends. The resulting next Recovery
       // will use `comboRecovery` ticks (set `_isComboRecovery = true` here so
@@ -421,7 +441,7 @@ export class CombatFSM {
     if (this._state === CombatState.Windup) {
       // Morph — same FSM, swap direction, restart windup, no extra stamina.
       // Same direction = no-op (avoid burning the morph chance).
-      if (direction === this._attackDirection) return false;
+      if (direction === this._direction) return false;
       this._enterWindup(direction, /* isMorph */ true);
       return true;
     }
@@ -430,12 +450,12 @@ export class CombatFSM {
     return true;
   }
 
-  private _handleBlock(blockDir: BlockDirection): boolean {
+  private _handleBlock(blockDir: Direction): boolean {
     // Block from Idle or Recovery → Blocking with fresh parry window.
     // Cancel any buffered combo so RMB cleanly aborts a chain.
     this._comboBuffered = false;
     this._isComboRecovery = false;
-    this._blockDirection = blockDir;
+    this._direction = blockDir;
     this._enterBlocking(/* wasJustPress */ true);
     return true;
   }
@@ -504,9 +524,9 @@ export class CombatFSM {
     this._rmbHeldDuringParry = false;
   }
 
-  private _enterWindup(direction: AttackDirection, isMorph: boolean): void {
+  private _enterWindup(direction: Direction, isMorph: boolean): void {
     this._transitionTo(CombatState.Windup);
-    this._attackDirection = direction;
+    this._direction = direction;
     this._phaseElapsed = 0;
     this._phaseTotal = this._weaponConfig.windup[direction];
     if (!isMorph) {
@@ -519,7 +539,7 @@ export class CombatFSM {
   private _enterRelease(): void {
     this._transitionTo(CombatState.Release);
     this._phaseElapsed = 0;
-    this._phaseTotal = this._weaponConfig.release[this._attackDirection];
+    this._phaseTotal = this._weaponConfig.release[this._direction];
   }
 
   private _enterRecovery(): void {
@@ -528,7 +548,7 @@ export class CombatFSM {
     const timings = this._isComboRecovery
       ? this._weaponConfig.comboRecovery
       : this._weaponConfig.recovery;
-    this._phaseTotal = timings[this._attackDirection];
+    this._phaseTotal = timings[this._direction];
   }
 
   private _enterBlocking(wasJustPress: boolean): void {

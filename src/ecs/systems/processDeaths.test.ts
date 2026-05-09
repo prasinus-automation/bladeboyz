@@ -15,7 +15,7 @@ import { EventBus } from '../../events/EventBus';
 import { fsmRegistry, createFSM } from '../../combat/CombatFSM';
 import { CombatState } from '../../combat/states';
 import { weaponConfigs } from '../../weapons/WeaponConfig';
-import { AttackDirection } from '../../combat/directions';
+import { Direction } from '../../combat/directions';
 import {
   clearDamageAttribution,
   getDamageAttribution,
@@ -317,7 +317,7 @@ describe('processDeaths', () => {
       DamageEvent.attackerEid[eventEid] = attacker;
       DamageEvent.damage[eventEid] = 50; // overkill
       DamageEvent.bodyRegion[eventEid] = 1; // Torso
-      DamageEvent.attackDirection[eventEid] = AttackDirection.Overhead;
+      DamageEvent.attackDirection[eventEid] = Direction.Overhead;
       DamageEvent.processed[eventEid] = 0;
 
       // Set attacker's weaponId so the event payload carries it.

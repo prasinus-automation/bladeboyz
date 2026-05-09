@@ -13,7 +13,7 @@ import {
 } from '../ecs/systems/InventorySystem';
 import { createFSM, fsmRegistry, CombatInput } from '../combat/CombatFSM';
 import { weaponConfigs, registerWeapon } from '../weapons/WeaponConfig';
-import { AttackDirection } from '../combat/directions';
+import { Direction } from '../combat/directions';
 import { CombatStateComponent } from '../ecs/components';
 
 // Import the real weapon configs so they auto-register, matching the runtime.
@@ -32,12 +32,12 @@ function ensureUnsellableWeapon(): void {
   // where the weapon exists in `weaponConfigs` but `getWeaponPrice`
   // returns undefined.
   const dirs = [
-    AttackDirection.Left,
-    AttackDirection.Right,
-    AttackDirection.Overhead,
-    AttackDirection.Stab,
+    Direction.Left,
+    Direction.Right,
+    Direction.Overhead,
+    Direction.Stab,
   ];
-  const dirRecord = <T>(val: T): Record<AttackDirection, T> => {
+  const dirRecord = <T>(val: T): Record<Direction, T> => {
     const r: any = {};
     for (const d of dirs) r[d] = val;
     return r;
@@ -220,7 +220,7 @@ describe('purchaseWeapon — fsm_busy', () => {
     // `transition` returns true if the transition occurred.
     const ok = fsm.transition(
       CombatInput.Attack,
-      AttackDirection.Stab,
+      Direction.Stab,
     );
     expect(ok).toBe(true); // sanity: we are now mid-combat
     expect(fsm.state).not.toBe(0); // not Idle
@@ -232,7 +232,7 @@ describe('purchaseWeapon — fsm_busy', () => {
   it('does not deduct gold when fsm_busy', () => {
     setGold(500);
     const fsm = createFSM(PLAYER_EID, weaponConfigs['Dagger']);
-    fsm.transition(CombatInput.Attack, AttackDirection.Stab);
+    fsm.transition(CombatInput.Attack, Direction.Stab);
     purchaseWeapon(PLAYER_EID, 'Mace');
     expect(getGold()).toBe(500);
   });
@@ -240,7 +240,7 @@ describe('purchaseWeapon — fsm_busy', () => {
   it('does not modify inventory when fsm_busy', () => {
     setGold(500);
     const fsm = createFSM(PLAYER_EID, weaponConfigs['Dagger']);
-    fsm.transition(CombatInput.Attack, AttackDirection.Stab);
+    fsm.transition(CombatInput.Attack, Direction.Stab);
     purchaseWeapon(PLAYER_EID, 'Mace');
     const inv = getInventory(PLAYER_EID)!;
     expect(inv.weapons).not.toContain('Mace');

@@ -9,7 +9,7 @@
  * weapon logic in systems. To add a new weapon, create a config and register it.
  */
 
-import { AttackDirection } from '../combat/directions';
+import { Direction } from '../combat/directions';
 
 // ── Vector3 tuple for tracer points (avoids Three.js import) ──
 
@@ -26,19 +26,19 @@ export interface WeaponConfig {
    * Damage values per attack direction per body zone.
    * head/torso/limb let us reward skillful strikes (headshots).
    */
-  damage: Record<AttackDirection, { head: number; torso: number; limb: number }>;
+  damage: Record<Direction, { head: number; torso: number; limb: number }>;
 
   /** Windup duration before the blade becomes active (ticks) */
-  windup: Record<AttackDirection, number>;
+  windup: Record<Direction, number>;
 
   /** Release / active swing duration (ticks) */
-  release: Record<AttackDirection, number>;
+  release: Record<Direction, number>;
 
   /** Full recovery after a swing completes (ticks) */
-  recovery: Record<AttackDirection, number>;
+  recovery: Record<Direction, number>;
 
   /** Shorter recovery when chaining a combo (ticks) */
-  comboRecovery: Record<AttackDirection, number>;
+  comboRecovery: Record<Direction, number>;
 
   /** Parry window duration at the start of a block (ticks) */
   parryWindow: number;

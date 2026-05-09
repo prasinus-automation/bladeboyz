@@ -21,7 +21,8 @@
  * dropped states post-MVP MUST give them new numeric slots — never reuse
  * 4/5/6 since those now mean `Blocking`/`Parry`/`HitStun` on the wire.
  *
- * Note: `AttackDirection` and `BlockDirection` live in `./directions.ts`.
+ * Note: `Direction` (FSM v2 #139, unified attack+block) lives in
+ * `./directions.ts`.
  * `BodyRegion` lives in `../ecs/components.ts`. All timing is in **ticks**
  * (1 tick = 1/60th second at 60 Hz fixed update).
  */

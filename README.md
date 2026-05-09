@@ -2,7 +2,7 @@
 
 Browser-based multiplayer melee combat game with an ultra-low-poly BattleBit-style aesthetic and Mordhau/Chivalry-inspired directional combat mechanics. Built with Three.js, Rapier3D physics, and a bitECS entity-component-system architecture.
 
-Currently in the scaffolding phase: single player, test arena with training dummies, no networking yet. The combat system features tracer-based hit detection (swept-volume collision along the blade), directional attacks and blocks, a parry/riposte system, and data-driven weapon configurations. Players can open an inventory overlay to swap between unlocked weapons mid-session.
+Currently in the scaffolding phase: single player, **Arena v1** with training dummies, no networking yet. The combat system features tracer-based hit detection (swept-volume collision along the blade), directional attacks and blocks, a parry/riposte system, and data-driven weapon configurations. Players can open an inventory overlay to swap between unlocked weapons mid-session.
 
 ## Getting Started
 
@@ -57,7 +57,7 @@ In first-person mode, a **viewmodel** renders your right arm and equipped weapon
 |-----|--------|
 | **E** | Interact (when prompt shown) — open the shop near the shopkeep, or pick up a nearby weapon |
 
-> A **shopkeep NPC** stands at one corner of the arena (around `(8, _, 8)`). Walk close enough and a "Press [E] to shop" prompt appears above their head; pressing **E** opens the shop overlay.
+> A **shopkeep NPC** stands behind the wood counter in the SW corner of the arena (around `(-12, _, 13)`). Walk close enough and a "Press [E] to shop" prompt appears above their head; pressing **E** opens the shop overlay.
 
 ### Weapon pickups
 
@@ -168,7 +168,7 @@ All character ECS `Position` values represent the entity's **feet** (point of co
 
 Capsule colliders are offset upward inside the body via `ColliderDesc.capsule(...).setTranslation(0, R+H, 0)` so the bottom hemisphere sits at the body origin (= feet). This applies uniformly to the player and to training dummies.
 
-Spawn Y is resolved by `spawnAtGround(world, x, z)`, which raycasts down from `(x, 50, z)` and returns the surface hit + a small `CHARACTER_CONTROLLER_OFFSET` epsilon. Entity factories never hard-code Y. The arena ground top is at `y = GROUND_TOP_Y = 0.1` (a 25×0.1×25 cuboid centered at origin).
+Spawn Y is resolved by `spawnAtGround(world, x, z)`, which raycasts down from `(x, 50, z)` and returns the surface hit + a small `CHARACTER_CONTROLLER_OFFSET` epsilon. Entity factories never hard-code Y. The arena ground top is at `y = GROUND_TOP_Y = 0.1` (a 30×0.2×30 cuboid centered at origin in Arena v1).
 
 ## Weapons
 
@@ -181,7 +181,7 @@ All weapons are data-driven via `WeaponConfig` objects — damage, timing, turnc
 | **Mace** | 0.6 | Slow | 42–55 / 30–40 / 20–25 | 18 | 14 / 36 | Heavy blunt weapon. High stun duration (68 ticks) punishes failed parries. |
 | **Battleaxe** | 1.2 | Very Slow | 55–75 / 40–55 / 28–35 | 24 | 16 / 42 | Devastating damage but long windups. Overheads deal up to 75 head damage. |
 
-*Damage ranges show min–max across attack directions (left, right, overhead, stab — the FSM v2 schema removed `Underhand`). Actual damage depends on attack direction and body region hit.*
+*Damage ranges show min–max across attack directions (overhead, left, right, stab — the FSM v2 unified `Direction` enum, #139, dropped the v1 `Underhand`). Actual damage depends on attack direction and body region hit.*
 
 *`Parry rec.` is how long the Parry pose locks before returning to Blocking (ticks). `Block-break stun` is the stagger applied when a blocker's stamina hits zero mid-block. Both are per-weapon as of FSM v2 (issue #131); the v1 module-level `BLOCK_BREAK_STUN_TICKS = 30` constant is still used by `StaminaSystem` until the FSM v2 wiring lands. Every weapon also has a `turncap.hitStun` of 0.005 rad/tick — the stagger almost completely locks your aim.*
 
@@ -198,7 +198,7 @@ The wallet is intentionally minimal scaffolding for the shop feature — earning
 BladeBoyz uses a **directional melee combat system** inspired by Mordhau and Chivalry:
 
 ### Directional Attacks & Blocks
-Mouse movement before clicking determines your attack direction — sweep left for a left swing, sweep right for a right swing, push up for an overhead, or hold steady (or push down) for a stab. The FSM v2 schema (issue #131) trims the attack set to **four directions** (`Left`, `Right`, `Overhead`, `Stab`) — the old `Underhand` swing was folded into `Stab` because it animated similarly to `Overhead`. Blocking still has all four cardinal poses (`Left`, `Right`, `Top`, `Bottom`); the bottom block stays as a defensive option even though no attack is dedicated to it.
+Mouse movement before clicking determines your direction — sweep left for a left swing, sweep right for a right swing, push up for an overhead, or hold steady (or push down) for a stab. FSM v2 (issues #131 + #139) collapses the v1 split `AttackDirection` (5 values) and `BlockDirection` (4 values) into a single unified `Direction` enum with **four values** (`Overhead`, `Left`, `Right`, `Stab`) shared by attacks and blocks. The old `Underhand` swing folded into `Stab`, and `Block(dir)` now defends the **same** incoming `dir` (holding `Direction.Left` blocks an incoming `Direction.Left` slash — v1's opposed-pair scheme is gone). Direction is sampled at click time from a 100 ms rolling mouse buffer rather than the single-frame delta — quick post-click flicks no longer steal the swing direction.
 
 ### Parry
 Tapping block just as an attack lands triggers a **parry**: the parry window is the first `weapon.parryWindow` ticks of `Blocking` (matching-direction only). A successful parry locks the parrier into a brief `Parry` pose for `weapon.parryRecovery` ticks, then drops back to `Blocking` if you keep holding RMB (or `Idle` if you release). The attacker is staggered into `HitStun` for `weapon.parryStunTicks` (40–75 ticks depending on weapon). FSM v2 (#135) cut the v1 `Riposte` state — there's no dedicated post-parry counter-swing; the agility advantage is the uncapped `Parry` turncap (free aim while the attacker is stunned).
@@ -231,7 +231,19 @@ Spawn points live in `src/world/SpawnPoints.ts` as a `Map<id, SpawnPoint>`. Each
 3. Otherwise filter to `distToNearestEnemy ≥ minEnemyDistance` (default `8.0`); uniform random over the safe set.
 4. If no candidate is safe, return the candidate that's furthest from its nearest enemy (max-min fallback, so a packed arena still respawns the player).
 
-Both initial spawn (`createPlayer`) and post-death respawn (`processRespawns`) consult this registry — the only difference is initial spawn passes an empty enemies list. Until the real arena layout (#91) lands, `seedPlaceholderSpawnPoints()` registers four corner points at `(±10, SPAWN_HEIGHT, ±10)` with yaws facing the origin. When #91 ships, those placeholders are replaced with arena-defined spawn points and no other code changes.
+Both initial spawn (`createPlayer`) and post-death respawn (`processRespawns`) consult this registry — the only difference is initial spawn passes an empty enemies list. The arena (`src/arena/createArena.ts`) is the sole producer of registry entries: it `clearSpawnPoints()` first, then registers the six arena-defined points (S1..S6 from the design doc). The legacy `seedPlaceholderSpawnPoints()` helper is no longer wired in production — it's kept around for unit tests that need a registry without spinning up an arena.
+
+## Test Arena (Arena v1)
+
+The world is a single 30×30 m arena built code-first from `src/arena/createArena.ts` — no glTF, no JSON map files. Layout (top-down, +X = east, −Z = north):
+
+- **Ground plane** — 30 × 0.2 × 30 olive-green floor; top surface at `y = 0.1` (matches `GROUND_TOP_Y`).
+- **Perimeter walls** — four 2 m-tall warm-grey walls forming a closed playspace at `x = ±15.25` and `z = ±15.25`.
+- **Cover pillars** — two 2 × 3 × 2 m light-grey pillars at `(±5, 0)` that break sightlines through the central killing floor.
+- **Shopkeep stall** — a 3 × 1 × 0.5 m wood-brown counter at `(-12, 0, 12)` plus a 0.5 × 3 × 4 m back wall at `(-13.25, 0, 12)`. The Shopkeep NPC stands at `(-12, 0.1, 13)`, behind the counter, facing north into the arena.
+- **6 spawn points (S1..S6)** — two on the E-W axis (`S1 = (-13, 0)`, `S4 = (13, 0)`) and four interior points mirror-symmetric across `z = 0` (`S2/S3` north, `S5/S6` south). All spawn yaws face the arena center.
+
+Every visible prop has a matching Rapier static (`RigidBodyType.Fixed`) cuboid collider with identical extents — if you can see it, you collide with it. The arena's `ArenaSpec` (returned by `createArena()` and stored on `world.arena`) exposes `spawnPoints`, `bounds`, `shopkeepStall.{counter, npcAnchor, facing}`, and `weaponPickupSafeVolume` for systems (spawn, weapon-pickup, shopkeep AI) to query. The full design — including dimensions tables and spawn-point yaw values — lives in [`docs/arena-v1.md`](docs/arena-v1.md).
 
 ## Testing
 
@@ -285,7 +297,7 @@ src/
 │       └── spawnAtGround.ts     # Raycast-down feet-Y resolver (used by all entity factories)
 ├── arena/
 │   ├── types.ts                 # ArenaSpec, SpawnPoint, ShopkeepStallSpec, Volume3D
-│   └── createArena.ts           # Code-authored arena: lights (#117), geometry/spawns (#112)
+│   └── createArena.ts           # Code-authored Arena v1: lights, 9 static props, 6 spawn points (#112)
 ├── world/
 │   └── SpawnPoints.ts           # Spawn-point registry + selectSpawnPoint() (placeholder seeds until #91)
 ├── combat/

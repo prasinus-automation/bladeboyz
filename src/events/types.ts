@@ -12,7 +12,7 @@
  * `BodyRegion` enum).
  */
 
-import type { AttackDirection } from '../combat/directions';
+import type { Direction } from '../combat/directions';
 import type { BodyRegion } from '../ecs/components';
 
 /**
@@ -42,8 +42,8 @@ export interface DamageDealtPayload {
   bodyRegion: BodyRegion;
   /** Numeric weapon id (index into `weaponIdToName`) */
   weaponId: number;
-  /** AttackDirection enum value */
-  attackDirection: AttackDirection;
+  /** `Direction` enum value (FSM v2 #139) */
+  attackDirection: Direction;
   /** True if this hit reduced victim HP to 0 */
   isLethal: boolean;
   /** Fixed-tick at which the damage was applied */

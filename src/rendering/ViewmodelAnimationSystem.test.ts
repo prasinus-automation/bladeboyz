@@ -7,7 +7,7 @@ import {
 } from './ViewmodelAnimationSystem';
 import { CombatStateComp } from '../ecs/components';
 import { CombatState } from '../combat/states';
-import { AttackDirection, BlockDirection } from '../combat/directions';
+import { Direction } from '../combat/directions';
 import { addEntity, createWorld } from 'bitecs';
 
 // Minimal weapon factory for testing
@@ -74,7 +74,7 @@ describe('ViewmodelAnimationSystem', () => {
 
       // Change to windup
       CombatStateComp.state[eid] = CombatState.Windup;
-      CombatStateComp.direction[eid] = AttackDirection.Left;
+      CombatStateComp.direction[eid] = Direction.Left;
       CombatStateComp.phaseTotal[eid] = 20;
       CombatStateComp.phaseElapsed[eid] = 10;
 
@@ -89,7 +89,7 @@ describe('ViewmodelAnimationSystem', () => {
 
     it('applies block poses', () => {
       CombatStateComp.state[eid] = CombatState.Blocking;
-      CombatStateComp.direction[eid] = BlockDirection.Top;
+      CombatStateComp.direction[eid] = Direction.Overhead;
 
       for (let i = 0; i < 10; i++) {
         viewmodelAnimationSystem(viewmodel, eid, 0.016, WEAPON_ID_TO_NAME);
@@ -111,7 +111,7 @@ describe('ViewmodelAnimationSystem', () => {
 
       // Transition to windup
       CombatStateComp.state[eid] = CombatState.Windup;
-      CombatStateComp.direction[eid] = AttackDirection.Overhead;
+      CombatStateComp.direction[eid] = Direction.Overhead;
       CombatStateComp.phaseTotal[eid] = 30;
       CombatStateComp.phaseElapsed[eid] = 1;
 
@@ -132,7 +132,7 @@ describe('ViewmodelAnimationSystem', () => {
 
     it('detects direction change as state transition', () => {
       CombatStateComp.state[eid] = CombatState.Blocking;
-      CombatStateComp.direction[eid] = BlockDirection.Left;
+      CombatStateComp.direction[eid] = Direction.Left;
 
       for (let i = 0; i < 20; i++) {
         viewmodelAnimationSystem(viewmodel, eid, 0.016, WEAPON_ID_TO_NAME);
@@ -140,7 +140,7 @@ describe('ViewmodelAnimationSystem', () => {
       const leftBlockQuat = viewmodel.bones['upper_arm_R'].quaternion.clone();
 
       // Change direction (same state)
-      CombatStateComp.direction[eid] = BlockDirection.Right;
+      CombatStateComp.direction[eid] = Direction.Right;
 
       for (let i = 0; i < 20; i++) {
         viewmodelAnimationSystem(viewmodel, eid, 0.016, WEAPON_ID_TO_NAME);
@@ -207,7 +207,7 @@ describe('ViewmodelAnimationSystem', () => {
 
     it('does not apply sway during combat states', () => {
       CombatStateComp.state[eid] = CombatState.Windup;
-      CombatStateComp.direction[eid] = AttackDirection.Left;
+      CombatStateComp.direction[eid] = Direction.Left;
       CombatStateComp.phaseTotal[eid] = 60;
       CombatStateComp.phaseElapsed[eid] = 30;
 
@@ -262,7 +262,7 @@ describe('ViewmodelAnimationSystem', () => {
     it('resets module state so next call treats state as new', () => {
       // Run several frames
       CombatStateComp.state[eid] = CombatState.Blocking;
-      CombatStateComp.direction[eid] = BlockDirection.Top;
+      CombatStateComp.direction[eid] = Direction.Overhead;
       for (let i = 0; i < 10; i++) {
         viewmodelAnimationSystem(viewmodel, eid, 0.016, WEAPON_ID_TO_NAME);
       }
@@ -284,16 +284,16 @@ describe('ViewmodelAnimationSystem', () => {
     // Feint, Clash, Stunned, ParryWindow are gone; Block was renamed to Blocking.
     const statesToTest: Array<[string, CombatState, number]> = [
       ['Idle', CombatState.Idle, 0],
-      ['Windup Left', CombatState.Windup, AttackDirection.Left],
-      ['Windup Right', CombatState.Windup, AttackDirection.Right],
-      ['Windup Overhead', CombatState.Windup, AttackDirection.Overhead],
-      ['Windup Stab', CombatState.Windup, AttackDirection.Stab],
-      ['Release Left', CombatState.Release, AttackDirection.Left],
-      ['Recovery', CombatState.Recovery, AttackDirection.Left],
-      ['Blocking Left', CombatState.Blocking, BlockDirection.Left],
-      ['Blocking Right', CombatState.Blocking, BlockDirection.Right],
-      ['Blocking Top', CombatState.Blocking, BlockDirection.Top],
-      ['Blocking Bottom', CombatState.Blocking, BlockDirection.Bottom],
+      ['Windup Left', CombatState.Windup, Direction.Left],
+      ['Windup Right', CombatState.Windup, Direction.Right],
+      ['Windup Overhead', CombatState.Windup, Direction.Overhead],
+      ['Windup Stab', CombatState.Windup, Direction.Stab],
+      ['Release Left', CombatState.Release, Direction.Left],
+      ['Recovery', CombatState.Recovery, Direction.Left],
+      ['Blocking Left', CombatState.Blocking, Direction.Left],
+      ['Blocking Right', CombatState.Blocking, Direction.Right],
+      ['Blocking Top', CombatState.Blocking, Direction.Overhead],
+      ['Blocking Bottom', CombatState.Blocking, Direction.Stab],
       ['Parry', CombatState.Parry, 0],
       ['HitStun', CombatState.HitStun, 0],
     ];

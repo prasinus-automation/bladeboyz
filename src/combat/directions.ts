@@ -1,65 +1,59 @@
 /**
  * Directional attack and block detection from mouse movement.
  *
- * Direction is determined by sampling a buffer of recent mouse deltas
- * (~100ms at 60Hz ≈ 6 frames) and mapping the dominant axis to a direction.
+ * FSM v2 (#88, #139): collapses v1's split `AttackDirection` (5 values:
+ * Left/Right/Overhead/Stab/Underhand) and `BlockDirection` (4 values:
+ * Left/Right/Top/Bottom) into a single unified `Direction` enum (4 values).
+ *
+ * A `Block(dir)` defends an attack with the **same** `dir` — holding
+ * `Direction.Left` blocks an incoming `Direction.Left` slash. This is
+ * a behavioural change from v1, which used opposed pairs (Left attack
+ * countered by Right block); see `DamageSystem.doesBlockCounter`.
  */
 
-// ── Enums ─────────────────────────────────────────────────
+import type { InputManager } from '../input/InputManager';
+
+// ── Enum ─────────────────────────────────────────────────
 
 /**
- * Attack direction enum.
- *
- * FSM v2 (#88) trims to 4 directions — `Underhand` was removed because it
- * animated similarly to `Overhead` and added detection noise. `Stab` was
- * renumbered from 4 → 3 so the values stay contiguous.
+ * Unified direction for both attacks and blocks (FSM v2, #139).
  *
  * Wire format note: when the network protocol (#92, see
- * `docs/networking/02-replication-and-protocol.md`) encodes attack direction,
+ * `docs/networking/02-replication-and-protocol.md`) encodes direction,
  * it uses these numeric values directly. Re-adding `Underhand` post-MVP
- * MUST give it a new numeric slot (e.g. `Underhand = 4`) — never reuse the
- * old 3, since 3 now means `Stab` on the wire.
+ * MUST give it a new numeric slot (e.g. `Underhand = 4`) — never reuse
+ * 3 (now `Stab`) and never reorder the existing four.
  */
-export const enum AttackDirection {
-  Left = 0,
-  Right = 1,
-  Overhead = 2,
+export const enum Direction {
+  Overhead = 0,
+  /** Slash from attacker's right → left across the screen. */
+  Left = 1,
+  /** Slash from attacker's left → right across the screen. */
+  Right = 2,
   Stab = 3,
-}
-
-export const enum BlockDirection {
-  Left = 0,
-  Right = 1,
-  Top = 2,
-  Bottom = 3,
-}
-
-// ── Types ─────────────────────────────────────────────────
-
-/** A single mouse movement sample with a timestamp (ms) */
-export interface MouseDelta {
-  dx: number;
-  dy: number;
-  /** Timestamp from performance.now() when this delta was captured */
-  time: number;
 }
 
 // ── Configuration ─────────────────────────────────────────
 
 /** Thresholds for direction detection — tweak these to adjust sensitivity */
 export interface DirectionConfig {
-  /** How far back in time (ms) to sample the mouse buffer (default: 100) */
+  /**
+   * How far back in time (ms) to sample the mouse buffer (default: 100).
+   * Read by `detectDirection` when calling `inputManager.getAverageDelta`.
+   */
   bufferWindowMs: number;
   /**
-   * Minimum total movement magnitude to register a directional swing.
-   * Below this threshold, the input is treated as a Stab (attack) or
-   * defaults to Top (block). Measured in accumulated pixels.
+   * Minimum movement magnitude to register a directional swing.
+   * Below this threshold, the input is treated as a Stab. Measured against
+   * the *averaged* (per-sample) mouse delta returned by
+   * `InputManager.getAverageDelta` — units are pixels-per-sample, NOT
+   * total accumulated pixels (the v1 sum-based threshold).
    */
   stabThreshold: number;
   /**
    * Ratio of dominant axis to secondary axis required to avoid ambiguity.
    * E.g. 1.2 means the dominant axis must be at least 1.2× the other.
-   * If both axes are close, attack falls back to Stab.
+   * If both axes are close, falls back to Stab.
    */
   axisRatio: number;
 }
@@ -71,119 +65,64 @@ export const DEFAULT_DIRECTION_CONFIG: DirectionConfig = {
   axisRatio: 1.2,
 };
 
-// ── Detection functions ───────────────────────────────────
+// ── Detection ────────────────────────────────────────────
 
 /**
- * Sum the mouse deltas that fall within the configured time window.
- * Returns accumulated (dx, dy) totals.
+ * Pure helper — classify a `(dx, dy)` pair into a `Direction`. Used by
+ * `detectDirection` and exposed as its own export so the algorithm can
+ * be unit-tested without instantiating an `InputManager`.
+ *
+ * Algorithm (per FSM v2 §4):
+ * 1. magnitude < stabThreshold       → `Stab`
+ * 2. |dx| > axisRatio·|dy|, dx<0     → `Left`
+ *    |dx| > axisRatio·|dy|, dx>0     → `Right`
+ * 3. |dy| > axisRatio·|dx|, dy<0     → `Overhead`
+ *    |dy| > axisRatio·|dx|, dy>0     → `Stab`   (folds the v1 Underhand)
+ * 4. ambiguous                       → `Stab`
  */
-function sumRecentDeltas(
-  buffer: readonly MouseDelta[],
-  now: number,
-  windowMs: number,
-): { totalDx: number; totalDy: number } {
-  let totalDx = 0;
-  let totalDy = 0;
-  const cutoff = now - windowMs;
+export function detectDirectionFromDeltas(
+  dx: number,
+  dy: number,
+  config: DirectionConfig = DEFAULT_DIRECTION_CONFIG,
+): Direction {
+  const absX = Math.abs(dx);
+  const absY = Math.abs(dy);
+  const magnitude = Math.sqrt(dx * dx + dy * dy);
 
-  // Buffer is assumed chronological — iterate backwards for efficiency
-  for (let i = buffer.length - 1; i >= 0; i--) {
-    const entry = buffer[i];
-    if (entry.time < cutoff) break;
-    totalDx += entry.dx;
-    totalDy += entry.dy;
+  // Very little mouse movement → stab.
+  if (magnitude < config.stabThreshold) {
+    return Direction.Stab;
   }
 
-  return { totalDx, totalDy };
+  // Horizontal dominant.
+  if (absX > absY * config.axisRatio) {
+    return dx < 0 ? Direction.Left : Direction.Right;
+  }
+
+  // Vertical dominant: up = Overhead, down would have been Underhand →
+  // collapse into Stab in 4-direction mode.
+  if (absY > absX * config.axisRatio) {
+    return dy < 0 ? Direction.Overhead : Direction.Stab;
+  }
+
+  // Ambiguous — neither axis clearly dominates → stab.
+  return Direction.Stab;
 }
 
 /**
- * Detect the intended attack direction from a buffer of recent mouse deltas.
+ * Detect the intended swing direction from the InputManager's rolling mouse
+ * buffer. Used for both Attack and Block inputs — the spec collapsed the
+ * two detection paths in v2 because the algorithm was identical anyway.
  *
- * - Dominant horizontal left  → Left
- * - Dominant horizontal right → Right
- * - Dominant vertical up      → Overhead
- * - Dominant vertical down    → Stab (FSM v2: folds the old Underhand swing
- *                                     into Stab — same forward-thrust intent)
- * - Below threshold / ambiguous → Stab
- *
- * Stab can also be forced externally (scroll wheel / middle mouse) —
- * the caller should check for that before calling this function.
- *
- * @param buffer  Chronologically ordered mouse delta samples
- * @param now     Current time from performance.now()
- * @param config  Detection sensitivity settings (uses defaults if omitted)
+ * @param inputManager  Provides `getAverageDelta(windowMs)` over recent samples.
+ * @param config        Sensitivity settings (uses defaults if omitted).
  */
-export function detectAttackDirection(
-  buffer: readonly MouseDelta[],
-  now: number,
+export function detectDirection(
+  inputManager: InputManager,
   config: DirectionConfig = DEFAULT_DIRECTION_CONFIG,
-): AttackDirection {
-  if (buffer.length === 0) return AttackDirection.Stab;
-
-  const { totalDx, totalDy } = sumRecentDeltas(buffer, now, config.bufferWindowMs);
-  const absX = Math.abs(totalDx);
-  const absY = Math.abs(totalDy);
-  const magnitude = Math.sqrt(totalDx * totalDx + totalDy * totalDy);
-
-  // Very little mouse movement → stab
-  if (magnitude < config.stabThreshold) {
-    return AttackDirection.Stab;
-  }
-
-  // Check if one axis clearly dominates the other
-  if (absX > absY * config.axisRatio) {
-    // Horizontal dominant
-    return totalDx < 0 ? AttackDirection.Left : AttackDirection.Right;
-  } else if (absY > absX * config.axisRatio) {
-    // Vertical dominant: up = Overhead, down folds into Stab in FSM v2
-    return totalDy < 0 ? AttackDirection.Overhead : AttackDirection.Stab;
-  }
-
-  // Ambiguous — no clear dominant axis → stab
-  return AttackDirection.Stab;
-}
-
-/**
- * Detect the intended block direction from a buffer of recent mouse deltas.
- *
- * - Dominant horizontal left  → Left
- * - Dominant horizontal right → Right
- * - Dominant vertical up      → Top
- * - Dominant vertical down    → Bottom
- *
- * Falls back to Top if movement is below threshold (safe default).
- *
- * @param buffer  Chronologically ordered mouse delta samples
- * @param now     Current time from performance.now()
- * @param config  Detection sensitivity settings (uses defaults if omitted)
- */
-export function detectBlockDirection(
-  buffer: readonly MouseDelta[],
-  now: number,
-  config: DirectionConfig = DEFAULT_DIRECTION_CONFIG,
-): BlockDirection {
-  if (buffer.length === 0) return BlockDirection.Top;
-
-  const { totalDx, totalDy } = sumRecentDeltas(buffer, now, config.bufferWindowMs);
-  const absX = Math.abs(totalDx);
-  const absY = Math.abs(totalDy);
-  const magnitude = Math.sqrt(totalDx * totalDx + totalDy * totalDy);
-
-  // Very little movement → default top block
-  if (magnitude < config.stabThreshold) {
-    return BlockDirection.Top;
-  }
-
-  // Determine dominant axis
-  if (absX > absY * config.axisRatio) {
-    return totalDx < 0 ? BlockDirection.Left : BlockDirection.Right;
-  } else if (absY > absX * config.axisRatio) {
-    return totalDy < 0 ? BlockDirection.Top : BlockDirection.Bottom;
-  }
-
-  // Ambiguous → default top
-  return BlockDirection.Top;
+): Direction {
+  const { dx, dy } = inputManager.getAverageDelta(config.bufferWindowMs);
+  return detectDirectionFromDeltas(dx, dy, config);
 }
 
 /**
@@ -191,6 +130,6 @@ export function detectBlockDirection(
  * stab input (scroll wheel, middle mouse button) instead of relying
  * on mouse movement detection.
  */
-export function forceStab(): AttackDirection {
-  return AttackDirection.Stab;
+export function forceStab(): Direction {
+  return Direction.Stab;
 }

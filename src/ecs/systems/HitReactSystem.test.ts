@@ -25,7 +25,7 @@ import {
 import { hitReactSystemTick } from './HitReactSystem';
 import { DamageSystem } from './DamageSystem';
 import { weaponConfigMap } from './TracerSystem';
-import { AttackDirection } from '../../combat/directions';
+import { Direction } from '../../combat/directions';
 import { CombatState } from '../../combat/states';
 import {
   advanceFixedTick,
@@ -37,37 +37,37 @@ import type { WeaponConfig } from '../../weapons/WeaponConfig';
 
 function makeTestWeapon(): WeaponConfig {
   const ticks = {
-    [AttackDirection.Left]: 6,
-    [AttackDirection.Right]: 6,
-    [AttackDirection.Overhead]: 8,
-    [AttackDirection.Stab]: 5,
+    [Direction.Left]: 6,
+    [Direction.Right]: 6,
+    [Direction.Overhead]: 8,
+    [Direction.Stab]: 5,
   };
   return {
     name: 'TestSword',
     damage: {
-      [AttackDirection.Left]: { head: 50, torso: 35, limb: 25 },
-      [AttackDirection.Right]: { head: 50, torso: 35, limb: 25 },
-      [AttackDirection.Overhead]: { head: 60, torso: 40, limb: 25 },
-      [AttackDirection.Stab]: { head: 45, torso: 40, limb: 20 },
+      [Direction.Left]: { head: 50, torso: 35, limb: 25 },
+      [Direction.Right]: { head: 50, torso: 35, limb: 25 },
+      [Direction.Overhead]: { head: 60, torso: 40, limb: 25 },
+      [Direction.Stab]: { head: 45, torso: 40, limb: 20 },
     },
     windup: { ...ticks },
     release: {
-      [AttackDirection.Left]: 4,
-      [AttackDirection.Right]: 4,
-      [AttackDirection.Overhead]: 5,
-      [AttackDirection.Stab]: 3,
+      [Direction.Left]: 4,
+      [Direction.Right]: 4,
+      [Direction.Overhead]: 5,
+      [Direction.Stab]: 3,
     },
     recovery: {
-      [AttackDirection.Left]: 12,
-      [AttackDirection.Right]: 12,
-      [AttackDirection.Overhead]: 15,
-      [AttackDirection.Stab]: 10,
+      [Direction.Left]: 12,
+      [Direction.Right]: 12,
+      [Direction.Overhead]: 15,
+      [Direction.Stab]: 10,
     },
     comboRecovery: {
-      [AttackDirection.Left]: 8,
-      [AttackDirection.Right]: 8,
-      [AttackDirection.Overhead]: 10,
-      [AttackDirection.Stab]: 6,
+      [Direction.Left]: 8,
+      [Direction.Right]: 8,
+      [Direction.Overhead]: 10,
+      [Direction.Stab]: 6,
     },
     parryWindow: 6,
     parryRecovery: 10,
@@ -212,7 +212,7 @@ describe('DamageSystem populates HitReactComp on unblocked hit', () => {
     CombatStateComponent.state[target] = CombatState.Idle;
   });
 
-  function queueDamageEvent(damage: number, attackDir: AttackDirection): number {
+  function queueDamageEvent(damage: number, attackDir: Direction): number {
     const eventEid = addEntity(ecs);
     addComponent(ecs, DamageEvent, eventEid);
     DamageEvent.targetEid[eventEid] = target;
@@ -232,7 +232,7 @@ describe('DamageSystem populates HitReactComp on unblocked hit', () => {
     advanceFixedTick();
     advanceFixedTick(); // tick = 3
 
-    queueDamageEvent(20, AttackDirection.Stab);
+    queueDamageEvent(20, Direction.Stab);
     DamageSystem(world, 1 / 60);
 
     expect(HitReactComp.active[target]).toBe(1);
@@ -246,7 +246,7 @@ describe('DamageSystem populates HitReactComp on unblocked hit', () => {
     Position.z[target] = 2; // 2m straight ahead in world space
     Rotation.y[target] = 0; // target faces -Z (forward)
 
-    queueDamageEvent(20, AttackDirection.Stab);
+    queueDamageEvent(20, Direction.Stab);
     DamageSystem(world, 1 / 60);
 
     // World direction (attacker→target) = (0, 0, +1).
@@ -270,7 +270,7 @@ describe('DamageSystem populates HitReactComp on unblocked hit', () => {
     // Yaw target by +90° around Y → its local +X axis points to world +Z.
     Rotation.y[target] = Math.PI / 2;
 
-    queueDamageEvent(20, AttackDirection.Stab);
+    queueDamageEvent(20, Direction.Stab);
     DamageSystem(world, 1 / 60);
 
     // World dir (0→target) = (+1, 0, 0). Rotated by -yaw=-π/2:
@@ -286,7 +286,7 @@ describe('DamageSystem populates HitReactComp on unblocked hit', () => {
     Position.y[target] = 0;
     Position.z[target] = 0;
 
-    queueDamageEvent(20, AttackDirection.Stab);
+    queueDamageEvent(20, Direction.Stab);
     DamageSystem(world, 1 / 60);
 
     expect(HitReactComp.dirX[target]).toBe(0);
@@ -299,14 +299,14 @@ describe('DamageSystem populates HitReactComp on unblocked hit', () => {
   it('normalizes magnitude as damage / max-direction-damage, clamped to 1', () => {
     Position.z[target] = 2;
     // Stab direction has max=45 (head). 20 damage / 45 ≈ 0.4444.
-    queueDamageEvent(20, AttackDirection.Stab);
+    queueDamageEvent(20, Direction.Stab);
     DamageSystem(world, 1 / 60);
     expect(HitReactComp.magnitude[target]).toBeCloseTo(20 / 45, 4);
   });
 
   it('clamps magnitude to 1 when damage exceeds max', () => {
     Position.z[target] = 2;
-    queueDamageEvent(9999, AttackDirection.Stab);
+    queueDamageEvent(9999, Direction.Stab);
     DamageSystem(world, 1 / 60);
     expect(HitReactComp.magnitude[target]).toBe(1);
   });
@@ -320,9 +320,11 @@ describe('DamageSystem populates HitReactComp on unblocked hit', () => {
 
     // Target is Blocking facing the correct direction for Stab.
     // FSM v2 (#135): single Blocking state replaces Block + ParryWindow.
+    // FSM v2 (#139): `doesBlockCounter(a,b) = a === b` — Stab is blocked
+    // only by Block(Stab), not "any direction" as in v1.
     CombatStateComponent.state[target] = CombatState.Blocking;
-    CombatStateComponent.blockDirection[target] = 2; // BlockDirection.Top — Stab is blocked by any
-    queueDamageEvent(20, AttackDirection.Stab);
+    CombatStateComponent.blockDirection[target] = Direction.Stab;
+    queueDamageEvent(20, Direction.Stab);
     DamageSystem(world, 1 / 60);
 
     // Sentinel still untouched → block path didn't populate HitReactComp.
@@ -349,7 +351,7 @@ describe('DamageSystem populates HitReactComp on unblocked hit', () => {
     CombatStateComponent.state[target] = CombatState.Idle;
 
     // Should not throw.
-    queueDamageEvent(20, AttackDirection.Stab);
+    queueDamageEvent(20, Direction.Stab);
     expect(() => DamageSystem(world, 1 / 60)).not.toThrow();
     // Target health was still applied.
     expect(Health.current[target]).toBe(80);

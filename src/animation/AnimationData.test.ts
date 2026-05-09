@@ -16,17 +16,17 @@ import {
   type Pose,
 } from './AnimationData';
 import { CombatState } from '../combat/states';
-import { AttackDirection, BlockDirection } from '../combat/directions';
+import { Direction } from '../combat/directions';
 
 describe('AnimationData', () => {
   describe('getAttackAnimation', () => {
     it('returns animations for all 4 attack directions', () => {
       // FSM v2 (#88, #131): 4 directions — Underhand removed.
       const directions = [
-        AttackDirection.Left,
-        AttackDirection.Right,
-        AttackDirection.Overhead,
-        AttackDirection.Stab,
+        Direction.Left,
+        Direction.Right,
+        Direction.Overhead,
+        Direction.Stab,
       ];
 
       for (const dir of directions) {
@@ -39,7 +39,7 @@ describe('AnimationData', () => {
     });
 
     it('each phase has bone rotations defined', () => {
-      const anim = getAttackAnimation(AttackDirection.Left);
+      const anim = getAttackAnimation(Direction.Left);
 
       // Windup should have shoulder and arm rotations
       expect(Object.keys(anim.windup).length).toBeGreaterThan(0);
@@ -50,10 +50,10 @@ describe('AnimationData', () => {
     it('recovery poses return to idle', () => {
       // All 4 directions should recover to idle (FSM v2 — Underhand removed).
       const directions = [
-        AttackDirection.Left,
-        AttackDirection.Right,
-        AttackDirection.Overhead,
-        AttackDirection.Stab,
+        Direction.Left,
+        Direction.Right,
+        Direction.Overhead,
+        Direction.Stab,
       ];
 
       for (const dir of directions) {
@@ -63,8 +63,8 @@ describe('AnimationData', () => {
     });
 
     it('left and right swings have mirrored chest rotations', () => {
-      const left = getAttackAnimation(AttackDirection.Left);
-      const right = getAttackAnimation(AttackDirection.Right);
+      const left = getAttackAnimation(Direction.Left);
+      const right = getAttackAnimation(Direction.Right);
 
       // In windup, left swing pulls chest right, right swing pulls chest left
       const leftWindupChest = left.windup['chest'];
@@ -82,10 +82,10 @@ describe('AnimationData', () => {
   describe('getBlockPose', () => {
     it('returns poses for all 4 block directions', () => {
       const directions = [
-        BlockDirection.Left,
-        BlockDirection.Right,
-        BlockDirection.Top,
-        BlockDirection.Bottom,
+        Direction.Left,
+        Direction.Right,
+        Direction.Overhead,
+        Direction.Stab,
       ];
 
       for (const dir of directions) {
@@ -96,7 +96,7 @@ describe('AnimationData', () => {
     });
 
     it('top block has arms raised high', () => {
-      const topBlock = getBlockPose(BlockDirection.Top);
+      const topBlock = getBlockPose(Direction.Overhead);
       const shoulderR = topBlock['shoulder_R'];
       expect(shoulderR).toBeDefined();
       // shoulder_R x should be very negative (arms raised)
@@ -113,28 +113,28 @@ describe('AnimationData', () => {
     });
 
     it('returns windup pose for Windup state', () => {
-      const pose = getCombatPose(CombatState.Windup, AttackDirection.Left);
-      const anim = getAttackAnimation(AttackDirection.Left);
+      const pose = getCombatPose(CombatState.Windup, Direction.Left);
+      const anim = getAttackAnimation(Direction.Left);
       expect(pose).toBe(anim.windup);
     });
 
     it('returns release pose for Release state', () => {
-      const pose = getCombatPose(CombatState.Release, AttackDirection.Overhead);
-      const anim = getAttackAnimation(AttackDirection.Overhead);
+      const pose = getCombatPose(CombatState.Release, Direction.Overhead);
+      const anim = getAttackAnimation(Direction.Overhead);
       expect(pose).toBe(anim.release);
     });
 
     it('returns recovery pose for Recovery state', () => {
-      const pose = getCombatPose(CombatState.Recovery, AttackDirection.Stab);
-      const anim = getAttackAnimation(AttackDirection.Stab);
+      const pose = getCombatPose(CombatState.Recovery, Direction.Stab);
+      const anim = getAttackAnimation(Direction.Stab);
       expect(pose).toBe(anim.recovery);
     });
 
     it('returns block pose for Blocking state', () => {
       // FSM v2 (#135): `Block` was renamed to `Blocking` and `ParryWindow`
       // is gone — block-pose lookup now keys off the single `Blocking` state.
-      const pose = getCombatPose(CombatState.Blocking, BlockDirection.Left);
-      expect(pose).toBe(getBlockPose(BlockDirection.Left));
+      const pose = getCombatPose(CombatState.Blocking, Direction.Left);
+      expect(pose).toBe(getBlockPose(Direction.Left));
     });
 
     it('returns parry pose for Parry state', () => {
@@ -246,16 +246,16 @@ describe('AnimationData', () => {
       validatePose(STUNNED_POSE, 'stunned');
       validatePose(HITSTUN_POSE, 'hitstun');
 
-      // Validate all attack animations (FSM v2: 4 directions, 0..3)
+      // Validate all attack animations (FSM v2 #139: 4 directions, 0..3)
       for (const dir of [0, 1, 2, 3]) {
-        const anim = getAttackAnimation(dir as AttackDirection);
+        const anim = getAttackAnimation(dir as Direction);
         validatePose(anim.windup, `attack ${dir} windup`);
         validatePose(anim.release, `attack ${dir} release`);
       }
 
-      // Validate all block poses
+      // Validate all block poses (FSM v2 #139: same 4 directions)
       for (const dir of [0, 1, 2, 3]) {
-        const pose = getBlockPose(dir as BlockDirection);
+        const pose = getBlockPose(dir as Direction);
         validatePose(pose, `block ${dir}`);
       }
     });

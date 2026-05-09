@@ -1,6 +1,7 @@
 import type * as THREE from 'three';
 import type RAPIER from '@dimforge/rapier3d-compat';
 import type { IWorld } from 'bitecs';
+import type { ArenaSpec } from '../arena/types';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Spatial conventions (issue #86 / #104)
@@ -32,6 +33,13 @@ export interface GameWorld {
   physicsWorld: RAPIER.World;
   camera: THREE.PerspectiveCamera;
   playerEntity: number;
+  /**
+   * Runtime arena spec (geometry bounds, spawn points, shopkeep stall, etc.).
+   * Optional because tests may construct a `GameWorld` without an arena, but
+   * production always populates this immediately after `createArena()` runs
+   * in `main.ts`. Issue #112 / #91.
+   */
+  arena?: ArenaSpec;
 }
 
 /** Tick-rate constants */
