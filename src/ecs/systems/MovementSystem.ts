@@ -1,5 +1,5 @@
 import RAPIER from '@dimforge/rapier3d-compat';
-import { defineQuery } from 'bitecs';
+import { defineQuery, hasComponent } from 'bitecs';
 import {
   Position,
   PreviousPosition,
@@ -10,6 +10,7 @@ import {
   PhysicsBody,
   MovementState,
   MovementIntent,
+  DeadTag,
 } from '../components';
 import { CameraController } from '../../rendering/CameraController';
 import type { GameWorld } from '../../core/types';
@@ -111,6 +112,13 @@ export function createMovementSystem(world: GameWorld, cameraController: CameraC
 
     for (let i = 0; i < entities.length; i++) {
       const eid = entities[i];
+
+      // Dead entities (player or bot) don't read intent and don't move.
+      // processDeaths zeroed Velocity; Position stays put. The kinematic
+      // body stays at its last live translation until processRespawns
+      // teleports it to a fresh spawn point.
+      if (hasComponent(world.ecs, DeadTag, eid)) continue;
+
       const body = bodyByEid.get(eid);
       const collider = colliderByEid.get(eid);
 

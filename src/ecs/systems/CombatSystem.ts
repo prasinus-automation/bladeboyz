@@ -9,8 +9,13 @@
  * 5. Drains stamina events and queues them with StaminaSystem
  */
 
-import { defineQuery, type IWorld } from 'bitecs';
-import { CombatStateComponent, CombatStateComp, Player } from '../components';
+import { defineQuery, hasComponent, type IWorld } from 'bitecs';
+import {
+  CombatStateComponent,
+  CombatStateComp,
+  Player,
+  DeadTag,
+} from '../components';
 import { CombatState } from '../../combat/states';
 import { CombatInput, fsmRegistry } from '../../combat/CombatFSM';
 import { detectAttackDirection, detectBlockDirection } from '../../combat/directions';
@@ -91,6 +96,11 @@ export function createCombatSystem(
 
     // Process player entities (input-driven)
     for (const eid of playerEntities) {
+      // Dead entities don't read input. processDeaths already reset their
+      // FSM to Idle; without this skip a held mouse button would re-arm
+      // an attack mid-respawn.
+      if (hasComponent(ecsWorld, DeadTag, eid)) continue;
+
       const fsm = fsmRegistry.get(eid);
       if (!fsm) continue;
 
@@ -121,6 +131,10 @@ export function createCombatSystem(
     // Tick all combat entities (including non-player AI/dummies)
     const allCombatEntities = combatQuery(ecsWorld);
     for (const eid of allCombatEntities) {
+      // Dead entities (player or bot) don't tick FSM, don't sync ECS mirrors.
+      // processDeaths already wrote them to Idle; respawn restores normal flow.
+      if (hasComponent(ecsWorld, DeadTag, eid)) continue;
+
       const fsm = fsmRegistry.get(eid);
       if (!fsm) continue;
 
@@ -168,6 +182,10 @@ export function createCombatSystem(
     // Update turncap for player entities (drag/accel mechanic)
     if (cameraController) {
       for (const eid of playerEntities) {
+        // Dead players: leave turncap at whatever the last live tick set
+        // it to. Camera still works during the respawn screen, but the
+        // input loop is otherwise frozen.
+        if (hasComponent(ecsWorld, DeadTag, eid)) continue;
         const fsm = fsmRegistry.get(eid);
         if (fsm) {
           cameraController.maxTurnRate = fsm.getCurrentTurncap();

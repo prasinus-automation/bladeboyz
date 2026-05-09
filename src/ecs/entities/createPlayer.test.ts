@@ -9,6 +9,8 @@ import {
   MovementState,
   MovementIntent,
   PhysicsBody,
+  Score,
+  CombatStateComponent,
   meshRegistry,
   hitboxColliderRegistry,
 } from '../components';
@@ -268,5 +270,39 @@ describe('createPlayer — feet-origin convention (issue #104)', () => {
     // castRay must not be called when an explicit Y is provided
     expect(mock.physicsWorld.castRay).not.toHaveBeenCalled();
     expect(Position.y[eid]).toBeCloseTo(7.5, 5);
+  });
+
+  /* ──────────────────────────────────────────────────────────
+   * Issue #130: Longsword default + Score component
+   * ────────────────────────────────────────────────────────── */
+
+  it('default starter weapon is Longsword (issue #130)', async () => {
+    const { world } = makeGameWorld();
+    const { createPlayer } = await import('./createPlayer');
+    const { eid } = createPlayer(world);
+
+    // Longsword is at index 0 in weaponIdToName
+    const longswordIdx = weaponIdToName.indexOf('Longsword');
+    expect(longswordIdx).toBe(0);
+    expect(CombatStateComponent.weaponId[eid]).toBe(longswordIdx);
+  });
+
+  it('respects explicit startingWeapon override', async () => {
+    const { world } = makeGameWorld();
+    const { createPlayer } = await import('./createPlayer');
+    const { eid } = createPlayer(world, undefined, { startingWeapon: 'Dagger' });
+
+    expect(CombatStateComponent.weaponId[eid]).toBe(weaponIdToName.indexOf('Dagger'));
+  });
+
+  it('attaches Score component initialized to all zeros', async () => {
+    const { world } = makeGameWorld();
+    const { createPlayer } = await import('./createPlayer');
+    const { eid } = createPlayer(world);
+
+    expect(hasComponent(world.ecs, Score, eid)).toBe(true);
+    expect(Score.kills[eid]).toBe(0);
+    expect(Score.deaths[eid]).toBe(0);
+    expect(Score.goldThisLife[eid]).toBe(0);
   });
 });

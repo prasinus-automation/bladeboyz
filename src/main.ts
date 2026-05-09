@@ -7,6 +7,8 @@ import { createInputSystem } from './ecs/systems/InputSystem';
 import { createCombatSystem } from './ecs/systems/CombatSystem';
 import { staminaSystemTick } from './ecs/systems/StaminaSystem';
 import { healthSystemTick } from './ecs/systems/HealthSystem';
+import { processDeaths } from './ecs/systems/processDeaths';
+import { EventBus } from './events/EventBus';
 import { createPlayer } from './ecs/entities/createPlayer';
 import { createArena } from './arena/createArena';
 import {
@@ -108,13 +110,14 @@ async function main(): Promise<void> {
   // Create arena
   createArena(world);
 
-  // Create player (Y resolved by spawnAtGround raycast)
+  // Create player (Y resolved by spawnAtGround raycast).
+  // Issue #130: default starter weapon is now Longsword (was Dagger).
   const { eid: playerEid, mesh: playerMesh } = createPlayer(world, { x: 0, z: 0 });
   world.playerEntity = playerEid;
   cameraController.setPlayerMesh(playerMesh);
 
-  // Register combat FSM for the player entity (uses auto-registered dagger config)
-  createFSM(playerEid, weaponConfigs['Dagger']);
+  // Register combat FSM for the player entity using the default starter weapon
+  createFSM(playerEid, weaponConfigs['Longsword']);
 
   // Register weapon model factories
   registerWeaponModelFactory('Longsword', createLongswordModel);
@@ -122,17 +125,26 @@ async function main(): Promise<void> {
   registerWeaponModelFactory('Dagger', createDaggerModel);
   registerWeaponModelFactory('Battleaxe', createBattleaxeModel);
 
-  // Initialize player inventory with the starter weapon only.
-  // Other weapons must be purchased from the shopkeep (issue #107). When the
-  // full gold-currency design (#95) lands and earning loops exist, this list
-  // will likely stay the same — gold/shop is the entry point, not initInventory.
-  // The 4th arg is the permanent `starterWeapon` (won't be dropped on death,
-  // per #94). Passed explicitly even though the default would resolve the same.
-  initInventory(playerEid, ['Dagger'], 'Dagger', 'Dagger');
+  // Initialize player inventory.
+  //
+  // Issue #130: starter weapon is now Longsword (matches the design doc's
+  // "default starter weapon" decision). The death pipeline emits a DeathEvent
+  // per kill, so picking up a respawn-default that the player doesn't own
+  // would surface a UX bug — list it here. The full purchase flow still
+  // uses Dagger as the cheapest option in the shop.
+  //
+  // Other weapons must be purchased from the shopkeep (#107). When the full
+  // gold-currency design (#95) lands and earning loops exist, this list will
+  // likely stay the same — gold/shop is the entry point, not initInventory.
+  //
+  // The 4th arg is the permanent `starterWeapon` (won't be dropped on death
+  // per #94). Passed explicitly even though the default would resolve the
+  // same — keeps this call self-documenting.
+  initInventory(playerEid, ['Longsword'], 'Longsword', 'Longsword');
 
   // ─── First-person viewmodel ───
   const viewmodel = new ViewmodelRenderer(world.scene, world.camera.aspect, {
-    initialWeapon: 'Dagger',
+    initialWeapon: 'Longsword',
     weaponFactories: {
       Longsword: createLongswordModel,
       Mace: createMaceModel,
@@ -308,12 +320,20 @@ async function main(): Promise<void> {
     // Stamina system (reads combat state, handles regen/costs)
     staminaSystemTick(world.ecs);
 
-    // Health system (processes damage, handles death/respawn).
-    // Capture `died` for #A2 (weapon-pickup drop-on-death) — the dropping
-    // system will read this list and spawn a `createWeaponPickup` for each
-    // dropped weapon. Foundation only here (#109): we just thread the data.
+    // Health system (processes damage, handles death/respawn timer).
+    // Issue #130: capture `died`/`respawned` arrays. healthSystemTick is
+    // pure detection — it adds DeadTag + RespawnPending and ticks the
+    // respawn countdown. processDeaths runs immediately after to handle
+    // the cleanup hook (events, score, FSM reset, weapon drop stub).
+    // The respawn cleanup hook (issue B / #131) will read `respawned`
+    // similarly when it lands.
     // TODO(#A2): weaponPickupSystem(world, currentTick, died, ...);
-    const { died: _died, respawned: _respawned } = healthSystemTick(world.ecs);
+    const { died, respawned: _respawned } = healthSystemTick(world.ecs);
+
+    // Death-cleanup hook. Emits DeathEvent, increments Score, resets FSM,
+    // zeros velocity, calls dropEquippedWeapon stub. Restricted to entities
+    // with the Player or Bot tag — dummies opt out.
+    processDeaths(died, world);
 
     // Step physics
     world.physicsWorld.step();
@@ -336,6 +356,12 @@ async function main(): Promise<void> {
 
     // Update nearest-interactable cache (for KeyE handler + WorldLabel prompt)
     interactionSystem(playerEid);
+
+    // Drain queued events (DamageDealt, DeathEvent, etc.) to subscribers.
+    // Must be the LAST thing in fixedUpdate so handlers see a consistent
+    // snapshot of all systems for this tick. Anything emitted from inside
+    // a handler (rare) will land on the next tick's flush.
+    EventBus.flush();
 
     // NOTE: mesh sync MOVED OUT of fixedUpdate — see loop.render below.
     // Syncing mesh positions in fixedUpdate snaps them at 60Hz; in render

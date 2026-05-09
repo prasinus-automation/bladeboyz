@@ -8,15 +8,59 @@ import {
   Position,
   Rotation,
   Stamina,
+  BodyRegion,
 } from '../components';
 import { CombatState } from '../../combat/states';
 import { AttackDirection, BlockDirection } from '../../combat/directions';
 import { weaponConfigMap } from './TracerSystem';
 import { getCurrentFixedTick } from '../../core/tickCounter';
 import type { WeaponConfig } from '../../weapons/WeaponConfig';
+import { EventBus } from '../../events/EventBus';
 
 /** HitReact stagger duration (~200ms at 60Hz) */
 const HITREACT_DURATION_TICKS = 12;
+
+/**
+ * Per-victim attribution record — issue #130. Maps `victimEid` → most-recent
+ * attacker info, tagged with the tick the damage was applied. `processDeaths`
+ * reads this map to credit a kill; entries older than the attribution window
+ * are treated as "no killer" (kill is environmental / suicide).
+ *
+ * Side-table because bitECS components can't hold the full quad of
+ * (attacker, weaponId, bodyRegion, tick) without four parallel typed arrays.
+ * Cleared by `clearDamageAttribution` during test reset.
+ */
+export interface DamageAttribution {
+  attackerEid: number;
+  weaponId: number;
+  bodyRegion: BodyRegion;
+  tick: number;
+}
+
+const attributionByVictim = new Map<number, DamageAttribution>();
+
+/** Window after the last hit during which a kill is still credited. 5 s @ 60 Hz. */
+export const ATTRIBUTION_WINDOW_TICKS = 300;
+
+/**
+ * Look up the killer for a given victim, if there's a recent enough
+ * `DamageAttribution`. Returns null when no record exists or the record is
+ * older than ATTRIBUTION_WINDOW_TICKS.
+ */
+export function getDamageAttribution(
+  victimEid: number,
+  currentTick: number,
+): DamageAttribution | null {
+  const rec = attributionByVictim.get(victimEid);
+  if (!rec) return null;
+  if (currentTick - rec.tick > ATTRIBUTION_WINDOW_TICKS) return null;
+  return rec;
+}
+
+/** Test helper — drop all attribution records. */
+export function clearDamageAttribution(): void {
+  attributionByVictim.clear();
+}
 
 // ─── Queries ─────────────────────────────────────────────────────────────────
 
@@ -76,6 +120,7 @@ export function DamageSystem(world: GameWorld, _dt: number): void {
     const attackerEid = DamageEvent.attackerEid[eventEid];
     const damage = DamageEvent.damage[eventEid];
     const attackDir = DamageEvent.attackDirection[eventEid] as AttackDirection;
+    const bodyRegion = DamageEvent.bodyRegion[eventEid] as BodyRegion;
 
     const targetState = CombatStateComponent.state[targetEid] as CombatState;
     const targetBlockDir = CombatStateComponent.blockDirection[targetEid] as BlockDirection;
@@ -96,7 +141,7 @@ export function DamageSystem(world: GameWorld, _dt: number): void {
     }
     // Unblocked hit — apply damage
     else {
-      handleHit(world, targetEid, attackerEid, damage, attackDir);
+      handleHit(world, targetEid, attackerEid, damage, attackDir, bodyRegion);
     }
 
     // Mark processed and remove event entity
@@ -140,7 +185,12 @@ function handleBlock(targetEid: number, attackerEid: number): void {
 }
 
 /**
- * Unblocked hit — apply damage, push target into HitStun, populate HitReactComp.
+ * Unblocked hit — apply damage, push target into HitStun, populate HitReactComp,
+ * record attribution, and emit a `DamageDealt` event on the EventBus.
+ *
+ * Attribution and event emission moved here in #130 so every successful hit
+ * (whether or not it kills) feeds the kill-credit pipeline. `processDeaths`
+ * reads the attribution map on the same tick the kill is detected.
  */
 function handleHit(
   world: GameWorld,
@@ -148,9 +198,17 @@ function handleHit(
   attackerEid: number,
   damage: number,
   attackDir: AttackDirection,
+  bodyRegion: BodyRegion,
 ): void {
+  const tick = getCurrentFixedTick();
+  const hpBefore = Health.current[targetEid];
+
   // Apply damage
-  Health.current[targetEid] = Math.max(0, Health.current[targetEid] - damage);
+  const hpAfter = Math.max(0, hpBefore - damage);
+  Health.current[targetEid] = hpAfter;
+  // Use the actual delta (capped at hpBefore) so the event reports what was
+  // really subtracted, not the raw weapon damage when the victim was at 1 HP.
+  const appliedAmount = hpBefore - hpAfter;
 
   // Push target into HitStun
   const weaponId = CombatStateComponent.weaponId[attackerEid];
@@ -166,6 +224,30 @@ function handleHit(
   if (hasComponent(world.ecs, HitReactComp, targetEid)) {
     populateHitReact(targetEid, attackerEid, damage, attackDir, config);
   }
+
+  // Record kill-attribution. processDeaths reads this same tick to credit
+  // a kill. Overwrite any older record — only the most-recent attacker is
+  // credited (Mordhau / Chivalry convention).
+  attributionByVictim.set(targetEid, {
+    attackerEid,
+    weaponId,
+    bodyRegion,
+    tick,
+  });
+
+  // Emit DamageDealt — fires for every hit, lethal or not. Killfeed +
+  // FloatingDamage HUD subscribe; DeathEvent is emitted separately by
+  // processDeaths only on lethal hits.
+  EventBus.emit('DamageDealt', {
+    victimEid: targetEid,
+    attackerEid,
+    amount: appliedAmount,
+    bodyRegion,
+    weaponId,
+    attackDirection: attackDir,
+    isLethal: hpAfter <= 0 && Health.max[targetEid] > 0,
+    tick,
+  });
 }
 
 /**

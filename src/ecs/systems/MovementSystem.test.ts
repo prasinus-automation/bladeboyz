@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createWorld, addEntity, addComponent } from 'bitecs';
 import {
   Position, PreviousPosition, Rotation, PreviousRotation,
-  Velocity, Player, PhysicsBody, MovementState, MovementIntent,
+  Velocity, Player, PhysicsBody, MovementState, MovementIntent, DeadTag,
 } from '../components';
 import {
   createMovementSystem,
@@ -378,6 +378,42 @@ describe('MovementSystem', () => {
       expect(PreviousPosition.x[eid]).toBe(5);
       expect(PreviousPosition.y[eid]).toBe(10);
       expect(PreviousPosition.z[eid]).toBe(15);
+    });
+  });
+
+  /* ─── DeadTag early-out (issue #130) ─── */
+
+  describe('DeadTag early-out', () => {
+    it('skips position update when entity has DeadTag', () => {
+      const eid = setup({ moveZ: -1 }, 0, 0, { speedFactor: 1, x: 0, y: 1, z: 0 });
+      // Add DeadTag — system should skip this entity entirely
+      addComponent(ecsWorld, DeadTag, eid);
+
+      const beforeX = Position.x[eid];
+      const beforeZ = Position.z[eid];
+      movementSystem(FIXED_TIMESTEP);
+
+      expect(Position.x[eid]).toBe(beforeX);
+      expect(Position.z[eid]).toBe(beforeZ);
+      // setNextKinematicTranslation must NOT have been called
+      expect(mockBody.setNextKinematicTranslation).not.toHaveBeenCalled();
+    });
+
+    it('does not consume jump intent when entity has DeadTag', () => {
+      const eid = setup({ jumpRequested: 1 }, 0, 0, { grounded: 1 });
+      addComponent(ecsWorld, DeadTag, eid);
+      movementSystem(FIXED_TIMESTEP);
+      // jumpRequested should still be 1 (system early-outed before clearing it)
+      expect(MovementIntent.jumpRequested[eid]).toBe(1);
+    });
+
+    it('does not apply gravity to dead airborne entities', () => {
+      const eid = setup({}, 0, 0, { grounded: 0 });
+      addComponent(ecsWorld, DeadTag, eid);
+      MovementState.verticalVelocity[eid] = 0;
+      movementSystem(FIXED_TIMESTEP);
+      // No gravity tick
+      expect(MovementState.verticalVelocity[eid]).toBe(0);
     });
   });
 

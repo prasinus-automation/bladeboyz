@@ -19,6 +19,7 @@ import {
   CharacterModel,
   TracerTag,
   Hitboxes,
+  Score,
   meshRegistry,
 } from '../components';
 import { registerPhysicsBody } from '../systems/MovementSystem';
@@ -36,7 +37,13 @@ export interface CreatePlayerOptions {
   x?: number;
   y?: number;
   z?: number;
-  /** Starting weapon name (default: 'Dagger') */
+  /**
+   * Starting weapon name. Default: `'Longsword'` (issue #130). The default
+   * shifted from `'Dagger'` to `'Longsword'` when the spawn/death/respawn
+   * design landed; respawning entities are auto-equipped with the same
+   * default. Tests that previously hardcoded `'Dagger'` should pass it
+   * explicitly here.
+   */
   startingWeapon?: string;
 }
 
@@ -57,7 +64,7 @@ export function createPlayer(
   spawnPos?: { x?: number; y?: number; z?: number },
   options: CreatePlayerOptions = {},
 ): { eid: number; mesh: THREE.Group } {
-  const startingWeapon = options.startingWeapon ?? 'Dagger';
+  const startingWeapon = options.startingWeapon ?? 'Longsword';
   const x = spawnPos?.x ?? 0;
   const z = spawnPos?.z ?? 0;
   // Resolve feet Y via raycast unless explicitly overridden
@@ -84,6 +91,9 @@ export function createPlayer(
   addComponent(world.ecs, HitReactComp, eid);
   addComponent(world.ecs, TracerTag, eid);
   addComponent(world.ecs, Hitboxes, eid);
+  // Score is initialized to all-zeroes via bitECS's typed-array default.
+  // Lifetime kills/deaths persist across the respawn loop.
+  addComponent(world.ecs, Score, eid);
 
   // Set initial values (feet position)
   Position.x[eid] = x;
@@ -110,6 +120,9 @@ export function createPlayer(
   Health.max[eid] = 100;
   Stamina.current[eid] = 100;
   Stamina.max[eid] = 100;
+  Score.kills[eid] = 0;
+  Score.deaths[eid] = 0;
+  Score.goldThisLife[eid] = 0;
   CombatStateComponent.state[eid] = 0; // Idle
   CombatStateComponent.ticksRemaining[eid] = 0;
   const weaponIndex = weaponIdToName.indexOf(startingWeapon);

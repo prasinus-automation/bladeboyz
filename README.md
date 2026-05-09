@@ -189,6 +189,17 @@ Instead of simple raycasts, weapons define **tracer points** along the blade. Du
 
 Hits are resolved against **hitbox sensor colliders** attached to the target's skeleton bones (head, torso, arms, legs). Damage scales by body region: headshots deal full damage, torso is reduced, limbs take the least.
 
+## Spawn / Death / Respawn
+
+BladeBoyz runs as a **continuous deathmatch** — there are no rounds. When a player's HP hits 0 they enter a `Dead` state for **3 seconds (180 ticks)**, during which input and movement are frozen and a death screen will be shown (HUD landing in a follow-up). After the timer expires the player respawns at a weighted-random spawn point and is auto-equipped with the default starter weapon (**Longsword**).
+
+Death is implemented as two ECS components plus an event bus:
+- `DeadTag` — added to the entity for the duration of the death state. Systems early-out on this tag.
+- `RespawnPending.ticksRemaining` — countdown synced into ECS so the future networking layer can replicate per-entity remaining time.
+- `EventBus` (`src/events/EventBus.ts`) — pub/sub for `DamageDealt`, `DeathEvent`, `RespawnEvent`, `WeaponEquipped`. Drained at the end of `fixedUpdate`.
+
+Kill attribution uses a 5-second window: the most recent attacker who damaged the victim within that window is credited as the killer (`killerEid = 0` for environmental / suicide). See [`docs/spawn-death-respawn.md`](docs/spawn-death-respawn.md) for the full lifecycle, state diagram, and event payload table.
+
 ## Testing
 
 ```bash
