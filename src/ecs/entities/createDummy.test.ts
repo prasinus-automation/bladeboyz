@@ -22,7 +22,7 @@ import {
   recordDummyHit,
 } from './createDummy';
 import { CombatState } from '../../combat/states';
-import { AttackDirection, BlockDirection } from '../../combat/directions';
+import { Direction } from '../../combat/directions';
 import { CombatFSM, fsmRegistry } from '../../combat/CombatFSM';
 import type { WeaponConfig } from '../../weapons/WeaponConfig';
 import {
@@ -43,37 +43,37 @@ import {
 
 function makeTestWeapon(): WeaponConfig {
   const ticks = {
-    [AttackDirection.Left]: 6,
-    [AttackDirection.Right]: 6,
-    [AttackDirection.Overhead]: 8,
-    [AttackDirection.Stab]: 5,
+    [Direction.Left]: 6,
+    [Direction.Right]: 6,
+    [Direction.Overhead]: 8,
+    [Direction.Stab]: 5,
   };
   return {
     name: 'TestSword',
     damage: {
-      [AttackDirection.Left]: { head: 50, torso: 35, limb: 25 },
-      [AttackDirection.Right]: { head: 50, torso: 35, limb: 25 },
-      [AttackDirection.Overhead]: { head: 55, torso: 40, limb: 25 },
-      [AttackDirection.Stab]: { head: 45, torso: 40, limb: 20 },
+      [Direction.Left]: { head: 50, torso: 35, limb: 25 },
+      [Direction.Right]: { head: 50, torso: 35, limb: 25 },
+      [Direction.Overhead]: { head: 55, torso: 40, limb: 25 },
+      [Direction.Stab]: { head: 45, torso: 40, limb: 20 },
     },
     windup: { ...ticks },
     release: {
-      [AttackDirection.Left]: 4,
-      [AttackDirection.Right]: 4,
-      [AttackDirection.Overhead]: 5,
-      [AttackDirection.Stab]: 3,
+      [Direction.Left]: 4,
+      [Direction.Right]: 4,
+      [Direction.Overhead]: 5,
+      [Direction.Stab]: 3,
     },
     recovery: {
-      [AttackDirection.Left]: 12,
-      [AttackDirection.Right]: 12,
-      [AttackDirection.Overhead]: 15,
-      [AttackDirection.Stab]: 10,
+      [Direction.Left]: 12,
+      [Direction.Right]: 12,
+      [Direction.Overhead]: 15,
+      [Direction.Stab]: 10,
     },
     comboRecovery: {
-      [AttackDirection.Left]: 8,
-      [AttackDirection.Right]: 8,
-      [AttackDirection.Overhead]: 10,
-      [AttackDirection.Stab]: 6,
+      [Direction.Left]: 8,
+      [Direction.Right]: 8,
+      [Direction.Overhead]: 10,
+      [Direction.Stab]: 6,
     },
     parryWindow: 6,
     parryRecovery: 10,
@@ -102,7 +102,7 @@ function setupFakeDummy(eid: number): void {
   Stamina.current[eid] = 100;
   Stamina.max[eid] = 100;
   CombatStateComponent.state[eid] = CombatState.Idle;
-  CombatStateComponent.blockDirection[eid] = BlockDirection.Top;
+  CombatStateComponent.blockDirection[eid] = Direction.Overhead;
   CombatStateComponent.ticksRemaining[eid] = 0;
   dummyLastHitTick.set(eid, -999);
 }
@@ -154,29 +154,29 @@ describe('Dummy management functions', () => {
   });
 
   describe('cycleDummyBlockDirection', () => {
-    it('should cycle from Top to Bottom', () => {
+    it('should cycle from Overhead to Stab', () => {
       setupFakeDummy(100);
-      // FSM starts with blockDirection = Top by default
+      // FSM starts with direction = Overhead by default
       const result = cycleDummyBlockDirection();
-      expect(result).toBe('Bottom');
-      expect(CombatStateComponent.blockDirection[100]).toBe(BlockDirection.Bottom);
-      expect(fsmRegistry.get(100)!.blockDirection).toBe(BlockDirection.Bottom);
+      expect(result).toBe('Stab');
+      expect(CombatStateComponent.blockDirection[100]).toBe(Direction.Stab);
+      expect(fsmRegistry.get(100)!.direction).toBe(Direction.Stab);
     });
 
     it('should cycle through all directions and wrap around', () => {
       setupFakeDummy(100);
 
-      cycleDummyBlockDirection(); // Top -> Bottom
-      expect(CombatStateComponent.blockDirection[100]).toBe(BlockDirection.Bottom);
+      cycleDummyBlockDirection(); // Overhead -> Stab
+      expect(CombatStateComponent.blockDirection[100]).toBe(Direction.Stab);
 
-      cycleDummyBlockDirection(); // Bottom -> Left
-      expect(CombatStateComponent.blockDirection[100]).toBe(BlockDirection.Left);
+      cycleDummyBlockDirection(); // Stab -> Left
+      expect(CombatStateComponent.blockDirection[100]).toBe(Direction.Left);
 
       cycleDummyBlockDirection(); // Left -> Right
-      expect(CombatStateComponent.blockDirection[100]).toBe(BlockDirection.Right);
+      expect(CombatStateComponent.blockDirection[100]).toBe(Direction.Right);
 
-      cycleDummyBlockDirection(); // Right -> Top (wrap)
-      expect(CombatStateComponent.blockDirection[100]).toBe(BlockDirection.Top);
+      cycleDummyBlockDirection(); // Right -> Overhead (wrap)
+      expect(CombatStateComponent.blockDirection[100]).toBe(Direction.Overhead);
     });
 
     it('should return "No dummies" when no dummies exist', () => {

@@ -65,9 +65,9 @@ function averageDamage(
   config: import('../weapons/WeaponConfig').WeaponConfig,
 ): { head: number; torso: number; limb: number } {
   // Iterate the actual values present so removed directions (e.g. Underhand
-  // post FSM v2) don't get sampled twice. AttackDirection is a numeric
-  // const enum, so Record<AttackDirection, T> stores keys as stringified
-  // ints — using Object.values sidesteps the key-cast.
+  // post FSM v2) don't get sampled twice. `Direction` is a numeric const
+  // enum, so Record<Direction, T> stores keys as stringified ints — using
+  // Object.values sidesteps the key-cast.
   const entries = Object.values(config.damage);
   if (entries.length === 0) return { head: 0, torso: 0, limb: 0 };
   let h = 0,

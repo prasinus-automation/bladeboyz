@@ -1,14 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { weaponConfigs } from './WeaponConfig';
-import { AttackDirection } from '../combat/directions';
+import { Direction } from '../combat/directions';
 import './dagger';
 
 // FSM v2 (#88, #131): 4 attack directions — Underhand removed.
 const ALL_DIRS = [
-  AttackDirection.Left,
-  AttackDirection.Right,
-  AttackDirection.Overhead,
-  AttackDirection.Stab,
+  Direction.Left,
+  Direction.Right,
+  Direction.Overhead,
+  Direction.Stab,
 ] as const;
 
 describe('Dagger weapon config', () => {

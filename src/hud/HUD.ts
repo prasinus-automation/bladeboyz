@@ -19,12 +19,16 @@ import { StaminaBar } from './StaminaBar';
 import { DirectionIndicator } from './DirectionIndicator';
 import { GoldCounter } from './GoldCounter';
 
-/** Direction names for debug display (FSM v2: Underhand removed, Stab renumbered 4 → 3) */
-const ATTACK_DIR_NAMES: Record<number, string> = {
-  0: 'Left', 1: 'Right', 2: 'Overhead', 3: 'Stab',
-};
-const BLOCK_DIR_NAMES: Record<number, string> = {
-  0: 'Left', 1: 'Right', 2: 'Top', 3: 'Bottom',
+/**
+ * Direction names for debug display.
+ *
+ * FSM v2 #139: unified `Direction` enum (Overhead=0, Left=1, Right=2,
+ * Stab=3) — attack and block share one table now. Pre-#139 this was
+ * split into two tables (`AttackDirection`: Left=0/Right=1/Overhead=2/Stab=3,
+ * `BlockDirection`: Left=0/Right=1/Top=2/Bottom=3).
+ */
+const DIR_NAMES: Record<number, string> = {
+  0: 'Overhead', 1: 'Left', 2: 'Right', 3: 'Stab',
 };
 
 export class HUD {
@@ -124,16 +128,17 @@ export class HUD {
       const stateNum = CombatStateComponent.state[playerEntity] ?? 0;
       const stateName = COMBAT_STATE_NAMES[stateNum] ?? 'Unknown';
       const ticksLeft = CombatStateComponent.ticksRemaining[playerEntity] ?? 0;
-      const atkDir = CombatStateComponent.attackDirection[playerEntity] ?? 0;
-      const blkDir = CombatStateComponent.blockDirection[playerEntity] ?? 0;
+      // FSM v2 #139: unified Direction — `attackDirection` and
+      // `blockDirection` ECS slots both hold the same value, so pick one.
+      const dir = CombatStateComponent.attackDirection[playerEntity] ?? 0;
 
       const fsm = fsmRegistry.get(playerEntity);
       const turncap = fsm ? fsm.getCurrentTurncap() : Infinity;
       const turncapStr = turncap === Infinity ? 'none' : `${(turncap * 60).toFixed(1)} rad/s`;
       // FSM v2 (#135): Blocking=4, Parry=5 are the defensive states.
       const dirStr = stateNum >= 4 && stateNum <= 5
-        ? `Block: ${BLOCK_DIR_NAMES[blkDir] ?? blkDir}`
-        : `Atk: ${ATTACK_DIR_NAMES[atkDir] ?? atkDir}`;
+        ? `Block: ${DIR_NAMES[dir] ?? dir}`
+        : `Atk: ${DIR_NAMES[dir] ?? dir}`;
 
       this.fsmLabel.textContent =
         `${stateName} [${ticksLeft}] | ${dirStr} | Cap: ${turncapStr}`;

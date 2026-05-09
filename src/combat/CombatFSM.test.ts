@@ -12,45 +12,45 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CombatFSM, CombatInput } from './CombatFSM';
 import { CombatState } from './states';
-import { AttackDirection, BlockDirection } from './directions';
+import { Direction } from './directions';
 import type { WeaponConfig } from '../weapons/WeaponConfig';
 
 // ── Test weapon config ───────────────────────────────────
 
 function createTestWeapon(overrides: Partial<WeaponConfig> = {}): WeaponConfig {
   const defaultTicks = {
-    [AttackDirection.Left]: 6,
-    [AttackDirection.Right]: 6,
-    [AttackDirection.Overhead]: 8,
-    [AttackDirection.Stab]: 5,
+    [Direction.Left]: 6,
+    [Direction.Right]: 6,
+    [Direction.Overhead]: 8,
+    [Direction.Stab]: 5,
   };
 
   return {
     name: 'TestSword',
     damage: {
-      [AttackDirection.Left]: { head: 50, torso: 35, limb: 25 },
-      [AttackDirection.Right]: { head: 50, torso: 35, limb: 25 },
-      [AttackDirection.Overhead]: { head: 55, torso: 40, limb: 25 },
-      [AttackDirection.Stab]: { head: 45, torso: 40, limb: 20 },
+      [Direction.Left]: { head: 50, torso: 35, limb: 25 },
+      [Direction.Right]: { head: 50, torso: 35, limb: 25 },
+      [Direction.Overhead]: { head: 55, torso: 40, limb: 25 },
+      [Direction.Stab]: { head: 45, torso: 40, limb: 20 },
     },
     windup: { ...defaultTicks },
     release: {
-      [AttackDirection.Left]: 4,
-      [AttackDirection.Right]: 4,
-      [AttackDirection.Overhead]: 5,
-      [AttackDirection.Stab]: 3,
+      [Direction.Left]: 4,
+      [Direction.Right]: 4,
+      [Direction.Overhead]: 5,
+      [Direction.Stab]: 3,
     },
     recovery: {
-      [AttackDirection.Left]: 12,
-      [AttackDirection.Right]: 12,
-      [AttackDirection.Overhead]: 15,
-      [AttackDirection.Stab]: 10,
+      [Direction.Left]: 12,
+      [Direction.Right]: 12,
+      [Direction.Overhead]: 15,
+      [Direction.Stab]: 10,
     },
     comboRecovery: {
-      [AttackDirection.Left]: 8,
-      [AttackDirection.Right]: 8,
-      [AttackDirection.Overhead]: 10,
-      [AttackDirection.Stab]: 6,
+      [Direction.Left]: 8,
+      [Direction.Right]: 8,
+      [Direction.Overhead]: 10,
+      [Direction.Stab]: 6,
     },
     parryWindow: 6,
     parryRecovery: 10,
@@ -112,29 +112,29 @@ describe('CombatFSM (v2)', () => {
 
   describe('attack chain', () => {
     it('Idle → Windup on Attack(dir) when stamina sufficient', () => {
-      const result = fsm.transition(CombatInput.Attack, AttackDirection.Left);
+      const result = fsm.transition(CombatInput.Attack, Direction.Left);
       expect(result).toBe(true);
       expect(fsm.state).toBe(CombatState.Windup);
-      expect(fsm.attackDirection).toBe(AttackDirection.Left);
-      expect(fsm.phaseTotal).toBe(weapon.windup[AttackDirection.Left]);
+      expect(fsm.attackDirection).toBe(Direction.Left);
+      expect(fsm.phaseTotal).toBe(weapon.windup[Direction.Left]);
       expect(fsm.phaseElapsed).toBe(0);
     });
 
     it('Windup auto-transitions to Release after windup[dir] ticks', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
-      const windupTicks = weapon.windup[AttackDirection.Left];
+      fsm.transition(CombatInput.Attack, Direction.Left);
+      const windupTicks = weapon.windup[Direction.Left];
       tickN(fsm, windupTicks);
 
       expect(fsm.state).toBe(CombatState.Release);
-      expect(fsm.phaseTotal).toBe(weapon.release[AttackDirection.Left]);
+      expect(fsm.phaseTotal).toBe(weapon.release[Direction.Left]);
       expect(fsm.phaseElapsed).toBe(0);
     });
 
     it('Release auto-transitions to Recovery after release[dir] ticks', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Stab);
-      const windup = weapon.windup[AttackDirection.Stab];
-      const release = weapon.release[AttackDirection.Stab];
-      const recovery = weapon.recovery[AttackDirection.Stab];
+      fsm.transition(CombatInput.Attack, Direction.Stab);
+      const windup = weapon.windup[Direction.Stab];
+      const release = weapon.release[Direction.Stab];
+      const recovery = weapon.recovery[Direction.Stab];
 
       tickN(fsm, windup); // → Release
       expect(fsm.state).toBe(CombatState.Release);
@@ -148,12 +148,12 @@ describe('CombatFSM (v2)', () => {
     });
 
     it('uses correct ticks per attack direction', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Overhead);
-      expect(fsm.phaseTotal).toBe(weapon.windup[AttackDirection.Overhead]);
+      fsm.transition(CombatInput.Attack, Direction.Overhead);
+      expect(fsm.phaseTotal).toBe(weapon.windup[Direction.Overhead]);
     });
 
     it('emits attack stamina event on Windup entry', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
+      fsm.transition(CombatInput.Attack, Direction.Left);
       const events = fsm.drainStaminaEvents();
       expect(events).toHaveLength(1);
       expect(events[0].type).toBe('attack');
@@ -162,12 +162,12 @@ describe('CombatFSM (v2)', () => {
     it('attack charges stamina even if the swing whiffs (no hit landed)', () => {
       // Acceptance test #18: Windup entry charges `staminaCost.attack`
       // unconditionally — no hit dispatch is required to debit the cost.
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
+      fsm.transition(CombatInput.Attack, Direction.Left);
       expect(fsm.drainStaminaEvents()).toHaveLength(1);
       // Drive the entire chain without any hit input — no further events.
-      tickN(fsm, weapon.windup[AttackDirection.Left]);
-      tickN(fsm, weapon.release[AttackDirection.Left]);
-      tickN(fsm, weapon.recovery[AttackDirection.Left]);
+      tickN(fsm, weapon.windup[Direction.Left]);
+      tickN(fsm, weapon.release[Direction.Left]);
+      tickN(fsm, weapon.recovery[Direction.Left]);
       expect(fsm.drainStaminaEvents()).toHaveLength(0);
     });
   });
@@ -176,34 +176,34 @@ describe('CombatFSM (v2)', () => {
 
   describe('Windup morph', () => {
     it('Attack(newDir) during Windup restarts windup timer with new direction', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
+      fsm.transition(CombatInput.Attack, Direction.Left);
       tickN(fsm, 2);
       // Drain the initial attack event so we can check morph emits none.
       fsm.drainStaminaEvents();
 
-      const result = fsm.transition(CombatInput.Attack, AttackDirection.Overhead);
+      const result = fsm.transition(CombatInput.Attack, Direction.Overhead);
       expect(result).toBe(true);
       expect(fsm.state).toBe(CombatState.Windup);
-      expect(fsm.attackDirection).toBe(AttackDirection.Overhead);
-      expect(fsm.phaseTotal).toBe(weapon.windup[AttackDirection.Overhead]);
+      expect(fsm.attackDirection).toBe(Direction.Overhead);
+      expect(fsm.phaseTotal).toBe(weapon.windup[Direction.Overhead]);
       expect(fsm.phaseElapsed).toBe(0);
     });
 
     it('morph does NOT charge extra stamina', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
+      fsm.transition(CombatInput.Attack, Direction.Left);
       fsm.drainStaminaEvents(); // clear initial attack event
 
-      fsm.transition(CombatInput.Attack, AttackDirection.Overhead);
+      fsm.transition(CombatInput.Attack, Direction.Overhead);
       const events = fsm.drainStaminaEvents();
       expect(events).toHaveLength(0);
     });
 
     it('morph to same direction is a no-op (returns false)', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
+      fsm.transition(CombatInput.Attack, Direction.Left);
       tickN(fsm, 2);
       const elapsedBefore = fsm.phaseElapsed;
 
-      const result = fsm.transition(CombatInput.Attack, AttackDirection.Left);
+      const result = fsm.transition(CombatInput.Attack, Direction.Left);
       expect(result).toBe(false);
       expect(fsm.phaseElapsed).toBe(elapsedBefore);
     });
@@ -215,46 +215,46 @@ describe('CombatFSM (v2)', () => {
     it('Attack during Recovery sets isComboRecovery and chains to Windup on phase end', () => {
       // Acceptance test #6: Recovery uses `comboRecovery[dir]` when LMB
       // pressed during recovery.
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
-      tickN(fsm, weapon.windup[AttackDirection.Left]); // → Release
-      tickN(fsm, weapon.release[AttackDirection.Left]); // → Recovery
+      fsm.transition(CombatInput.Attack, Direction.Left);
+      tickN(fsm, weapon.windup[Direction.Left]); // → Release
+      tickN(fsm, weapon.release[Direction.Left]); // → Recovery
       expect(fsm.state).toBe(CombatState.Recovery);
       expect(fsm.isComboRecovery).toBe(false); // first recovery is normal
 
       // Buffer a combo Attack — the *next* recovery will be a comboRecovery.
-      const result = fsm.transition(CombatInput.Attack, AttackDirection.Right);
+      const result = fsm.transition(CombatInput.Attack, Direction.Right);
       expect(result).toBe(true);
       expect(fsm.isComboRecovery).toBe(true);
 
       // Complete recovery → should chain into Windup (no Idle transition).
-      tickN(fsm, weapon.recovery[AttackDirection.Left]);
+      tickN(fsm, weapon.recovery[Direction.Left]);
       expect(fsm.state).toBe(CombatState.Windup);
-      expect(fsm.attackDirection).toBe(AttackDirection.Right);
+      expect(fsm.attackDirection).toBe(Direction.Right);
     });
 
     it('combo Recovery uses comboRecovery[dir] timing, not full recovery', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
-      tickN(fsm, weapon.windup[AttackDirection.Left]);
-      tickN(fsm, weapon.release[AttackDirection.Left]);
+      fsm.transition(CombatInput.Attack, Direction.Left);
+      tickN(fsm, weapon.windup[Direction.Left]);
+      tickN(fsm, weapon.release[Direction.Left]);
       // Buffer the combo
-      fsm.transition(CombatInput.Attack, AttackDirection.Right);
+      fsm.transition(CombatInput.Attack, Direction.Right);
       // Complete first Recovery → second Windup (combo-flagged)
-      tickN(fsm, weapon.recovery[AttackDirection.Left]);
-      tickN(fsm, weapon.windup[AttackDirection.Right]);
-      tickN(fsm, weapon.release[AttackDirection.Right]);
+      tickN(fsm, weapon.recovery[Direction.Left]);
+      tickN(fsm, weapon.windup[Direction.Right]);
+      tickN(fsm, weapon.release[Direction.Right]);
 
       expect(fsm.state).toBe(CombatState.Recovery);
-      expect(fsm.phaseTotal).toBe(weapon.comboRecovery[AttackDirection.Right]);
+      expect(fsm.phaseTotal).toBe(weapon.comboRecovery[Direction.Right]);
     });
 
     it('combo Windup emits a fresh attack stamina event', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
-      tickN(fsm, weapon.windup[AttackDirection.Left]);
-      tickN(fsm, weapon.release[AttackDirection.Left]);
+      fsm.transition(CombatInput.Attack, Direction.Left);
+      tickN(fsm, weapon.windup[Direction.Left]);
+      tickN(fsm, weapon.release[Direction.Left]);
       fsm.drainStaminaEvents(); // clear initial attack event
 
-      fsm.transition(CombatInput.Attack, AttackDirection.Right);
-      tickN(fsm, weapon.recovery[AttackDirection.Left]); // → Windup (combo)
+      fsm.transition(CombatInput.Attack, Direction.Right);
+      tickN(fsm, weapon.recovery[Direction.Left]); // → Windup (combo)
 
       const events = fsm.drainStaminaEvents();
       expect(events).toHaveLength(1);
@@ -262,25 +262,25 @@ describe('CombatFSM (v2)', () => {
     });
 
     it('isComboRecovery resets to false on Idle entry', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
-      tickN(fsm, weapon.windup[AttackDirection.Left]);
-      tickN(fsm, weapon.release[AttackDirection.Left]);
-      fsm.transition(CombatInput.Attack, AttackDirection.Right);
+      fsm.transition(CombatInput.Attack, Direction.Left);
+      tickN(fsm, weapon.windup[Direction.Left]);
+      tickN(fsm, weapon.release[Direction.Left]);
+      fsm.transition(CombatInput.Attack, Direction.Right);
       // Drive the combo all the way through to Idle.
-      tickN(fsm, weapon.recovery[AttackDirection.Left]); // → Windup #2
-      tickN(fsm, weapon.windup[AttackDirection.Right]); // → Release #2
-      tickN(fsm, weapon.release[AttackDirection.Right]); // → Recovery #2
-      tickN(fsm, weapon.comboRecovery[AttackDirection.Right]); // → Idle
+      tickN(fsm, weapon.recovery[Direction.Left]); // → Windup #2
+      tickN(fsm, weapon.windup[Direction.Right]); // → Release #2
+      tickN(fsm, weapon.release[Direction.Right]); // → Recovery #2
+      tickN(fsm, weapon.comboRecovery[Direction.Right]); // → Idle
 
       expect(fsm.state).toBe(CombatState.Idle);
       expect(fsm.isComboRecovery).toBe(false);
     });
 
     it('Recovery → Idle on phase end when no combo buffered', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Stab);
-      tickN(fsm, weapon.windup[AttackDirection.Stab]);
-      tickN(fsm, weapon.release[AttackDirection.Stab]);
-      tickN(fsm, weapon.recovery[AttackDirection.Stab]);
+      fsm.transition(CombatInput.Attack, Direction.Stab);
+      tickN(fsm, weapon.windup[Direction.Stab]);
+      tickN(fsm, weapon.release[Direction.Stab]);
+      tickN(fsm, weapon.recovery[Direction.Stab]);
       expect(fsm.state).toBe(CombatState.Idle);
     });
   });
@@ -289,10 +289,10 @@ describe('CombatFSM (v2)', () => {
 
   describe('block and parry', () => {
     it('Idle → Blocking on Block(dir) and blockingEntryWasJustPress is true', () => {
-      const result = fsm.transition(CombatInput.Block, BlockDirection.Left);
+      const result = fsm.transition(CombatInput.Block, Direction.Left);
       expect(result).toBe(true);
       expect(fsm.state).toBe(CombatState.Blocking);
-      expect(fsm.blockDirection).toBe(BlockDirection.Left);
+      expect(fsm.blockDirection).toBe(Direction.Left);
       expect(fsm.blockingEntryWasJustPress).toBe(true);
       expect(fsm.phaseElapsed).toBe(0);
       // Blocking has no fixed duration — phaseTotal is 0.
@@ -300,7 +300,7 @@ describe('CombatFSM (v2)', () => {
     });
 
     it('parryActive is true while in Blocking AND elapsed ≤ parryWindow', () => {
-      fsm.transition(CombatInput.Block, BlockDirection.Top);
+      fsm.transition(CombatInput.Block, Direction.Overhead);
       expect(fsm.parryActive).toBe(true);
       // Tick within the window — still active.
       tickN(fsm, weapon.parryWindow);
@@ -311,14 +311,14 @@ describe('CombatFSM (v2)', () => {
     });
 
     it('Blocking → Idle on ReleaseBlock', () => {
-      fsm.transition(CombatInput.Block, BlockDirection.Top);
+      fsm.transition(CombatInput.Block, Direction.Overhead);
       const result = fsm.transition(CombatInput.ReleaseBlock);
       expect(result).toBe(true);
       expect(fsm.state).toBe(CombatState.Idle);
     });
 
     it('Blocking + BlockedHit stays in Blocking and drains block stamina', () => {
-      fsm.transition(CombatInput.Block, BlockDirection.Top);
+      fsm.transition(CombatInput.Block, Direction.Overhead);
       fsm.drainStaminaEvents();
 
       const result = fsm.transition(CombatInput.BlockedHit);
@@ -330,7 +330,7 @@ describe('CombatFSM (v2)', () => {
     });
 
     it('Blocking + ParryTriggered transitions to Parry and drains parry stamina', () => {
-      fsm.transition(CombatInput.Block, BlockDirection.Top);
+      fsm.transition(CombatInput.Block, Direction.Overhead);
       fsm.drainStaminaEvents();
 
       const result = fsm.transition(CombatInput.ParryTriggered);
@@ -343,7 +343,7 @@ describe('CombatFSM (v2)', () => {
     });
 
     it('Parry phase end → Blocking when RMB still held (the common case)', () => {
-      fsm.transition(CombatInput.Block, BlockDirection.Top);
+      fsm.transition(CombatInput.Block, Direction.Overhead);
       fsm.transition(CombatInput.ParryTriggered);
       expect(fsm.state).toBe(CombatState.Parry);
 
@@ -356,7 +356,7 @@ describe('CombatFSM (v2)', () => {
     });
 
     it('Parry phase end → Idle when RMB was released during Parry', () => {
-      fsm.transition(CombatInput.Block, BlockDirection.Top);
+      fsm.transition(CombatInput.Block, Direction.Overhead);
       fsm.transition(CombatInput.ParryTriggered);
       const released = fsm.transition(CombatInput.ReleaseBlock);
       expect(released).toBe(true);
@@ -368,7 +368,7 @@ describe('CombatFSM (v2)', () => {
     });
 
     it('Block + BlockBreak transitions to HitStun for blockBreakStunTicks', () => {
-      fsm.transition(CombatInput.Block, BlockDirection.Top);
+      fsm.transition(CombatInput.Block, Direction.Overhead);
       const result = fsm.transition(CombatInput.BlockBreak);
       expect(result).toBe(true);
       expect(fsm.state).toBe(CombatState.HitStun);
@@ -376,22 +376,22 @@ describe('CombatFSM (v2)', () => {
     });
 
     it('cannot Block from non-Idle/Recovery states', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
-      const result = fsm.transition(CombatInput.Block, BlockDirection.Top);
+      fsm.transition(CombatInput.Attack, Direction.Left);
+      const result = fsm.transition(CombatInput.Block, Direction.Overhead);
       expect(result).toBe(false);
       expect(fsm.state).toBe(CombatState.Windup);
     });
 
     it('Block from Recovery transitions to Blocking (with fresh parry window)', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Stab);
-      tickN(fsm, weapon.windup[AttackDirection.Stab]);
-      tickN(fsm, weapon.release[AttackDirection.Stab]);
+      fsm.transition(CombatInput.Attack, Direction.Stab);
+      tickN(fsm, weapon.windup[Direction.Stab]);
+      tickN(fsm, weapon.release[Direction.Stab]);
       expect(fsm.state).toBe(CombatState.Recovery);
 
-      const result = fsm.transition(CombatInput.Block, BlockDirection.Right);
+      const result = fsm.transition(CombatInput.Block, Direction.Right);
       expect(result).toBe(true);
       expect(fsm.state).toBe(CombatState.Blocking);
-      expect(fsm.blockDirection).toBe(BlockDirection.Right);
+      expect(fsm.blockDirection).toBe(Direction.Right);
       expect(fsm.blockingEntryWasJustPress).toBe(true);
     });
   });
@@ -416,17 +416,17 @@ describe('CombatFSM (v2)', () => {
     });
 
     it('HitReceived during Windup interrupts to HitStun', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Overhead);
+      fsm.transition(CombatInput.Attack, Direction.Overhead);
       tickN(fsm, 2);
       fsm.transition(CombatInput.HitReceived);
       expect(fsm.state).toBe(CombatState.HitStun);
     });
 
     it('HitReceived during Recovery clears combo buffer', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
-      tickN(fsm, weapon.windup[AttackDirection.Left]);
-      tickN(fsm, weapon.release[AttackDirection.Left]);
-      fsm.transition(CombatInput.Attack, AttackDirection.Right); // buffered
+      fsm.transition(CombatInput.Attack, Direction.Left);
+      tickN(fsm, weapon.windup[Direction.Left]);
+      tickN(fsm, weapon.release[Direction.Left]);
+      fsm.transition(CombatInput.Attack, Direction.Right); // buffered
       expect(fsm.isComboRecovery).toBe(true);
 
       fsm.transition(CombatInput.HitReceived);
@@ -451,8 +451,8 @@ describe('CombatFSM (v2)', () => {
 
   describe('WasParried', () => {
     it('Release + WasParried → HitStun for parryStunTicks', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
-      tickN(fsm, weapon.windup[AttackDirection.Left]); // → Release
+      fsm.transition(CombatInput.Attack, Direction.Left);
+      tickN(fsm, weapon.windup[Direction.Left]); // → Release
 
       const result = fsm.transition(CombatInput.WasParried);
       expect(result).toBe(true);
@@ -461,8 +461,8 @@ describe('CombatFSM (v2)', () => {
     });
 
     it('HitStun(parried) → Recovery → Idle', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
-      tickN(fsm, weapon.windup[AttackDirection.Left]);
+      fsm.transition(CombatInput.Attack, Direction.Left);
+      tickN(fsm, weapon.windup[Direction.Left]);
       fsm.transition(CombatInput.WasParried);
 
       tickN(fsm, weapon.parryStunTicks); // → Recovery
@@ -473,7 +473,7 @@ describe('CombatFSM (v2)', () => {
       // From Idle
       expect(fsm.transition(CombatInput.WasParried)).toBe(false);
       // From Windup
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
+      fsm.transition(CombatInput.Attack, Direction.Left);
       expect(fsm.transition(CombatInput.WasParried)).toBe(false);
       expect(fsm.state).toBe(CombatState.Windup);
     });
@@ -483,14 +483,14 @@ describe('CombatFSM (v2)', () => {
 
   describe('BlockedHit on attacker', () => {
     it('Release + BlockedHit forces attacker into Recovery (no extra stamina)', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
-      tickN(fsm, weapon.windup[AttackDirection.Left]); // → Release
+      fsm.transition(CombatInput.Attack, Direction.Left);
+      tickN(fsm, weapon.windup[Direction.Left]); // → Release
       fsm.drainStaminaEvents();
 
       const result = fsm.transition(CombatInput.BlockedHit);
       expect(result).toBe(true);
       expect(fsm.state).toBe(CombatState.Recovery);
-      expect(fsm.phaseTotal).toBe(weapon.recovery[AttackDirection.Left]);
+      expect(fsm.phaseTotal).toBe(weapon.recovery[Direction.Left]);
       // Attacker did not pay block stamina (defender does).
       expect(fsm.drainStaminaEvents()).toHaveLength(0);
     });
@@ -500,20 +500,20 @@ describe('CombatFSM (v2)', () => {
 
   describe('turncap', () => {
     it('returns weapon.turncap.windup during Windup', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
+      fsm.transition(CombatInput.Attack, Direction.Left);
       expect(fsm.getCurrentTurncap()).toBe(weapon.turncap.windup);
     });
 
     it('returns weapon.turncap.release during Release', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
-      tickN(fsm, weapon.windup[AttackDirection.Left]);
+      fsm.transition(CombatInput.Attack, Direction.Left);
+      tickN(fsm, weapon.windup[Direction.Left]);
       expect(fsm.getCurrentTurncap()).toBe(weapon.turncap.release);
     });
 
     it('returns weapon.turncap.recovery during Recovery', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
-      tickN(fsm, weapon.windup[AttackDirection.Left]);
-      tickN(fsm, weapon.release[AttackDirection.Left]);
+      fsm.transition(CombatInput.Attack, Direction.Left);
+      tickN(fsm, weapon.windup[Direction.Left]);
+      tickN(fsm, weapon.release[Direction.Left]);
       expect(fsm.getCurrentTurncap()).toBe(weapon.turncap.recovery);
     });
 
@@ -524,12 +524,12 @@ describe('CombatFSM (v2)', () => {
     });
 
     it('returns Infinity during Blocking', () => {
-      fsm.transition(CombatInput.Block, BlockDirection.Top);
+      fsm.transition(CombatInput.Block, Direction.Overhead);
       expect(fsm.getCurrentTurncap()).toBe(Infinity);
     });
 
     it('returns Infinity during Parry (defender is rewarded)', () => {
-      fsm.transition(CombatInput.Block, BlockDirection.Top);
+      fsm.transition(CombatInput.Block, Direction.Overhead);
       fsm.transition(CombatInput.ParryTriggered);
       expect(fsm.getCurrentTurncap()).toBe(Infinity);
     });
@@ -547,26 +547,26 @@ describe('CombatFSM (v2)', () => {
     });
 
     it('disallows Block from Windup', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
+      fsm.transition(CombatInput.Attack, Direction.Left);
       expect(fsm.canTransition(CombatInput.Block)).toBe(false);
     });
 
     it('allows Attack (combo) from Recovery', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
-      tickN(fsm, weapon.windup[AttackDirection.Left]);
-      tickN(fsm, weapon.release[AttackDirection.Left]);
+      fsm.transition(CombatInput.Attack, Direction.Left);
+      tickN(fsm, weapon.windup[Direction.Left]);
+      tickN(fsm, weapon.release[Direction.Left]);
       expect(fsm.canTransition(CombatInput.Attack)).toBe(true);
     });
 
     it('allows ParryTriggered from Blocking only', () => {
       expect(fsm.canTransition(CombatInput.ParryTriggered)).toBe(false);
-      fsm.transition(CombatInput.Block, BlockDirection.Top);
+      fsm.transition(CombatInput.Block, Direction.Overhead);
       expect(fsm.canTransition(CombatInput.ParryTriggered)).toBe(true);
     });
 
     it('allows BlockBreak from Blocking only', () => {
       expect(fsm.canTransition(CombatInput.BlockBreak)).toBe(false);
-      fsm.transition(CombatInput.Block, BlockDirection.Top);
+      fsm.transition(CombatInput.Block, Direction.Overhead);
       expect(fsm.canTransition(CombatInput.BlockBreak)).toBe(true);
     });
   });
@@ -577,7 +577,7 @@ describe('CombatFSM (v2)', () => {
     it('increments phaseElapsed by 1 each tick during Windup', () => {
       // Acceptance test #24: phaseElapsed increments every tick during
       // animatable states.
-      fsm.transition(CombatInput.Attack, AttackDirection.Overhead);
+      fsm.transition(CombatInput.Attack, Direction.Overhead);
       expect(fsm.phaseElapsed).toBe(0);
       fsm.tick();
       expect(fsm.phaseElapsed).toBe(1);
@@ -587,13 +587,13 @@ describe('CombatFSM (v2)', () => {
 
     it('phaseTotal is 0 in Idle and Blocking', () => {
       expect(fsm.phaseTotal).toBe(0);
-      fsm.transition(CombatInput.Block, BlockDirection.Top);
+      fsm.transition(CombatInput.Block, Direction.Overhead);
       expect(fsm.phaseTotal).toBe(0);
     });
 
     it('getPhaseT is 0 → 1 monotonically during a fixed-duration phase', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Overhead);
-      const total = weapon.windup[AttackDirection.Overhead];
+      fsm.transition(CombatInput.Attack, Direction.Overhead);
+      const total = weapon.windup[Direction.Overhead];
       expect(fsm.getPhaseT()).toBe(0);
       const half = Math.floor(total / 2);
       tickN(fsm, half);
@@ -602,14 +602,14 @@ describe('CombatFSM (v2)', () => {
 
     it('getPhaseT is 0 in Idle and Blocking (no fixed duration)', () => {
       expect(fsm.getPhaseT()).toBe(0);
-      fsm.transition(CombatInput.Block, BlockDirection.Top);
+      fsm.transition(CombatInput.Block, Direction.Overhead);
       tickN(fsm, 3);
       expect(fsm.getPhaseT()).toBe(0);
     });
 
     it('ticksRemaining is the v1-compat shim (phaseTotal − phaseElapsed)', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Stab);
-      const total = weapon.windup[AttackDirection.Stab];
+      fsm.transition(CombatInput.Attack, Direction.Stab);
+      const total = weapon.windup[Direction.Stab];
       expect(fsm.ticksRemaining).toBe(total);
       tickN(fsm, 2);
       expect(fsm.ticksRemaining).toBe(total - 2);
@@ -620,15 +620,15 @@ describe('CombatFSM (v2)', () => {
 
   describe('direction getter', () => {
     it('returns attack direction in attack states', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
-      expect(fsm.direction).toBe(AttackDirection.Left);
+      fsm.transition(CombatInput.Attack, Direction.Left);
+      expect(fsm.direction).toBe(Direction.Left);
     });
 
     it('returns block direction in defensive states', () => {
-      fsm.transition(CombatInput.Block, BlockDirection.Right);
-      expect(fsm.direction).toBe(BlockDirection.Right);
+      fsm.transition(CombatInput.Block, Direction.Right);
+      expect(fsm.direction).toBe(Direction.Right);
       fsm.transition(CombatInput.ParryTriggered);
-      expect(fsm.direction).toBe(BlockDirection.Right);
+      expect(fsm.direction).toBe(Direction.Right);
     });
   });
 
@@ -636,7 +636,7 @@ describe('CombatFSM (v2)', () => {
 
   describe('reset', () => {
     it('returns to Idle and clears all transient state', () => {
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
+      fsm.transition(CombatInput.Attack, Direction.Left);
       tickN(fsm, 2);
       fsm.reset();
 
@@ -664,17 +664,17 @@ describe('CombatFSM (v2)', () => {
 
   describe('setBlockDirection', () => {
     it('updates blockDirection without changing state', () => {
-      fsm.setBlockDirection(BlockDirection.Right);
-      expect(fsm.blockDirection).toBe(BlockDirection.Right);
+      fsm.setBlockDirection(Direction.Right);
+      expect(fsm.blockDirection).toBe(Direction.Right);
       expect(fsm.state).toBe(CombatState.Idle);
     });
 
     it('preserves phaseElapsed when called mid-block', () => {
-      fsm.transition(CombatInput.Block, BlockDirection.Top);
+      fsm.transition(CombatInput.Block, Direction.Overhead);
       tickN(fsm, 2);
       const elapsedBefore = fsm.phaseElapsed;
-      fsm.setBlockDirection(BlockDirection.Left);
-      expect(fsm.blockDirection).toBe(BlockDirection.Left);
+      fsm.setBlockDirection(Direction.Left);
+      expect(fsm.blockDirection).toBe(Direction.Left);
       expect(fsm.phaseElapsed).toBe(elapsedBefore);
     });
   });

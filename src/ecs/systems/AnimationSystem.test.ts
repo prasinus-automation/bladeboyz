@@ -10,7 +10,7 @@ import {
 } from '../components';
 import { animationSystem, resetAnimationSystem } from './AnimationSystem';
 import { CombatState, MovementState } from '../../combat/states';
-import { AttackDirection, BlockDirection } from '../../combat/directions';
+import { Direction } from '../../combat/directions';
 import { createCharacterModel } from '../../rendering/CharacterModel';
 import type { GameWorld } from '../../core/types';
 
@@ -102,7 +102,7 @@ describe('AnimationSystem', () => {
 
     // Change to Windup Left
     CombatStateComp.state[eid] = CombatState.Windup;
-    CombatStateComp.direction[eid] = AttackDirection.Left;
+    CombatStateComp.direction[eid] = Direction.Left;
     CombatStateComp.phaseElapsed[eid] = 3;
     CombatStateComp.phaseTotal[eid] = 7;
 
@@ -123,7 +123,7 @@ describe('AnimationSystem', () => {
 
     // Change state
     CombatStateComp.state[eid] = CombatState.Windup;
-    CombatStateComp.direction[eid] = AttackDirection.Right;
+    CombatStateComp.direction[eid] = Direction.Right;
 
     animationSystem(world, 1 / 60);
 
@@ -166,10 +166,10 @@ describe('AnimationSystem', () => {
   it('handles all 4 attack directions without errors', () => {
     // FSM v2 (#88, #131): 4 directions — Underhand removed.
     const directions = [
-      AttackDirection.Left,
-      AttackDirection.Right,
-      AttackDirection.Overhead,
-      AttackDirection.Stab,
+      Direction.Left,
+      Direction.Right,
+      Direction.Overhead,
+      Direction.Stab,
     ];
 
     for (const dir of directions) {
@@ -184,10 +184,10 @@ describe('AnimationSystem', () => {
 
   it('handles all 4 block directions without errors', () => {
     const directions = [
-      BlockDirection.Left,
-      BlockDirection.Right,
-      BlockDirection.Top,
-      BlockDirection.Bottom,
+      Direction.Left,
+      Direction.Right,
+      Direction.Overhead,
+      Direction.Stab,
     ];
 
     for (const dir of directions) {
@@ -246,7 +246,7 @@ describe('AnimationSystem', () => {
   it('upper/lower body split: combat state affects arms, movement affects legs', () => {
     // Set combat to windup and movement to walking
     CombatStateComp.state[eid] = CombatState.Windup;
-    CombatStateComp.direction[eid] = AttackDirection.Overhead;
+    CombatStateComp.direction[eid] = Direction.Overhead;
     CombatStateComp.phaseTotal[eid] = 10;
     CombatStateComp.phaseElapsed[eid] = 5;
     Velocity.x[eid] = 3; // walking

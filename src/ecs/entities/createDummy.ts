@@ -23,7 +23,7 @@ import { createHitboxes } from '../systems/HitboxSystem';
 import { weaponBoneMap } from '../systems/TracerSystem';
 import { spawnAtGround } from '../utils/spawnAtGround';
 import { CombatState } from '../../combat/states';
-import { BlockDirection } from '../../combat/directions';
+import { Direction } from '../../combat/directions';
 import { CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS } from '../../core/types';
 import { CombatInput, createFSM, fsmRegistry, removeFSM } from '../../combat/CombatFSM';
 import { weaponConfigs } from '../../weapons/WeaponConfig';
@@ -109,9 +109,10 @@ export function createDummy(
   Stamina.current[eid] = 100;
   Stamina.max[eid] = 100;
 
-  // Start in Idle state
+  // Start in Idle state. With FSM v2's unified Direction (#139), the dummy's
+  // initial block direction is `Overhead` (formerly `BlockDirection.Top`).
   CombatStateComponent.state[eid] = CombatState.Idle;
-  CombatStateComponent.blockDirection[eid] = BlockDirection.Top;
+  CombatStateComponent.blockDirection[eid] = Direction.Overhead;
   CombatStateComponent.ticksRemaining[eid] = 0;
   const weaponIndex = weaponIdToName.indexOf(startingWeapon);
   CombatStateComponent.weaponId[eid] = weaponIndex >= 0 ? weaponIndex : 0;
@@ -205,18 +206,23 @@ export function resetAllDummies(world: GameWorld): void {
   }
 }
 
+// FSM v2 (#139): the unified `Direction` enum has 4 values
+// (Overhead, Left, Right, Stab). The cycle order is preserved from v1
+// (Top→Bottom→Left→Right) by mapping Top→Overhead and Bottom→Stab,
+// since the v1 `Bottom` block pose was reused as the new Stab block pose
+// in `AnimationData.ts`/`ViewmodelAnimationData.ts`.
 const BLOCK_DIRECTIONS = [
-  BlockDirection.Top,
-  BlockDirection.Bottom,
-  BlockDirection.Left,
-  BlockDirection.Right,
+  Direction.Overhead,
+  Direction.Stab,
+  Direction.Left,
+  Direction.Right,
 ] as const;
 
 const BLOCK_DIR_NAMES: Record<number, string> = {
-  [BlockDirection.Top]: 'Top',
-  [BlockDirection.Bottom]: 'Bottom',
-  [BlockDirection.Left]: 'Left',
-  [BlockDirection.Right]: 'Right',
+  [Direction.Overhead]: 'Overhead',
+  [Direction.Stab]: 'Stab',
+  [Direction.Left]: 'Left',
+  [Direction.Right]: 'Right',
 };
 
 /**
@@ -233,7 +239,7 @@ export function toggleDummyBlock(): string {
     if (!fsm) continue;
 
     const currentState = fsm.state;
-    const blockDir = CombatStateComponent.blockDirection[eid] as BlockDirection;
+    const blockDir = CombatStateComponent.blockDirection[eid] as Direction;
     if (currentState === CombatState.Blocking) {
       // FSM v2 (#135): single Blocking state absorbs old Block + ParryWindow.
       fsm.transition(CombatInput.ReleaseBlock);
@@ -247,14 +253,14 @@ export function toggleDummyBlock(): string {
     // see the change this frame.
     CombatStateComponent.state[eid] = fsm.state;
     CombatStateComponent.ticksRemaining[eid] = fsm.ticksRemaining;
-    CombatStateComponent.blockDirection[eid] = fsm.blockDirection;
+    CombatStateComponent.blockDirection[eid] = fsm.direction;
   }
   if (activeDummies.length === 0) return 'No dummies';
   const firstFsm = fsmRegistry.get(activeDummies[0]);
   const state = firstFsm ? firstFsm.state : CombatState.Idle;
   if (state === CombatState.Blocking) {
     const dir = CombatStateComponent.blockDirection[activeDummies[0]];
-    return `Block: ${BLOCK_DIR_NAMES[dir] ?? 'Top'}`;
+    return `Block: ${BLOCK_DIR_NAMES[dir] ?? 'Overhead'}`;
   }
   return 'Idle';
 }
@@ -268,7 +274,7 @@ export function cycleDummyBlockDirection(): string {
   for (const eid of activeDummies) {
     const fsm = fsmRegistry.get(eid);
     if (!fsm) continue;
-    const current = fsm.blockDirection;
+    const current = fsm.direction;
     const idx = BLOCK_DIRECTIONS.indexOf(current);
     const next = BLOCK_DIRECTIONS[(idx + 1) % BLOCK_DIRECTIONS.length];
     fsm.setBlockDirection(next);
@@ -277,9 +283,9 @@ export function cycleDummyBlockDirection(): string {
   if (activeDummies.length === 0) return 'No dummies';
   const firstFsm = fsmRegistry.get(activeDummies[0]);
   const dir = firstFsm
-    ? firstFsm.blockDirection
+    ? firstFsm.direction
     : CombatStateComponent.blockDirection[activeDummies[0]];
-  return BLOCK_DIR_NAMES[dir] ?? 'Top';
+  return BLOCK_DIR_NAMES[dir] ?? 'Overhead';
 }
 
 /**

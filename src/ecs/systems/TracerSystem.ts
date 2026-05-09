@@ -10,7 +10,7 @@ import {
 } from '../components';
 import { CombatState } from '../../combat/states';
 import { BodyRegion } from '../components';
-import type { AttackDirection } from '../../combat/directions';
+import type { Direction } from '../../combat/directions';
 import type { WeaponConfig, TracerPoint } from '../../weapons/WeaponConfig';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -337,7 +337,7 @@ function emitDamageEvent(
   bodyRegion: BodyRegion,
 ): void {
   // Look up damage from weapon config using direction + body zone
-  const directionDamage = config.damage[attackDir as AttackDirection];
+  const directionDamage = config.damage[attackDir as Direction];
   const zone = bodyRegionToDamageZone(bodyRegion);
   const damage = directionDamage?.[zone] ?? 0;
 

@@ -1,4 +1,4 @@
-import { AttackDirection } from '../combat/directions';
+import { Direction } from '../combat/directions';
 import { registerWeapon, type WeaponConfig } from './WeaponConfig';
 
 /**
@@ -20,50 +20,50 @@ export const battleaxe: WeaponConfig = {
   // -- Damage per direction per body zone ----------------
 
   damage: {
-    [AttackDirection.Left]: { head: 65, torso: 45, limb: 30 },
-    [AttackDirection.Right]: { head: 65, torso: 45, limb: 30 },
-    [AttackDirection.Overhead]: { head: 75, torso: 55, limb: 35 },
-    [AttackDirection.Stab]: { head: 55, torso: 40, limb: 28 },
+    [Direction.Left]: { head: 65, torso: 45, limb: 30 },
+    [Direction.Right]: { head: 65, torso: 45, limb: 30 },
+    [Direction.Overhead]: { head: 75, torso: 55, limb: 35 },
+    [Direction.Stab]: { head: 55, torso: 40, limb: 28 },
   },
 
   // -- Windup durations (ticks) --------------------------
   // Very slow. Overhead is glacial at 31 ticks (~517ms).
 
   windup: {
-    [AttackDirection.Left]: 23,      // ~383ms
-    [AttackDirection.Right]: 23,     // ~383ms
-    [AttackDirection.Overhead]: 31,  // ~517ms -- massive telegraph
-    [AttackDirection.Stab]: 19,      // ~317ms -- butt spike thrust
+    [Direction.Left]: 23,      // ~383ms
+    [Direction.Right]: 23,     // ~383ms
+    [Direction.Overhead]: 31,  // ~517ms -- massive telegraph
+    [Direction.Stab]: 19,      // ~317ms -- butt spike thrust
   },
 
   // -- Release / active swing durations (ticks) ----------
   // Long release window compensates for slow windup.
 
   release: {
-    [AttackDirection.Left]: 15,      // ~250ms
-    [AttackDirection.Right]: 15,     // ~250ms
-    [AttackDirection.Overhead]: 19,  // ~317ms
-    [AttackDirection.Stab]: 13,      // ~217ms
+    [Direction.Left]: 15,      // ~250ms
+    [Direction.Right]: 15,     // ~250ms
+    [Direction.Overhead]: 19,  // ~317ms
+    [Direction.Stab]: 13,      // ~217ms
   },
 
   // -- Full recovery durations (ticks) -------------------
   // Extremely long. A whiffed swing is practically a death sentence.
 
   recovery: {
-    [AttackDirection.Left]: 38,      // ~633ms
-    [AttackDirection.Right]: 38,     // ~633ms
-    [AttackDirection.Overhead]: 50,  // ~833ms
-    [AttackDirection.Stab]: 35,      // ~583ms
+    [Direction.Left]: 38,      // ~633ms
+    [Direction.Right]: 38,     // ~633ms
+    [Direction.Overhead]: 50,  // ~833ms
+    [Direction.Stab]: 35,      // ~583ms
   },
 
   // -- Combo recovery durations (ticks) ------------------
   // Still slow but shorter than full recovery to reward aggression.
 
   comboRecovery: {
-    [AttackDirection.Left]: 25,      // ~417ms
-    [AttackDirection.Right]: 25,     // ~417ms
-    [AttackDirection.Overhead]: 35,  // ~583ms
-    [AttackDirection.Stab]: 23,      // ~383ms
+    [Direction.Left]: 25,      // ~417ms
+    [Direction.Right]: 25,     // ~417ms
+    [Direction.Overhead]: 35,  // ~583ms
+    [Direction.Stab]: 23,      // ~383ms
   },
 
   // -- Parry window (ticks) ------------------------------

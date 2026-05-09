@@ -6,7 +6,7 @@ import {
 } from './ViewmodelAnimationData';
 import type { Pose } from './AnimationData';
 import { CombatState } from '../combat/states';
-import { AttackDirection, BlockDirection } from '../combat/directions';
+import { Direction } from '../combat/directions';
 
 const WEAPON_NAMES = ['Longsword', 'Mace', 'Dagger', 'Battleaxe'];
 
@@ -15,17 +15,17 @@ const ALLOWED_BONES = new Set(['upper_arm_R', 'forearm_R', 'hand_R']);
 
 // FSM v2 (#88, #131): 4 attack directions — Underhand removed.
 const ALL_ATTACK_DIRS = [
-  AttackDirection.Left,
-  AttackDirection.Right,
-  AttackDirection.Overhead,
-  AttackDirection.Stab,
+  Direction.Left,
+  Direction.Right,
+  Direction.Overhead,
+  Direction.Stab,
 ];
 
 const ALL_BLOCK_DIRS = [
-  BlockDirection.Left,
-  BlockDirection.Right,
-  BlockDirection.Top,
-  BlockDirection.Bottom,
+  Direction.Left,
+  Direction.Right,
+  Direction.Overhead,
+  Direction.Stab,
 ];
 
 function validatePoseBonesOnly(pose: Pose, label: string) {
@@ -113,7 +113,7 @@ describe('ViewmodelAnimationData', () => {
 
     it('each weapon has distinct attack windup for Left direction', () => {
       const windups = WEAPON_NAMES.map((n) =>
-        JSON.stringify(VIEWMODEL_ANIMS[n].attacks[AttackDirection.Left as number].windup),
+        JSON.stringify(VIEWMODEL_ANIMS[n].attacks[Direction.Left as number].windup),
       );
       const unique = new Set(windups);
       expect(unique.size).toBe(WEAPON_NAMES.length);
@@ -128,10 +128,10 @@ describe('ViewmodelAnimationData', () => {
     it('different directions produce different poses for the same weapon', () => {
       for (const weaponName of WEAPON_NAMES) {
         const anims = VIEWMODEL_ANIMS[weaponName];
-        const leftWindup = JSON.stringify(anims.attacks[AttackDirection.Left as number].windup);
-        const rightWindup = JSON.stringify(anims.attacks[AttackDirection.Right as number].windup);
-        const overheadWindup = JSON.stringify(anims.attacks[AttackDirection.Overhead as number].windup);
-        const stabWindup = JSON.stringify(anims.attacks[AttackDirection.Stab as number].windup);
+        const leftWindup = JSON.stringify(anims.attacks[Direction.Left as number].windup);
+        const rightWindup = JSON.stringify(anims.attacks[Direction.Right as number].windup);
+        const overheadWindup = JSON.stringify(anims.attacks[Direction.Overhead as number].windup);
+        const stabWindup = JSON.stringify(anims.attacks[Direction.Stab as number].windup);
 
         expect(leftWindup, `${weaponName}: Left vs Right windup`).not.toBe(rightWindup);
         expect(leftWindup, `${weaponName}: Left vs Overhead windup`).not.toBe(overheadWindup);
@@ -149,25 +149,25 @@ describe('ViewmodelAnimationData', () => {
     });
 
     it('returns windup pose for Windup state', () => {
-      const pose = getViewmodelPose('Longsword', CombatState.Windup, AttackDirection.Left);
-      expect(pose).toBe(VIEWMODEL_ANIMS['Longsword'].attacks[AttackDirection.Left as number].windup);
+      const pose = getViewmodelPose('Longsword', CombatState.Windup, Direction.Left);
+      expect(pose).toBe(VIEWMODEL_ANIMS['Longsword'].attacks[Direction.Left as number].windup);
     });
 
     it('returns release pose for Release state', () => {
-      const pose = getViewmodelPose('Mace', CombatState.Release, AttackDirection.Overhead);
-      expect(pose).toBe(VIEWMODEL_ANIMS['Mace'].attacks[AttackDirection.Overhead as number].release);
+      const pose = getViewmodelPose('Mace', CombatState.Release, Direction.Overhead);
+      expect(pose).toBe(VIEWMODEL_ANIMS['Mace'].attacks[Direction.Overhead as number].release);
     });
 
     it('returns recovery pose for Recovery state', () => {
-      const pose = getViewmodelPose('Dagger', CombatState.Recovery, AttackDirection.Stab);
-      expect(pose).toBe(VIEWMODEL_ANIMS['Dagger'].attacks[AttackDirection.Stab as number].recovery);
+      const pose = getViewmodelPose('Dagger', CombatState.Recovery, Direction.Stab);
+      expect(pose).toBe(VIEWMODEL_ANIMS['Dagger'].attacks[Direction.Stab as number].recovery);
     });
 
     it('returns block pose for Blocking state', () => {
       // FSM v2 (#135): `Block` was renamed to `Blocking`; the lookup
       // function reads block poses from the same `blocks` table.
-      const pose = getViewmodelPose('Mace', CombatState.Blocking, BlockDirection.Top);
-      expect(pose).toBe(VIEWMODEL_ANIMS['Mace'].blocks[BlockDirection.Top as number]);
+      const pose = getViewmodelPose('Mace', CombatState.Blocking, Direction.Overhead);
+      expect(pose).toBe(VIEWMODEL_ANIMS['Mace'].blocks[Direction.Overhead as number]);
     });
 
     it('returns parry pose for Parry state', () => {
@@ -194,10 +194,10 @@ describe('ViewmodelAnimationData', () => {
       // FSM v2 (#135): only the 7 surviving states are covered.
       const states: Array<[CombatState, number]> = [
         [CombatState.Idle, 0],
-        [CombatState.Windup, AttackDirection.Left],
-        [CombatState.Release, AttackDirection.Right],
-        [CombatState.Recovery, AttackDirection.Stab],
-        [CombatState.Blocking, BlockDirection.Top],
+        [CombatState.Windup, Direction.Left],
+        [CombatState.Release, Direction.Right],
+        [CombatState.Recovery, Direction.Stab],
+        [CombatState.Blocking, Direction.Overhead],
         [CombatState.Parry, 0],
         [CombatState.HitStun, 0],
       ];
@@ -210,10 +210,10 @@ describe('ViewmodelAnimationData', () => {
     });
 
     it('returns different poses for different weapons in same state', () => {
-      const longsword = getViewmodelPose('Longsword', CombatState.Windup, AttackDirection.Left);
-      const dagger = getViewmodelPose('Dagger', CombatState.Windup, AttackDirection.Left);
-      const mace = getViewmodelPose('Mace', CombatState.Windup, AttackDirection.Left);
-      const battleaxe = getViewmodelPose('Battleaxe', CombatState.Windup, AttackDirection.Left);
+      const longsword = getViewmodelPose('Longsword', CombatState.Windup, Direction.Left);
+      const dagger = getViewmodelPose('Dagger', CombatState.Windup, Direction.Left);
+      const mace = getViewmodelPose('Mace', CombatState.Windup, Direction.Left);
+      const battleaxe = getViewmodelPose('Battleaxe', CombatState.Windup, Direction.Left);
 
       expect(longsword).not.toBe(dagger);
       expect(longsword).not.toBe(mace);
