@@ -191,7 +191,7 @@ describe('AnimationSystem', () => {
     ];
 
     for (const dir of directions) {
-      CombatStateComp.state[eid] = CombatState.Block;
+      CombatStateComp.state[eid] = CombatState.Blocking;
       CombatStateComp.direction[eid] = dir;
 
       expect(() => animationSystem(world, 1 / 60)).not.toThrow();
@@ -199,17 +199,14 @@ describe('AnimationSystem', () => {
   });
 
   it('handles all combat states without errors', () => {
+    // FSM v2 (#135): only the 7 surviving states need coverage.
     const states = [
       CombatState.Idle,
       CombatState.Windup,
       CombatState.Release,
       CombatState.Recovery,
-      CombatState.Block,
-      CombatState.ParryWindow,
-      CombatState.Riposte,
-      CombatState.Feint,
-      CombatState.Clash,
-      CombatState.Stunned,
+      CombatState.Blocking,
+      CombatState.Parry,
       CombatState.HitStun,
     ];
 

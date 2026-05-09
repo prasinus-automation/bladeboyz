@@ -163,34 +163,23 @@ describe('ViewmodelAnimationData', () => {
       expect(pose).toBe(VIEWMODEL_ANIMS['Dagger'].attacks[AttackDirection.Stab as number].recovery);
     });
 
-    it('returns windup pose for Riposte state', () => {
-      const pose = getViewmodelPose('Battleaxe', CombatState.Riposte, AttackDirection.Right);
-      expect(pose).toBe(VIEWMODEL_ANIMS['Battleaxe'].attacks[AttackDirection.Right as number].windup);
-    });
-
-    it('returns recovery pose for Feint state', () => {
-      const pose = getViewmodelPose('Longsword', CombatState.Feint, AttackDirection.Overhead);
-      expect(pose).toBe(VIEWMODEL_ANIMS['Longsword'].attacks[AttackDirection.Overhead as number].recovery);
-    });
-
-    it('returns block pose for Block state', () => {
-      const pose = getViewmodelPose('Mace', CombatState.Block, BlockDirection.Top);
+    it('returns block pose for Blocking state', () => {
+      // FSM v2 (#135): `Block` was renamed to `Blocking`; the lookup
+      // function reads block poses from the same `blocks` table.
+      const pose = getViewmodelPose('Mace', CombatState.Blocking, BlockDirection.Top);
       expect(pose).toBe(VIEWMODEL_ANIMS['Mace'].blocks[BlockDirection.Top as number]);
     });
 
-    it('returns parry pose for ParryWindow state', () => {
-      const pose = getViewmodelPose('Dagger', CombatState.ParryWindow, 0);
+    it('returns parry pose for Parry state', () => {
+      // FSM v2 (#135): `ParryWindow` collapsed into Blocking; the standalone
+      // `Parry` state is the brief locked pose AFTER a successful parry.
+      const pose = getViewmodelPose('Dagger', CombatState.Parry, 0);
       expect(pose).toBe(VIEWMODEL_ANIMS['Dagger'].parry);
     });
 
-    it('returns stunned pose for Stunned and Clash states', () => {
-      expect(getViewmodelPose('Longsword', CombatState.Stunned, 0))
-        .toBe(VIEWMODEL_ANIMS['Longsword'].stunned);
-      expect(getViewmodelPose('Longsword', CombatState.Clash, 0))
-        .toBe(VIEWMODEL_ANIMS['Longsword'].stunned);
-    });
-
     it('returns hitStun pose for HitStun state', () => {
+      // FSM v2 (#135): `Stunned` and `Clash` were both collapsed into
+      // `HitStun`. The single state is the full vulnerability window.
       const pose = getViewmodelPose('Battleaxe', CombatState.HitStun, 0);
       expect(pose).toBe(VIEWMODEL_ANIMS['Battleaxe'].hitStun);
     });
@@ -202,14 +191,14 @@ describe('ViewmodelAnimationData', () => {
     });
 
     it('falls back to Longsword for all states with unknown weapon', () => {
+      // FSM v2 (#135): only the 7 surviving states are covered.
       const states: Array<[CombatState, number]> = [
         [CombatState.Idle, 0],
         [CombatState.Windup, AttackDirection.Left],
         [CombatState.Release, AttackDirection.Right],
         [CombatState.Recovery, AttackDirection.Stab],
-        [CombatState.Block, BlockDirection.Top],
-        [CombatState.ParryWindow, 0],
-        [CombatState.Stunned, 0],
+        [CombatState.Blocking, BlockDirection.Top],
+        [CombatState.Parry, 0],
         [CombatState.HitStun, 0],
       ];
 

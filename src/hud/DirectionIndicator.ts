@@ -7,7 +7,7 @@
  * Highlights the active direction based on combat state:
  *   - Idle: dim white preview of current mouse-detected direction
  *   - Windup/Release: red/orange highlight on committed attack direction
- *   - Block/ParryWindow: blue/cyan highlight on committed block direction
+ *   - Blocking/Parry: blue/cyan highlight on committed block direction
  *
  * Hidden when pointer lock is released (inventory/menus open).
  * All elements are HTML/CSS with pointer-events: none.
@@ -19,8 +19,8 @@ import { CombatStateComponent } from '../ecs/components';
 // to avoid import issues (const enums are erased at compile time).
 // AttackDirection: Left=0, Right=1, Overhead=2, Stab=3 (FSM v2 — Underhand removed)
 // BlockDirection: Left=0, Right=1, Top=2, Bottom=3
-// CombatState: Idle=0, Windup=1, Release=2, Recovery=3, Block=4, ParryWindow=5,
-//              Riposte=6, Feint=7, Clash=8, Stunned=9, HitStun=10
+// CombatState (FSM v2 — #135): Idle=0, Windup=1, Release=2, Recovery=3,
+//                              Blocking=4, Parry=5, HitStun=6
 
 /** Numeric value of `AttackDirection.Stab` (FSM v2: was 4, now 3). */
 const ATK_STAB = 3;
@@ -35,7 +35,7 @@ const enum DirIndex {
 /** Combat states where attack direction is shown actively */
 const ATTACK_ACTIVE_STATES = new Set([1, 2]); // Windup, Release
 /** Combat states where block direction is shown actively */
-const BLOCK_ACTIVE_STATES = new Set([4, 5]); // Block, ParryWindow
+const BLOCK_ACTIVE_STATES = new Set([4, 5]); // Blocking, Parry
 
 /** Color constants */
 const COLOR_IDLE = 'rgba(255, 255, 255, 0.35)';
