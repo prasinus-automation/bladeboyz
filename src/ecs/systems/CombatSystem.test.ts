@@ -4,7 +4,12 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createWorld, addEntity, addComponent, type IWorld } from 'bitecs';
-import { CombatStateComponent, CombatStateComp, Player } from '../components';
+import {
+  CombatStateComponent,
+  CombatStateComp,
+  Player,
+  DeadTag,
+} from '../components';
 import { CombatState } from '../../combat/states';
 import { AttackDirection, BlockDirection } from '../../combat/directions';
 import { CombatInput, fsmRegistry, createFSM } from '../../combat/CombatFSM';
@@ -454,6 +459,55 @@ describe('CombatSystem', () => {
       const noCameraTick = createCombatSystem(ecsWorld, input as any);
       input.pressMouseButton(0);
       expect(() => noCameraTick()).not.toThrow();
+    });
+  });
+
+  // ── DeadTag early-out (issue #130) ────────────────────
+
+  describe('DeadTag early-out', () => {
+    it('does not transition to Windup on left-click when player has DeadTag', () => {
+      addComponent(ecsWorld, DeadTag, playerEid);
+      // Left-click while dead — should be ignored
+      input.pressMouseButton(0);
+      tick();
+      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Idle);
+    });
+
+    it('does not advance the FSM timer for a dead entity', () => {
+      // Drive FSM into Windup, THEN flag dead. Without the early-out the
+      // timer would keep counting down on the next tick.
+      input.pressMouseButton(0);
+      tick();
+      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Windup);
+      const remainingBefore = CombatStateComponent.ticksRemaining[playerEid];
+
+      addComponent(ecsWorld, DeadTag, playerEid);
+      input.releaseMouseButton(0);
+      tick();
+      // ticksRemaining should NOT have decremented because the FSM didn't
+      // tick. (processDeaths normally also calls fsm.reset(), but here we
+      // skip that and only assert the early-out behavior of CombatSystem.)
+      expect(CombatStateComponent.ticksRemaining[playerEid]).toBe(remainingBefore);
+    });
+
+    it('still ticks live entities even when one is dead', () => {
+      // Add a live dummy with an FSM
+      const dummyEid = addEntity(ecsWorld);
+      addComponent(ecsWorld, CombatStateComponent, dummyEid);
+      addComponent(ecsWorld, CombatStateComp, dummyEid);
+      CombatStateComponent.state[dummyEid] = CombatState.Idle;
+      const dummyFsm = createFSM(dummyEid, weapon);
+      dummyFsm.transition(CombatInput.HitReceived);
+
+      // Kill the player
+      addComponent(ecsWorld, DeadTag, playerEid);
+
+      tick();
+      // Player FSM untouched
+      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Idle);
+      // Dummy FSM ticked and counted down
+      expect(CombatStateComponent.state[dummyEid]).toBe(CombatState.HitStun);
+      expect(CombatStateComponent.ticksRemaining[dummyEid]).toBe(weapon.hitStunTicks - 1);
     });
   });
 

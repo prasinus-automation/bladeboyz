@@ -44,6 +44,58 @@ export const Player = defineComponent();
 /** Alias for Player tag (used by character model subsystem) */
 export const IsPlayer = Player;
 
+/**
+ * Tag: entity is an AI-controlled bot. Stub component for #99 (warmup bots);
+ * shipped here so #130's `processDeaths` can include bots in the kill/death
+ * event pipeline alongside players without a follow-up plumbing PR.
+ */
+export const Bot = defineComponent();
+
+/**
+ * Tag: entity is currently dead, awaiting respawn.
+ *
+ * Added by `processDeaths` (issue #130) when HP first crosses to 0; removed
+ * by `processRespawns` (issue B in the spawn/death/respawn family) when the
+ * RespawnPending timer expires. Replaces the legacy `respawnTimers` Map
+ * side-table that previously lived in HealthSystem.
+ *
+ * Systems that should NOT run for dead entities (CombatSystem, MovementSystem)
+ * early-out via `hasComponent(world.ecs, DeadTag, eid)`.
+ *
+ * See `docs/spawn-death-respawn.md` for the full lifecycle.
+ */
+export const DeadTag = defineComponent();
+
+/**
+ * RespawnPending — per-entity respawn countdown.
+ *
+ * `ticksRemaining` is decremented each fixed tick by HealthSystem; when it
+ * hits 0 the entity is pushed into the `respawned` array and processRespawns
+ * (issue B) handles teleport + HP/stamina restore.
+ *
+ * Stored as a component (not a side-table Map) so the future networking
+ * layer can serialize remaining time per-entity in snapshots without a
+ * separate replication path.
+ */
+export const RespawnPending = defineComponent({
+  ticksRemaining: Types.ui16,
+});
+
+/**
+ * Score — per-life and lifetime score tracking.
+ *
+ * - `kills`: total kills across all lives (incremented when this entity is
+ *   credited as the killer in a `DeathEvent`).
+ * - `deaths`: total deaths across all lives (incremented on every death).
+ * - `goldThisLife`: gold earned during the current life. Reset to 0 in
+ *   processDeaths. Total persistent gold lives elsewhere (issue #95 / Wallet).
+ */
+export const Score = defineComponent({
+  kills: Types.ui16,
+  deaths: Types.ui16,
+  goldThisLife: Types.ui32,
+});
+
 /** Physics body reference (index into lookup table) */
 export const PhysicsBody = defineComponent({
   bodyHandle: Types.ui32,

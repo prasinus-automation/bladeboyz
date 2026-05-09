@@ -245,3 +245,30 @@ export function resetInventorySystem(): void {
   inventoryRegistry.clear();
   equipListeners.length = 0;
 }
+
+/**
+ * Drop the entity's currently-equipped weapon at its feet (no-op stub).
+ *
+ * Issue #130 wires this into `processDeaths` so the death pipeline is
+ * complete; the actual implementation — spawn a `WeaponPickup` entity at
+ * the victim's feet, unequip the weapon, skip the protected `starterWeapon` —
+ * is owned by issue #94 / #A2 (drop-on-death). The signature here is the
+ * contract those PRs implement against.
+ *
+ * Until then this is a deliberate no-op. Tests that assert the function
+ * is called pass via spy / mock; production behavior is unchanged.
+ *
+ * @param entityId the dying entity
+ * @param world the GameWorld (will be needed to spawn the pickup); typed
+ *   loosely so this module doesn't have to import GameWorld and create
+ *   an import cycle with `core/types`.
+ */
+export function dropEquippedWeapon(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  entityId: number,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
+  world: any,
+): void {
+  // Intentionally empty — see #94. The hook is wired so processDeaths can
+  // be tested end-to-end now without waiting for the drop implementation.
+}
