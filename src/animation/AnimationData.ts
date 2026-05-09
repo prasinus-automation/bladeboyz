@@ -392,13 +392,36 @@ export const UPPER_BODY_BONES: ReadonlySet<string> = new Set([
   'shoulder_R', 'upper_arm_R', 'forearm_R', 'hand_R',
 ]);
 
+/**
+ * Upper-body bones MINUS spine. Used by the rebuilt AnimationSystem
+ * (issue #128) so the combat layer can claim arms + chest + head + neck
+ * while leaving spine ownership to the §5 precedence rule (combat owns
+ * spine iff the combat pose has a spine entry, else movement owns it).
+ *
+ * This replaces the old fixed `60/40` blend (`AnimationSystem.ts:294-303`
+ * pre-rebuild) where both layers wrote spine and the result drifted.
+ */
+export const UPPER_BODY_BONES_EXCEPT_SPINE: ReadonlySet<string> = new Set([
+  'chest', 'neck', 'head',
+  'shoulder_L', 'upper_arm_L', 'forearm_L', 'hand_L',
+  'shoulder_R', 'upper_arm_R', 'forearm_R', 'hand_R',
+]);
+
 /** Bones controlled by movement (lower body) animations */
 export const LOWER_BODY_BONES: ReadonlySet<string> = new Set([
   'thigh_L', 'shin_L', 'foot_L',
   'thigh_R', 'shin_R', 'foot_R',
 ]);
 
-/** Bones shared between upper and lower — blended from both */
+/**
+ * @deprecated The fixed-ratio shared-bone blend was replaced by the
+ * §5 layer-ownership precedence rule (issue #128). Spine is now owned
+ * by exactly one layer per tick — combat if the pose specifies it, else
+ * movement, else rest. New code SHOULD NOT use this set.
+ *
+ * Kept exported for backward compat with consumers that haven't migrated;
+ * remove in a follow-up cleanup once those land.
+ */
 export const SHARED_BONES: ReadonlySet<string> = new Set([
   'spine',
 ]);

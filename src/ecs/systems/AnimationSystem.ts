@@ -1,16 +1,29 @@
 /**
- * Procedural Animation System.
+ * Procedural Animation System — third-person rebuild (issue #128).
  *
- * Runs in `update(dt)` (variable rate) for smooth blending.
- * Reads combat FSM state from fixedUpdate to drive upper body animations.
- * Reads velocity to drive lower body movement animations.
+ * Implements §9 of `docs/animation-architecture.md`:
+ *   1. Read the read-model (`CombatStateComp`, `MovementState`).
+ *   2. On state OR direction change, snapshot every bone's current
+ *      quaternion into a per-entity side-table.
+ *   3. Ramp `crossfadeT` (0 → 1 over CROSSFADE_DURATION_SEC).
+ *   4. Compute layer ownership — exactly one layer writes each bone
+ *      per tick (no double-writes on spine or shoulders).
+ *   5. Apply the lower-body procedural walk/run cycle (or movement
+ *      basePose).
+ *   6. Apply the idle arm-swing when Idle && moving.
+ *   7. Apply the upper-body combat pose. Release uses the arc-driven
+ *      swing (`arcSwing.ts`); other states use keyframe slerp.
+ *   8. Apply the hit-react lean overlay during HitStun.
+ *   9. Apply the idle breathing sway.
  *
- * Architecture:
- * - Upper body (spine, arms, head) driven by combat state + direction
- * - Lower body (legs) driven by movement state + velocity
- * - Smooth blending via quaternion slerp between poses
- * - Animation data is separate (see AnimationData.ts)
- * - Never modifies FSM state — read-only from FSM's perspective
+ * Variable-rate; runs in `update(dt)` after combat/movement systems
+ * have populated the read-model on the most recent fixed tick.
+ *
+ * Read-only contract: this system mutates ONLY bone quaternions and
+ * `AnimationComp` fields (`crossfadeT`, `walkCycle`, `prevCombatState`,
+ * `prevDirection`, `movementState`). It NEVER touches `CombatStateComp`,
+ * `CombatStateComponent`, `MovementState`, the FSM, or any non-animation
+ * component.
  */
 
 import * as THREE from 'three';
@@ -19,172 +32,261 @@ import {
   CharacterModel,
   CombatStateComp,
   AnimationComp,
-  Velocity,
+  HitReactComp,
+  MovementState,
   meshRegistry,
 } from '../components';
-import { CombatState, MovementState } from '../../combat/states';
+import {
+  CombatState,
+  MovementState as MovementStateEnum,
+} from '../../combat/states';
 import {
   getCombatPose,
   getMovementParams,
-  UPPER_BODY_BONES,
   LOWER_BODY_BONES,
-  SHARED_BONES,
-  IDLE_POSE,
+  UPPER_BODY_BONES_EXCEPT_SPINE,
   type Pose,
-  type BoneRotation,
 } from '../../animation/AnimationData';
-import { FIXED_TIMESTEP as FIXED_DT } from '../../core/types';
+import {
+  applyPoseLayer,
+  smoothstepEase,
+  CROSSFADE_DURATION_SEC,
+} from '../../animation/poseBlending';
+import {
+  computeArcSwingPose,
+  ARC_SWING_OWNED_BONES,
+} from '../../animation/arcSwing';
+import { applyHitReactLean } from '../../animation/hitReact';
+import { getCurrentFixedTick } from '../../core/tickCounter';
 import type { GameWorld } from '../../core/types';
 
 // ── Constants ────────────────────────────────────────────
 
-/** Default blend speed (seconds) for smooth transitions */
-const DEFAULT_BLEND_DURATION = 0.08; // ~80ms crossfade
+/** speedFactor below this threshold is treated as "not moving". */
+const IDLE_SPEED_FACTOR_THRESHOLD = 0.05;
 
-/** Breathing sway amplitude (radians) and frequency (Hz) */
+/** speedFactor above this threshold is treated as running (vs walking). */
+const RUN_SPEED_FACTOR_THRESHOLD = 0.85;
+
+/** Subtle idle breathing — amplitude (radians) and frequency (Hz). */
 const BREATH_AMPLITUDE = 0.008;
 const BREATH_FREQUENCY = 0.4;
 
-/** Speed thresholds for movement state detection */
-const WALK_SPEED_THRESHOLD = 0.5;
-const RUN_SPEED_THRESHOLD = 5.0;
+// ── Pre-computed bone subsets ────────────────────────────
 
-// ── Reusable temp objects (avoid GC pressure) ────────────
+/** Just `spine` — used when checking ownership. */
+const SPINE_SET: ReadonlySet<string> = new Set(['spine']);
 
-const _tempQuat = new THREE.Quaternion();
-const _targetQuat = new THREE.Quaternion();
-const _euler = new THREE.Euler();
-const _prevQuat = new THREE.Quaternion();
+/** Idle-walk arm-swing owned bones (counter-swing of the gait cycle). */
+const SHOULDERS_SET: ReadonlySet<string> = new Set([
+  'shoulder_L',
+  'shoulder_R',
+]);
+
+// ── Side-tables (per-entity, non-numeric data) ───────────
+
+/**
+ * Per-entity snapshot of bone quaternions captured at the moment of the
+ * last state/direction change. The §4 keyframe rule slerps from this
+ * snapshot toward the target pose by `easedT` — fixing the buggy
+ * "slerp from live bone state" behavior in the legacy system.
+ *
+ * Module-level Map (matches the `meshRegistry`/`fsmRegistry` pattern).
+ * Will move onto `GameWorld` if multi-world ever lands.
+ */
+export const prevPoseSnapshots = new Map<
+  number,
+  Record<string, THREE.Quaternion>
+>();
 
 // ── Query ────────────────────────────────────────────────
 
-const animatedQuery = defineQuery([CharacterModel, CombatStateComp, AnimationComp]);
+const animatedQuery = defineQuery([
+  CharacterModel,
+  CombatStateComp,
+  AnimationComp,
+]);
 
-// ── Helper: convert BoneRotation to Quaternion ───────────
+// ── Reusable temp objects (avoid GC pressure) ────────────
 
-function boneRotationToQuat(rot: BoneRotation, out: THREE.Quaternion): THREE.Quaternion {
-  _euler.set(rot.x ?? 0, rot.y ?? 0, rot.z ?? 0, 'XYZ');
-  return out.setFromEuler(_euler);
-}
+const _euler = new THREE.Euler();
+const _swayQuat = new THREE.Quaternion();
+const _targetQuat = new THREE.Quaternion();
 
-// ── Helper: get the identity quaternion ──────────────────
+// ── Module-level state ───────────────────────────────────
 
-const IDENTITY_QUAT = new THREE.Quaternion();
+/** Elapsed time accumulator for breathing animation. */
+let _elapsedTime = 0;
 
-// ── Helper: detect movement state from velocity ──────────
+// ── Helpers ──────────────────────────────────────────────
 
-function detectMovementState(
-  vx: number,
-  _vy: number,
-  vz: number,
+/**
+ * Map `MovementState` ECS-component flags to the pose-data movement
+ * key used by `getMovementParams`. Always returns one of:
+ * `'idle' | 'walk' | 'run' | 'jump' | 'crouch'`.
+ */
+function movementKeyFromState(
+  speedFactor: number,
   isGrounded: boolean,
   isCrouching: boolean,
-): MovementState {
-  if (!isGrounded) return MovementState.Jumping;
-  if (isCrouching) return MovementState.Crouching;
-
-  const horizontalSpeed = Math.sqrt(vx * vx + vz * vz);
-  if (horizontalSpeed > RUN_SPEED_THRESHOLD) return MovementState.Running;
-  if (horizontalSpeed > WALK_SPEED_THRESHOLD) return MovementState.Walking;
-  return MovementState.Idle;
+): 'idle' | 'walk' | 'run' | 'jump' | 'crouch' {
+  if (!isGrounded) return 'jump';
+  if (isCrouching) return 'crouch';
+  if (speedFactor <= IDLE_SPEED_FACTOR_THRESHOLD) return 'idle';
+  if (speedFactor >= RUN_SPEED_FACTOR_THRESHOLD) return 'run';
+  return 'walk';
 }
 
-function movementStateToKey(state: MovementState): string {
-  switch (state) {
-    case MovementState.Walking: return 'walk';
-    case MovementState.Running: return 'run';
-    case MovementState.Jumping: return 'jump';
-    case MovementState.Crouching: return 'crouch';
-    default: return 'idle';
+/** Map a movement key back to the legacy `MovementState` enum (HUD/debug). */
+function movementKeyToEnum(key: string): MovementStateEnum {
+  switch (key) {
+    case 'walk':
+      return MovementStateEnum.Walking;
+    case 'run':
+      return MovementStateEnum.Running;
+    case 'jump':
+      return MovementStateEnum.Jumping;
+    case 'crouch':
+      return MovementStateEnum.Crouching;
+    default:
+      return MovementStateEnum.Idle;
   }
 }
 
-// ── Helper: apply a pose to upper or lower body bones ────
-
-function applyPoseToBones(
-  bones: Record<string, THREE.Bone>,
-  pose: Pose,
-  boneSet: ReadonlySet<string>,
-  blendFactor: number,
-): void {
-  for (const boneName of boneSet) {
-    const bone = bones[boneName];
-    if (!bone) continue;
-
-    const rotation = pose[boneName];
-    if (rotation) {
-      boneRotationToQuat(rotation, _targetQuat);
-    } else {
-      // No rotation specified — blend toward identity (rest pose)
-      _targetQuat.copy(IDENTITY_QUAT);
-    }
-
-    bone.quaternion.slerp(_targetQuat, blendFactor);
-  }
-}
-
-// ── Helper: apply sinusoidal walk/run cycle to legs ──────
-
+/**
+ * Apply the procedural walk/run cycle to legs (and optionally hips/spine
+ * if owned). Bones outside `ownedBoneSet` are NOT touched, so this can
+ * coexist with combat layers writing other bones in the same tick.
+ *
+ * Direct quaternion writes (not slerps from snapshot) — the cycle is a
+ * pure procedural function of `walkCycle` and the bone is the only
+ * writer this tick.
+ */
 function applyWalkCycle(
   bones: Record<string, THREE.Bone>,
   walkCycle: number,
   legSwing: number,
-  armSwing: number,
-  blendFactor: number,
+  ownedBoneSet: ReadonlySet<string>,
 ): void {
   const sinPhase = Math.sin(walkCycle);
-  const cosPhase = Math.cos(walkCycle);
 
-  // Legs: alternating swing (thighs pitch forward/back)
+  // Legs: alternating thigh swing
   const legBones: Array<[string, string, number]> = [
     ['thigh_L', 'shin_L', sinPhase],
     ['thigh_R', 'shin_R', -sinPhase],
   ];
 
   for (const [thighName, shinName, phase] of legBones) {
-    const thigh = bones[thighName];
-    const shin = bones[shinName];
-    if (thigh) {
-      _euler.set(phase * legSwing, 0, 0, 'XYZ');
-      _targetQuat.setFromEuler(_euler);
-      thigh.quaternion.slerp(_targetQuat, blendFactor);
+    if (ownedBoneSet.has(thighName)) {
+      const thigh = bones[thighName];
+      if (thigh) {
+        _euler.set(phase * legSwing, 0, 0, 'XYZ');
+        thigh.quaternion.setFromEuler(_euler);
+      }
     }
-    if (shin) {
-      // Shin bends forward more when leg is behind (positive phase = extending back)
-      const shinBend = Math.max(0, phase) * legSwing * 0.8;
-      _euler.set(shinBend, 0, 0, 'XYZ');
-      _targetQuat.setFromEuler(_euler);
-      shin.quaternion.slerp(_targetQuat, blendFactor);
+    if (ownedBoneSet.has(shinName)) {
+      const shin = bones[shinName];
+      if (shin) {
+        const shinBend = Math.max(0, phase) * legSwing * 0.8;
+        _euler.set(shinBend, 0, 0, 'XYZ');
+        shin.quaternion.setFromEuler(_euler);
+      }
     }
   }
 
-  // Arms: counter-swing (only when not in combat — handled by caller)
-  if (armSwing > 0) {
-    const armBones: Array<[string, number]> = [
-      ['shoulder_L', -sinPhase],
-      ['shoulder_R', sinPhase],
-    ];
-    for (const [name, phase] of armBones) {
-      const bone = bones[name];
-      if (bone) {
-        _euler.set(phase * armSwing, 0, 0, 'XYZ');
-        _targetQuat.setFromEuler(_euler);
-        bone.quaternion.slerp(_targetQuat, blendFactor);
-      }
+  // Feet snap to rest if owned (no foot animation in v1).
+  for (const footName of ['foot_L', 'foot_R']) {
+    if (ownedBoneSet.has(footName)) {
+      const foot = bones[footName];
+      if (foot) foot.quaternion.identity();
     }
   }
 }
 
-// ── Main System ──────────────────────────────────────────
-
-/** Elapsed time accumulator for breathing animation */
-let _elapsedTime = 0;
+/**
+ * Compute the idle arm-swing pose — counter-swing on the shoulders that
+ * matches the gait cycle. Returns a `Pose` so it can be slerped into the
+ * arms via `applyPoseLayer` (so it crossfades smoothly when entering
+ * Idle from a combat state).
+ */
+function computeIdleArmSwingPose(walkCycle: number, armSwing: number): Pose {
+  const sinPhase = Math.sin(walkCycle);
+  return {
+    shoulder_L: { x: -sinPhase * armSwing },
+    shoulder_R: { x: sinPhase * armSwing },
+  };
+}
 
 /**
- * Animation system — call in update(dt) for smooth variable-rate blending.
- *
- * @param world - The game world
- * @param dt - Frame delta time in seconds (variable rate)
+ * Compute layer ownership for one tick per §5 of the spec.
+ * Returns `{ movementOwned, combatOwned }` such that no bone is in both
+ * sets and every animatable bone is owned by at most one layer.
+ */
+function computeOwnership(
+  state: CombatState,
+  isMoving: boolean,
+  movementBasePose: Pose,
+  combatPose: Pose | null,
+): { movementOwned: Set<string>; combatOwned: Set<string> } {
+  const movementOwned = new Set<string>(LOWER_BODY_BONES);
+
+  // Idle-walk: shoulders counter-swing with the gait.
+  if (state === CombatState.Idle && isMoving) {
+    movementOwned.add('shoulder_L');
+    movementOwned.add('shoulder_R');
+  }
+
+  // Spine precedence: combat first, else movement if its base pose
+  // touches spine, else rest (no owner).
+  const combatWantsSpine = combatPose !== null && 'spine' in combatPose;
+  const movementWantsSpine = 'spine' in movementBasePose;
+  if (movementWantsSpine && !combatWantsSpine) {
+    movementOwned.add('spine');
+  }
+
+  const combatOwned = new Set<string>();
+  if (combatPose !== null) {
+    for (const b of UPPER_BODY_BONES_EXCEPT_SPINE) combatOwned.add(b);
+    if (combatWantsSpine) combatOwned.add('spine');
+    // Strip anything movement already claimed.
+    for (const b of movementOwned) combatOwned.delete(b);
+  }
+
+  return { movementOwned, combatOwned };
+}
+
+/**
+ * Compute the intersection of two bone sets. Allocates a new Set each
+ * call — used in the per-tick layer routing where the cost is amortized
+ * over a small number of bones.
+ */
+function intersectBones(
+  a: ReadonlySet<string>,
+  b: ReadonlySet<string>,
+): Set<string> {
+  const result = new Set<string>();
+  for (const name of a) if (b.has(name)) result.add(name);
+  return result;
+}
+
+/**
+ * Compute `a \ b`. Allocates a new Set each call (same justification).
+ */
+function subtractBones(
+  a: ReadonlySet<string>,
+  b: ReadonlySet<string>,
+): Set<string> {
+  const result = new Set<string>();
+  for (const name of a) if (!b.has(name)) result.add(name);
+  return result;
+}
+
+// ── Main System ──────────────────────────────────────────
+
+/**
+ * Animation system — call in `update(dt)` for smooth variable-rate
+ * blending. Reads the read-model populated by combat/movement systems
+ * during fixedUpdate and writes bone quaternions only.
  */
 export function animationSystem(world: GameWorld, dt: number): void {
   _elapsedTime += dt;
@@ -194,131 +296,204 @@ export function animationSystem(world: GameWorld, dt: number): void {
     const eid = entities[i];
     const modelData = meshRegistry.get(CharacterModel.id[eid]);
     if (!modelData) continue;
-
     const { bones } = modelData;
 
-    // ── Read combat state ──
-    const combatState = CombatStateComp.state[eid] as CombatState;
+    // ── 1. Read read-model ──
+    const state = CombatStateComp.state[eid] as CombatState;
     const direction = CombatStateComp.direction[eid];
-    const phaseElapsed = CombatStateComp.phaseElapsed[eid];
-    const phaseTotal = CombatStateComp.phaseTotal[eid];
+    const phaseT = CombatStateComp.phaseT[eid];
 
-    // ── Detect state transitions ──
+    // MovementState fields default to 0 when the component isn't on this
+    // entity (bitECS TypedArray semantics) — that maps to "idle, grounded,
+    // not crouching", which is exactly what dummies should look like.
+    const speedFactor = MovementState.speedFactor[eid];
+    const isCrouching = MovementState.crouching[eid] === 1;
+    const isGrounded = MovementState.grounded[eid] === 1;
+
+    // ── 2. State-change snapshot ──
     const prevState = AnimationComp.prevCombatState[eid] as CombatState;
     const prevDir = AnimationComp.prevDirection[eid];
-    const stateChanged = combatState !== prevState || direction !== prevDir;
+    const stateChanged = state !== prevState || direction !== prevDir;
 
     if (stateChanged) {
-      // Reset blend progress on state change for smooth transition
-      AnimationComp.upperBlend[eid] = 0;
-      AnimationComp.prevCombatState[eid] = combatState;
+      // Snapshot ALL bones — we don't yet know which ones will be owned,
+      // and the cost is one Quaternion clone per bone (~17 bones).
+      const snapshot: Record<string, THREE.Quaternion> = {};
+      for (const boneName in bones) {
+        snapshot[boneName] = bones[boneName].quaternion.clone();
+      }
+      prevPoseSnapshots.set(eid, snapshot);
+      AnimationComp.crossfadeT[eid] = 0;
+      AnimationComp.prevCombatState[eid] = state;
       AnimationComp.prevDirection[eid] = direction;
     }
 
-    // ── Calculate blend factors ──
-    // Phase-based blend: ramp 0→1 over the phase duration
-    let phaseBlend = 1;
-    if (phaseTotal > 0) {
-      const phaseSeconds = phaseTotal * FIXED_DT;
-      const elapsedSeconds = phaseElapsed * FIXED_DT;
-      phaseBlend = Math.min(1, elapsedSeconds / phaseSeconds);
+    // First sight: lazy-initialize an empty snapshot so the first frame's
+    // slerp source is identity (rest pose) — matches the behavior of a
+    // never-poised character.
+    let prevSnapshot = prevPoseSnapshots.get(eid);
+    if (!prevSnapshot) {
+      prevSnapshot = {};
+      prevPoseSnapshots.set(eid, prevSnapshot);
     }
 
-    // Time-based blend for crossfade on state transitions
-    let upperBlend = AnimationComp.upperBlend[eid];
-    upperBlend = Math.min(1, upperBlend + dt / DEFAULT_BLEND_DURATION);
-    AnimationComp.upperBlend[eid] = upperBlend;
+    // ── 3. Crossfade timer ──
+    let crossfadeT = AnimationComp.crossfadeT[eid];
+    crossfadeT = Math.min(1, crossfadeT + dt / CROSSFADE_DURATION_SEC);
+    AnimationComp.crossfadeT[eid] = crossfadeT;
+    const effectiveT = smoothstepEase(Math.max(phaseT, crossfadeT));
 
-    // Use the faster of phase blend or crossfade blend
-    const effectiveUpperBlend = Math.max(phaseBlend, upperBlend);
-
-    // ── Get target upper body pose ──
-    const combatPose = getCombatPose(combatState, direction);
-
-    // ── Apply upper body combat animation ──
-    applyPoseToBones(bones, combatPose, UPPER_BODY_BONES, effectiveUpperBlend);
-
-    // ── Movement state detection ──
-    const vx = Velocity.x[eid] ?? 0;
-    const vy = Velocity.y[eid] ?? 0;
-    const vz = Velocity.z[eid] ?? 0;
-    const horizontalSpeed = Math.sqrt(vx * vx + vz * vz);
-
-    // Simple grounded/crouching detection — for now assume grounded if vy ~= 0
-    const isGrounded = Math.abs(vy) < 0.5;
-    const isCrouching = false; // TODO: read from input/movement component
-
-    const movState = detectMovementState(vx, vy, vz, isGrounded, isCrouching);
-    AnimationComp.movementState[eid] = movState;
-
-    const movKey = movementStateToKey(movState);
+    // ── 4. Layer ownership ──
+    const movKey = movementKeyFromState(speedFactor, isGrounded, isCrouching);
     const movParams = getMovementParams(movKey);
+    // The combat layer is always active in the upper-body sense — Idle
+    // returns IDLE_POSE (the "ready stance" sword-guard) which the layer
+    // stamps onto the arms. The §5 spec note "combat is active when state
+    // !== Idle" applies to spine ownership only — see `computeOwnership`.
+    const combatPose: Pose = getCombatPose(state, direction);
+    const isMoving = speedFactor > IDLE_SPEED_FACTOR_THRESHOLD;
 
-    // ── Lower body blend ──
-    let lowerBlend = AnimationComp.lowerBlend[eid];
-    lowerBlend = Math.min(1, lowerBlend + dt / DEFAULT_BLEND_DURATION);
-    AnimationComp.lowerBlend[eid] = lowerBlend;
+    AnimationComp.movementState[eid] = movementKeyToEnum(movKey);
 
-    // ── Apply movement base pose to lower body ──
-    if (Object.keys(movParams.basePose).length > 0) {
-      applyPoseToBones(bones, movParams.basePose, LOWER_BODY_BONES, lowerBlend);
-    }
+    const { movementOwned, combatOwned } = computeOwnership(
+      state,
+      isMoving,
+      movParams.basePose,
+      combatPose,
+    );
 
-    // ── Walk/run cycle ──
-    if (movParams.legSwing > 0 && horizontalSpeed > WALK_SPEED_THRESHOLD) {
-      // Accumulate walk cycle phase based on distance traveled
+    // ── 5. Lower-body procedural ──
+    if (movKey === 'walk' || movKey === 'run') {
       let walkCycle = AnimationComp.walkCycle[eid];
-      walkCycle += dt * movParams.cycleSpeed * (horizontalSpeed / 4); // normalize to walk speed
-      // Wrap at 2*PI to prevent float overflow
+      walkCycle += dt * movParams.cycleSpeed * speedFactor;
       if (walkCycle > Math.PI * 2) walkCycle -= Math.PI * 2;
       AnimationComp.walkCycle[eid] = walkCycle;
 
-      // Only apply arm swing from walk cycle if in idle combat state
-      const armSwing = combatState === CombatState.Idle ? movParams.armSwing : 0;
-
-      applyWalkCycle(bones, walkCycle, movParams.legSwing, armSwing, lowerBlend);
+      const legBones = intersectBones(movementOwned, LOWER_BODY_BONES);
+      applyWalkCycle(bones, walkCycle, movParams.legSwing, legBones);
     } else {
-      // Reset walk cycle smoothly when stopped
-      applyPoseToBones(bones, movParams.basePose, LOWER_BODY_BONES, lowerBlend);
+      // Idle/crouch/jump base pose into legs (and spine if owned).
+      const legBones = intersectBones(movementOwned, LOWER_BODY_BONES);
+      applyPoseLayer(
+        bones,
+        prevSnapshot,
+        movParams.basePose,
+        effectiveT,
+        legBones,
+      );
     }
 
-    // ── Shared bones (spine) — blend combat + movement ──
-    for (const boneName of SHARED_BONES) {
-      const bone = bones[boneName];
-      if (!bone) continue;
-
-      // Combat pose for this bone
-      const combatRot = combatPose[boneName];
-      const movRot = movParams.basePose[boneName];
-
-      if (combatRot && movRot) {
-        // Both want to affect this bone — average the quaternions
-        boneRotationToQuat(combatRot, _targetQuat);
-        boneRotationToQuat(movRot, _prevQuat);
-        // Blend: 60% combat, 40% movement for shared bones
-        _prevQuat.slerp(_targetQuat, 0.6);
-        bone.quaternion.slerp(_prevQuat, effectiveUpperBlend);
-      }
-      // If only one has it, it was already applied by the respective pass
+    // Movement layer's spine pass (only if it owns spine — combat may
+    // override). Separate pass so leg apply above can stay lean.
+    if (movementOwned.has('spine')) {
+      applyPoseLayer(
+        bones,
+        prevSnapshot,
+        movParams.basePose,
+        effectiveT,
+        SPINE_SET,
+      );
     }
 
-    // ── Idle breathing (subtle sway) ──
-    if (combatState === CombatState.Idle && movState === MovementState.Idle) {
-      const breathSway = Math.sin(_elapsedTime * Math.PI * 2 * BREATH_FREQUENCY) * BREATH_AMPLITUDE;
+    // ── 6. Idle arm-swing (only when no combat) ──
+    if (state === CombatState.Idle && isMoving && (movKey === 'walk' || movKey === 'run')) {
+      const armSwingPose = computeIdleArmSwingPose(
+        AnimationComp.walkCycle[eid],
+        movParams.armSwing,
+      );
+      applyPoseLayer(
+        bones,
+        prevSnapshot,
+        armSwingPose,
+        effectiveT,
+        SHOULDERS_SET,
+      );
+    }
+
+    // ── 7. Upper-body combat (always — Idle uses IDLE_POSE ready stance) ──
+    if (state === CombatState.Release) {
+      // Hybrid: arc swing for arm bones; keyframe slerp for the rest.
+      const arcPose = computeArcSwingPose(direction, phaseT);
+      const armOwned = intersectBones(combatOwned, ARC_SWING_OWNED_BONES);
+      // Arc swing: target moves with phaseT, so we use crossfadeT alone
+      // for the slerp blend factor — once the crossfade has ramped up
+      // the bone IS exactly on the arc at every phaseT. Using
+      // `max(phaseT, crossfadeT)` here would double-blend (target moves
+      // AND blend factor moves) and visually drag.
+      const arcEasedT = smoothstepEase(crossfadeT);
+      applyPoseLayer(bones, prevSnapshot, arcPose, arcEasedT, armOwned);
+
+      // Non-arm combat bones (chest, neck, head, left arm, upper_arm_R,
+      // possibly spine) follow the keyframe pose under the standard
+      // effectiveT.
+      const nonArmCombat = subtractBones(combatOwned, ARC_SWING_OWNED_BONES);
+      applyPoseLayer(
+        bones,
+        prevSnapshot,
+        combatPose,
+        effectiveT,
+        nonArmCombat,
+      );
+    } else {
+      // Pure keyframe slerp — covers Idle (IDLE_POSE), Windup, Recovery,
+      // Blocking, Parry, HitStun.
+      applyPoseLayer(
+        bones,
+        prevSnapshot,
+        combatPose,
+        effectiveT,
+        combatOwned,
+      );
+    }
+
+    // ── 8. Hit-react overlay (only in HitStun, only when fresh) ──
+    if (
+      state === CombatState.HitStun &&
+      HitReactComp.active[eid] === 1 &&
+      HitReactComp.magnitude[eid] > 0
+    ) {
+      const ticksAlive =
+        getCurrentFixedTick() - HitReactComp.spawnedAtTick[eid];
+      const durationTicks = HitReactComp.durationTicks[eid];
+      const t =
+        durationTicks > 0
+          ? Math.max(0, Math.min(1, ticksAlive / durationTicks))
+          : 0;
+      applyHitReactLean(
+        bones['spine'] ?? null,
+        bones['chest'] ?? null,
+        HitReactComp.dirX[eid],
+        HitReactComp.dirY[eid],
+        HitReactComp.dirZ[eid],
+        HitReactComp.magnitude[eid],
+        t,
+      );
+    }
+
+    // ── 9. Idle breathing sway ──
+    if (state === CombatState.Idle && movKey === 'idle') {
+      const breathSway =
+        Math.sin(_elapsedTime * Math.PI * 2 * BREATH_FREQUENCY) *
+        BREATH_AMPLITUDE;
       const chestBone = bones['chest'];
       if (chestBone) {
         _euler.set(breathSway, 0, breathSway * 0.5, 'XYZ');
-        _tempQuat.setFromEuler(_euler);
-        chestBone.quaternion.multiply(_tempQuat);
+        _swayQuat.setFromEuler(_euler);
+        chestBone.quaternion.multiply(_swayQuat);
       }
     }
+
+    // Suppress "unused" warning for the prepared targetQuat — kept around
+    // for any future helper that needs it without re-allocating.
+    void _targetQuat;
   }
 }
 
 /**
- * Reset the animation system elapsed time.
- * Useful for testing.
+ * Reset the animation system's module-level state (elapsed time +
+ * per-entity snapshots). Called by tests for deterministic state.
  */
 export function resetAnimationSystem(): void {
   _elapsedTime = 0;
+  prevPoseSnapshots.clear();
 }
