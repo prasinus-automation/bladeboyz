@@ -203,6 +203,18 @@ async function main(): Promise<void> {
     viewmodel.swapWeapon(event.weaponName);
   });
 
+  // Snap the viewmodel after a respawn so the aim-sway lag (#129, doc §7)
+  // doesn't visibly catch up over ~5 frames after the player teleports to
+  // the new spawn point. Without this, the viewmodel rotation lerps from
+  // the death-time orientation toward the spawn-time orientation, which
+  // looks like a delayed "swing" right at the moment the player needs to
+  // reorient. snap() also resets the locomotion bob accumulator.
+  EventBus.on('RespawnEvent', (payload) => {
+    if (payload.eid === playerEid) {
+      viewmodel.snap(world.camera);
+    }
+  });
+
   // ─── --debug-viewmodel toggle (issue #122) ───
   //
   // Initial state: URL query param `?debug-viewmodel=...` (presence is enough).
@@ -453,7 +465,14 @@ async function main(): Promise<void> {
     // at high framerates (vsync 144Hz, etc.).
   };
 
+  // Render-frame `dt` cache. GameLoop's render(alpha) doesn't receive dt, but
+  // the viewmodel's aim-sway lag + locomotion bob need it (see #129). Capturing
+  // it from the immediately-prior `update(dt)` call is correct because update
+  // and render always run in lockstep inside one GameLoop tick.
+  let lastUpdateDt = 1 / 60;
+
   loop.update = (dt: number) => {
+    lastUpdateDt = dt;
     // Variable-rate updates: animation blending
     animationSystem(world, dt);
     viewmodelAnimationSystem(viewmodel, playerEid, dt, weaponIdToName);
@@ -483,6 +502,15 @@ async function main(): Promise<void> {
       _boneEulers['forearm_R'] = viewmodel.bones['forearm_R'].rotation;
       _boneEulers['hand_R'] = viewmodel.bones['hand_R'].rotation;
       _boneEulers['weapon_attach'] = viewmodel.bones['weapon_attach'].rotation;
+      // Aim-sway lag readout (#129): live angle between the viewmodel group
+      // and the world camera, in degrees. With τ=80ms and a frame at 16ms,
+      // this hovers near 0° at rest and spikes briefly during fast aim
+      // flicks, decaying back to 0 over a few frames. A non-zero idle value
+      // would indicate a broken sync or a per-frame source of rotation
+      // outside the slerp.
+      const aimSwayDeg =
+        viewmodel.group.quaternion.angleTo(world.camera.quaternion) * (180 / Math.PI);
+
       viewmodelDebugOverlay.update({
         weaponName: viewmodel.getCurrentWeaponName() ?? '?',
         combatState: COMBAT_STATE_NAMES[stateNum] ?? String(stateNum),
@@ -492,9 +520,7 @@ async function main(): Promise<void> {
         boneEulers: _boneEulers,
         armOffset: getArmOffset(),
         fov: viewmodel.camera.fov,
-        // Aim-sway lag is reserved for sub-issue #129 (inertia + bob + sway).
-        // Until that lands, leave as null — overlay renders 'n/a'.
-        aimSwayDeg: null,
+        aimSwayDeg,
       });
     }
   };
@@ -534,8 +560,22 @@ async function main(): Promise<void> {
     // Pass 1: Render world scene (Layer 0) with world camera
     world.renderer.render(world.scene, world.camera);
 
-    // Pass 2: Sync viewmodel camera, clear depth, render viewmodel (Layer 1)
-    viewmodel.syncWithCamera(world.camera);
+    // Pass 2: Sync viewmodel camera, clear depth, render viewmodel (Layer 1).
+    //
+    // Issue #129: pass dt + horizontal velocity so the renderer can apply the
+    // aim-sway lag (rotational low-pass, doc §7) and locomotion bob (doc §6).
+    //   - `dt` is captured from the prior `loop.update(dt)` call (render gets
+    //     `alpha`, not `dt`, from GameLoop). Caching it across the
+    //     update→render boundary is sound because they always run in lockstep
+    //     within one tick (see GameLoop.tick).
+    //   - Horizontal velocity: kinematic-position-based bodies don't populate
+    //     Rapier's `linvel()`, and `Velocity.x/.z` aren't written by any system
+    //     today, so derive from Position deltas. Position only changes on
+    //     fixed ticks; the read is piecewise-constant between physics steps,
+    //     which is fine for the bob (perceived as a smooth stride).
+    const velX = (Position.x[playerEid] - PreviousPosition.x[playerEid]) / FIXED_TIMESTEP;
+    const velZ = (Position.z[playerEid] - PreviousPosition.z[playerEid]) / FIXED_TIMESTEP;
+    viewmodel.syncWithCamera(world.camera, lastUpdateDt, velX, velZ);
     world.renderer.autoClear = false;
     world.renderer.clearDepth();
     // Null scene.background during Pass 2 to prevent Three.js from rendering

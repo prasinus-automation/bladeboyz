@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as THREE from 'three';
 import { ViewmodelRenderer, VIEWMODEL_LAYER, getArmOffset } from './ViewmodelRenderer';
+import { resetBob } from './ViewmodelBob';
+import { AIM_SWAY_TAU_SECONDS, ARM_OFFSET } from './ViewmodelTuning';
 
 // Helper: create a minimal scene
 function createTestScene(): THREE.Scene {
@@ -276,20 +278,25 @@ describe('ViewmodelRenderer', () => {
   });
 
   describe('syncWithCamera', () => {
-    it('copies world camera position and quaternion to viewmodel camera', () => {
+    beforeEach(() => {
+      // Reset locomotion bob so cross-test state doesn't leak (the bob is
+      // module-global; updateBob runs inside syncWithCamera).
+      resetBob();
+    });
+
+    it('copies world camera position to viewmodel camera (no positional lag)', () => {
       const worldCamera = new THREE.PerspectiveCamera(78, 16 / 9, 0.1, 1000);
       worldCamera.position.set(5, 10, 15);
-      worldCamera.quaternion.setFromEuler(new THREE.Euler(0.5, 1.0, 0));
+      worldCamera.quaternion.identity();
 
-      viewmodel.syncWithCamera(worldCamera);
+      // Pre-snap rotation so the rotation lag doesn't interfere with the
+      // position assertion below.
+      viewmodel.snap(worldCamera);
+      viewmodel.syncWithCamera(worldCamera, 0.016, 0, 0);
 
       expect(viewmodel.camera.position.x).toBe(5);
       expect(viewmodel.camera.position.y).toBe(10);
       expect(viewmodel.camera.position.z).toBe(15);
-      expect(viewmodel.camera.quaternion.x).toBeCloseTo(worldCamera.quaternion.x);
-      expect(viewmodel.camera.quaternion.y).toBeCloseTo(worldCamera.quaternion.y);
-      expect(viewmodel.camera.quaternion.z).toBeCloseTo(worldCamera.quaternion.z);
-      expect(viewmodel.camera.quaternion.w).toBeCloseTo(worldCamera.quaternion.w);
     });
 
     it('positions viewmodel group offset from camera', () => {
@@ -297,13 +304,15 @@ describe('ViewmodelRenderer', () => {
       worldCamera.position.set(0, 0, 0);
       worldCamera.quaternion.identity();
 
-      viewmodel.syncWithCamera(worldCamera);
+      // Snap first so the group orientation matches the camera (we're
+      // checking the offset, not the rotation lag).
+      viewmodel.snap(worldCamera);
+      viewmodel.syncWithCamera(worldCamera, 0.016, 0, 0);
 
-      // With identity quaternion, offset should be applied directly.
-      // ARM_OFFSET = (0.25, -0.10, -0.4) — the group origin (= shoulder) sits
-      // slightly below the camera so the arm hangs into the lower-right FOV.
-      expect(viewmodel.group.position.x).toBeCloseTo(0.25);
-      expect(viewmodel.group.position.y).toBeCloseTo(-0.1);
+      // With identity quaternion + zero velocity (no bob contribution),
+      // the offset is exactly ARM_OFFSET = (0.25, -0.10, -0.4).
+      expect(viewmodel.group.position.x).toBeCloseTo(0.25, 3);
+      expect(viewmodel.group.position.y).toBeCloseTo(-0.1, 3);
       expect(viewmodel.group.position.z).toBeCloseTo(-0.4);
     });
 
@@ -316,21 +325,190 @@ describe('ViewmodelRenderer', () => {
       worldCamera.position.set(0, 0, 0);
       worldCamera.quaternion.identity();
 
-      viewmodel.syncWithCamera(worldCamera);
+      viewmodel.snap(worldCamera);
+      viewmodel.syncWithCamera(worldCamera, 0.016, 0, 0);
 
       expect(viewmodel.group.position.y).toBeLessThanOrEqual(0);
     });
 
-    it('applies camera rotation to viewmodel group orientation', () => {
+    it('eventually slerps group orientation to match the camera', () => {
       const worldCamera = new THREE.PerspectiveCamera(78, 16 / 9, 0.1, 1000);
       worldCamera.quaternion.setFromEuler(new THREE.Euler(0, Math.PI / 2, 0));
 
-      viewmodel.syncWithCamera(worldCamera);
+      // Many frames at 16ms (~1.5s of game time, ~19 time constants) — should
+      // converge to the camera quat within tolerance.
+      for (let i = 0; i < 100; i++) {
+        viewmodel.syncWithCamera(worldCamera, 0.016, 0, 0);
+      }
 
-      expect(viewmodel.group.quaternion.x).toBeCloseTo(worldCamera.quaternion.x);
-      expect(viewmodel.group.quaternion.y).toBeCloseTo(worldCamera.quaternion.y);
-      expect(viewmodel.group.quaternion.z).toBeCloseTo(worldCamera.quaternion.z);
-      expect(viewmodel.group.quaternion.w).toBeCloseTo(worldCamera.quaternion.w);
+      expect(viewmodel.group.quaternion.x).toBeCloseTo(worldCamera.quaternion.x, 3);
+      expect(viewmodel.group.quaternion.y).toBeCloseTo(worldCamera.quaternion.y, 3);
+      expect(viewmodel.group.quaternion.z).toBeCloseTo(worldCamera.quaternion.z, 3);
+      expect(viewmodel.group.quaternion.w).toBeCloseTo(worldCamera.quaternion.w, 3);
+    });
+
+    // ─── Aim-sway lag (doc §7) ───
+    describe('aim-sway lag', () => {
+      it('first frame: viewmodel quat is partway between identity and camera (≈18% at dt=16ms)', () => {
+        // alpha = 1 - exp(-0.016 / 0.080) ≈ 0.181
+        const worldCamera = new THREE.PerspectiveCamera(78, 16 / 9, 0.1, 1000);
+        worldCamera.quaternion.setFromEuler(new THREE.Euler(0, Math.PI / 2, 0));
+
+        // Start from identity (group quat is identity by construction)
+        const startQuat = viewmodel.group.quaternion.clone();
+        const targetAngle = startQuat.angleTo(worldCamera.quaternion);
+
+        viewmodel.syncWithCamera(worldCamera, 0.016, 0, 0);
+
+        const remainingAngle = viewmodel.group.quaternion.angleTo(worldCamera.quaternion);
+        // After one slerp at alpha≈0.181, ~82% of the angle remains.
+        const expectedAlpha = 1 - Math.exp(-0.016 / AIM_SWAY_TAU_SECONDS);
+        const expectedRemaining = targetAngle * (1 - expectedAlpha);
+        expect(remainingAngle).toBeCloseTo(expectedRemaining, 2);
+      });
+
+      it('5 frames at 16ms → ~63% closed (one time constant)', () => {
+        const worldCamera = new THREE.PerspectiveCamera(78, 16 / 9, 0.1, 1000);
+        worldCamera.quaternion.setFromEuler(new THREE.Euler(0, Math.PI / 2, 0));
+        const startAngle = viewmodel.group.quaternion.angleTo(worldCamera.quaternion);
+
+        // 5 × 0.016 = 0.080s = TAU. Expected closed ≈ 1 - 1/e ≈ 0.632.
+        for (let i = 0; i < 5; i++) {
+          viewmodel.syncWithCamera(worldCamera, 0.016, 0, 0);
+        }
+        const remainingAngle = viewmodel.group.quaternion.angleTo(worldCamera.quaternion);
+        const closedFraction = 1 - remainingAngle / startAngle;
+        expect(closedFraction).toBeCloseTo(0.632, 1);
+      });
+
+      it('frame-rate independent: 30Hz vs 144Hz converge similarly over equal sim time', () => {
+        const worldCamera = new THREE.PerspectiveCamera(78, 16 / 9, 0.1, 1000);
+        worldCamera.quaternion.setFromEuler(new THREE.Euler(0, Math.PI / 2, 0));
+
+        // 0.5s of sim time at 30Hz
+        const a = new ViewmodelRenderer(createTestScene(), 1, {
+          weaponFactories,
+        });
+        for (let i = 0; i < 15; i++) a.syncWithCamera(worldCamera, 1 / 30, 0, 0);
+
+        // 0.5s of sim time at 144Hz
+        const b = new ViewmodelRenderer(createTestScene(), 1, {
+          weaponFactories,
+        });
+        for (let i = 0; i < Math.round(144 * 0.5); i++) b.syncWithCamera(worldCamera, 1 / 144, 0, 0);
+
+        const aRemaining = a.group.quaternion.angleTo(worldCamera.quaternion);
+        const bRemaining = b.group.quaternion.angleTo(worldCamera.quaternion);
+        // Allow a tiny tolerance for accumulator drift between the two paths
+        expect(Math.abs(aRemaining - bRemaining)).toBeLessThan(0.05);
+      });
+
+      it('viewmodel CAMERA quat is also lagged in lockstep with the group', () => {
+        // Prevents arm "swimming" in screen space — the camera frame must
+        // share the lag, not snap to the world camera.
+        const worldCamera = new THREE.PerspectiveCamera(78, 16 / 9, 0.1, 1000);
+        worldCamera.quaternion.setFromEuler(new THREE.Euler(0, Math.PI / 2, 0));
+
+        viewmodel.syncWithCamera(worldCamera, 0.016, 0, 0);
+
+        // After one frame the viewmodel camera quat should match the group
+        // quat (both lagged), NOT the world camera quat.
+        expect(viewmodel.camera.quaternion.angleTo(viewmodel.group.quaternion))
+          .toBeLessThan(1e-5);
+      });
+    });
+
+    // ─── snap() ───
+    describe('snap', () => {
+      it('hard-copies camera quaternion to group + viewmodel camera', () => {
+        const worldCamera = new THREE.PerspectiveCamera(78, 16 / 9, 0.1, 1000);
+        worldCamera.position.set(10, 20, 30);
+        worldCamera.quaternion.setFromEuler(new THREE.Euler(0.4, 1.2, 0));
+
+        viewmodel.snap(worldCamera);
+
+        expect(viewmodel.group.quaternion.x).toBeCloseTo(worldCamera.quaternion.x);
+        expect(viewmodel.group.quaternion.y).toBeCloseTo(worldCamera.quaternion.y);
+        expect(viewmodel.group.quaternion.z).toBeCloseTo(worldCamera.quaternion.z);
+        expect(viewmodel.group.quaternion.w).toBeCloseTo(worldCamera.quaternion.w);
+        expect(viewmodel.camera.quaternion.x).toBeCloseTo(worldCamera.quaternion.x);
+        expect(viewmodel.camera.position.x).toBe(10);
+      });
+
+      it('subsequent slerp resumes from the snapped pose', () => {
+        const worldCamera = new THREE.PerspectiveCamera(78, 16 / 9, 0.1, 1000);
+        worldCamera.quaternion.setFromEuler(new THREE.Euler(0, Math.PI / 2, 0));
+
+        viewmodel.snap(worldCamera);
+        // Now rotate the camera further; lag should kick in from the SNAPPED
+        // pose, not from identity.
+        worldCamera.quaternion.setFromEuler(new THREE.Euler(0, Math.PI, 0));
+        viewmodel.syncWithCamera(worldCamera, 0.016, 0, 0);
+
+        // Group should be partway between the snapped pose (Math.PI/2) and
+        // the new target (Math.PI). Verify it's NOT at identity (which would
+        // mean the snap didn't take).
+        const identityAngle = viewmodel.group.quaternion.angleTo(new THREE.Quaternion());
+        expect(identityAngle).toBeGreaterThan(Math.PI / 4);
+      });
+
+      it('resets bob on snap (no stale stride after respawn)', () => {
+        // Build up bob state by running with velocity
+        for (let i = 0; i < 100; i++) {
+          viewmodel.syncWithCamera(new THREE.PerspectiveCamera(78, 1, 0.1, 1000), 0.016, 4, 0);
+        }
+        // Snap should reset
+        viewmodel.snap(new THREE.PerspectiveCamera(78, 1, 0.1, 1000));
+        // After snap with stationary, no bob contribution
+        const cam = new THREE.PerspectiveCamera(78, 1, 0.1, 1000);
+        cam.position.set(0, 0, 0);
+        cam.quaternion.identity();
+        viewmodel.snap(cam); // snap again to set group position cleanly
+        // Should be at exactly ARM_OFFSET (no bob contamination)
+        expect(viewmodel.group.position.x).toBeCloseTo(ARM_OFFSET.x);
+        expect(viewmodel.group.position.y).toBeCloseTo(ARM_OFFSET.y);
+        expect(viewmodel.group.position.z).toBeCloseTo(ARM_OFFSET.z);
+      });
+    });
+
+    // ─── Locomotion bob (doc §6) ───
+    describe('locomotion bob integration', () => {
+      it('stationary player produces no bob contribution after warmup', () => {
+        const worldCamera = new THREE.PerspectiveCamera(78, 1, 0.1, 1000);
+        worldCamera.position.set(0, 0, 0);
+        worldCamera.quaternion.identity();
+
+        // Snap first, then sync many frames at zero velocity. Position should
+        // remain exactly at camera + ARM_OFFSET (no bob jitter).
+        viewmodel.snap(worldCamera);
+        for (let i = 0; i < 100; i++) {
+          viewmodel.syncWithCamera(worldCamera, 0.016, 0, 0);
+        }
+
+        expect(viewmodel.group.position.x).toBeCloseTo(ARM_OFFSET.x, 4);
+        expect(viewmodel.group.position.y).toBeCloseTo(ARM_OFFSET.y, 4);
+        expect(viewmodel.group.position.z).toBeCloseTo(ARM_OFFSET.z, 4);
+      });
+
+      it('walking adds visible bob to position over time', () => {
+        const worldCamera = new THREE.PerspectiveCamera(78, 1, 0.1, 1000);
+        worldCamera.position.set(0, 0, 0);
+        worldCamera.quaternion.identity();
+        viewmodel.snap(worldCamera);
+
+        // Run many frames at a moderate horizontal speed.
+        let maxYDeviation = 0;
+        for (let i = 0; i < 200; i++) {
+          viewmodel.syncWithCamera(worldCamera, 0.016, 4, 0); // 4 m/s = WALK_SPEED
+          maxYDeviation = Math.max(
+            maxYDeviation,
+            Math.abs(viewmodel.group.position.y - ARM_OFFSET.y),
+          );
+        }
+        // At full bob, vertical amplitude is BOB_VERTICAL_AMPLITUDE = 0.012.
+        expect(maxYDeviation).toBeGreaterThan(0.005);
+        expect(maxYDeviation).toBeLessThan(0.015);
+      });
     });
   });
 
