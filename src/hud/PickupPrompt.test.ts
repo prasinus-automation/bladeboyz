@@ -16,7 +16,7 @@ import { Position } from '../ecs/components';
 import { pickupRegistry, resetPickupRegistry } from '../inventory/PickupRegistry';
 import { fsmRegistry, CombatFSM } from '../combat/CombatFSM';
 import { CombatInput } from '../combat/CombatFSM';
-import { AttackDirection } from '../combat/directions';
+import { Direction } from '../combat/directions';
 import { weaponConfigs } from '../weapons/WeaponConfig';
 import '../weapons/longsword'; // auto-register
 import { PickupPrompt } from './PickupPrompt';
@@ -136,7 +136,7 @@ describe('PickupPrompt', () => {
     addPickup(2, 'Mace', 0.5, 0.1, 0);
     // Drive the FSM out of Idle via a real Attack input (funneled write).
     const fsm = fsmRegistry.get(PLAYER_EID)!;
-    fsm.transition(CombatInput.Attack, AttackDirection.Stab);
+    fsm.transition(CombatInput.Attack, Direction.Stab);
     prompt.update(PLAYER_EID);
     const el = document.getElementById('pickup-prompt')!;
     expect(el.style.display).toBe('none');
