@@ -47,7 +47,12 @@ export function createMaceModel(): WeaponModelResult {
     new THREE.Vector3(0, HANDLE_LEN + HEAD_RADIUS * 2, 0),      // top of head
   ];
 
-  return { group, tracerPoints };
+  // Viewmodel grip data (#125, doc §4.3). Head angled up-forward to
+  // emphasize the heavy mace head; small Z-axis lean reads as off-axis grip.
+  const gripOffset = new THREE.Vector3(0, 0, 0);
+  const gripRotation = new THREE.Euler(Math.PI * 0.75, 0, -0.15);
+
+  return { group, tracerPoints, gripOffset, gripRotation };
 }
 
 // ── Dagger Model ────────────────────────────────────────────
@@ -95,7 +100,13 @@ export function createDaggerModel(): WeaponModelResult {
     new THREE.Vector3(0, GRIP_LEN + BLADE_H - 0.02, 0), // blade tip
   ];
 
-  return { group, tracerPoints };
+  // Viewmodel grip data (#125, doc §4.3). Tighter grip pulled slightly
+  // toward the camera (Z negative), blade tilted further forward — sells
+  // the small/quick feel. A reverse-grip variant could rotate ~π on Z.
+  const gripOffset = new THREE.Vector3(0, 0, -0.02);
+  const gripRotation = new THREE.Euler(Math.PI * 0.9, 0, 0);
+
+  return { group, tracerPoints, gripOffset, gripRotation };
 }
 
 // ── Battleaxe Model ─────────────────────────────────────────
@@ -145,7 +156,13 @@ export function createBattleaxeModel(): WeaponModelResult {
     tracerPoints.push(new THREE.Vector3(0, headBase + t * HEAD_H, 0));
   }
 
-  return { group, tracerPoints };
+  // Viewmodel grip data (#125, doc §4.3). Head heavy + angled
+  // down-sideways — Y-offset pulls the model down toward the hand bottom
+  // (long handle), small +Z rotation tilts the head. Sells the weight.
+  const gripOffset = new THREE.Vector3(0, -0.05, 0);
+  const gripRotation = new THREE.Euler(Math.PI * 0.8, 0, 0.1);
+
+  return { group, tracerPoints, gripOffset, gripRotation };
 }
 
 // ── Weapon Model Factory Registry ───────────────────────────

@@ -19,10 +19,28 @@
  *   vm_upper_arm_R
  *   └── vm_forearm_R
  *       └── vm_hand_R
- *           └── vm_weapon_attach  (pre-rotated Math.PI * 0.85 on X)
+ *           └── vm_weapon_attach  (grip rotation/offset applied per-weapon — see #125)
+ *
+ * Per-weapon grip data (#125, see `docs/viewmodel-architecture.md` §4):
+ * Each `WeaponModelResult` may carry optional `gripOffset` / `gripRotation`
+ * fields. On `swapWeapon(name)` the renderer copies those onto
+ * `vm_weapon_attach.position` / `.rotation` so each weapon sits in the
+ * hand at its own tuned angle. The legacy `Math.PI * 0.85` constant lives
+ * in the longsword factory (its legacy value); other factories supply their
+ * own values. Weapons with no grip data fall back to identity position
+ * and the legacy longsword rotation, which is safer than baking the value
+ * into the bone hierarchy.
+ *
+ * Pre-warmed model cache (#125, see doc §8): each registered factory is
+ * called exactly once at construction; results are cached and re-parented
+ * on swap. Zero-allocation weapon swaps after init.
  */
 
 import * as THREE from 'three';
+import {
+  weaponModelFactories as defaultWeaponModelFactories,
+  type WeaponModelResult,
+} from './WeaponModels';
 
 /** Render layer index for viewmodel meshes */
 export const VIEWMODEL_LAYER = 1;
@@ -56,6 +74,19 @@ const DEBUG_BONE_NAMES = ['upper_arm_R', 'forearm_R', 'hand_R', 'weapon_attach']
  * the viewport (this was the bug fixed in #81).
  */
 const ARM_OFFSET = new THREE.Vector3(0.25, -0.1, -0.4);
+
+/**
+ * Default grip rotation applied when a weapon's `WeaponModelResult` does not
+ * supply its own `gripRotation`. Matches the pre-#125 hardcoded value
+ * (`Math.PI * 0.85` on X) so a freshly registered weapon factory without
+ * grip data renders the same as a longsword would have rendered before.
+ *
+ * Mutable factories (tests) may register on the fly; per-frame use should
+ * instead read from the active `WeaponModelResult` so the constant stays a
+ * fallback only.
+ */
+const DEFAULT_GRIP_OFFSET = new THREE.Vector3(0, 0, 0);
+const DEFAULT_GRIP_ROTATION = new THREE.Euler(Math.PI * 0.85, 0, 0);
 
 /**
  * Read-only view of `ARM_OFFSET` for the debug overlay. Exposed so the overlay
@@ -93,11 +124,34 @@ function setLayerRecursive(object: THREE.Object3D, layer: number): void {
   }
 }
 
+/**
+ * Dispose of all geometries + materials underneath an Object3D, including
+ * skinned meshes. Used by `dispose()` for the arm group AND for every cached
+ * weapon `Group` (see §8.3 of the architecture doc).
+ */
+function disposeMeshes(root: THREE.Object3D): void {
+  root.traverse((obj) => {
+    if (obj instanceof THREE.Mesh || obj instanceof THREE.SkinnedMesh) {
+      obj.geometry.dispose();
+      if (Array.isArray(obj.material)) {
+        obj.material.forEach((m) => m.dispose());
+      } else {
+        obj.material.dispose();
+      }
+    }
+  });
+}
+
 export interface ViewmodelRendererOptions {
   /** Initial weapon name to display. Defaults to 'Dagger'. */
   initialWeapon?: string;
-  /** Weapon model factory registry (name -> factory function). */
-  weaponFactories?: Record<string, () => { group: THREE.Group }>;
+  /**
+   * Weapon model factory registry (name -> factory). When omitted, the
+   * renderer falls back to the canonical `weaponModelFactories` registry
+   * exported from `./WeaponModels` so `main.ts` does not need to inline the
+   * factory list (see #125 cleanup). Tests pass their own fakes here.
+   */
+  weaponFactories?: Record<string, () => WeaponModelResult>;
 }
 
 export class ViewmodelRenderer {
@@ -117,7 +171,11 @@ export class ViewmodelRenderer {
   /** Whether the viewmodel is currently visible (FPS mode) */
   private _visible = true;
 
-  /** Reference to the current weapon group (child of weapon_attach bone) */
+  /**
+   * Reference to the *currently mounted* weapon group (child of weapon_attach
+   * bone). It also lives in `weaponModelCache` — `swapWeapon` only re-parents,
+   * never reallocates.
+   */
   private weaponGroup: THREE.Group | null = null;
 
   /** Currently equipped weapon name (matches `weaponFactories` key). */
@@ -126,8 +184,23 @@ export class ViewmodelRenderer {
   /** The weapon_attach bone — weapon models attach here */
   private weaponAttachBone: THREE.Bone;
 
-  /** Weapon factory registry */
-  private weaponFactories: Record<string, () => { group: THREE.Group }>;
+  /**
+   * Construction-time base position of `vm_weapon_attach` in `vm_hand_R`
+   * local space. Stored so per-weapon `gripOffset` values are applied as
+   * offsets RELATIVE to the natural hand-bottom anchor — not as absolute
+   * replacements. This way weapon authors don't need to know `HAND_H`,
+   * and a weapon with `gripOffset = (0, 0, 0)` renders at the same
+   * position the pre-#125 hardcoded bone would have rendered at.
+   */
+  private weaponAttachBasePos: THREE.Vector3;
+
+  /**
+   * Pre-warmed cache of `WeaponModelResult` keyed by weapon name. Filled
+   * once at construction by calling each registered factory; weapon swaps
+   * after init re-parent the cached group rather than reallocating.
+   * Disposed in `dispose()`.
+   */
+  private weaponModelCache: Map<string, WeaponModelResult> = new Map();
 
   /**
    * --debug-viewmodel state.
@@ -144,7 +217,8 @@ export class ViewmodelRenderer {
     aspect: number,
     options: ViewmodelRendererOptions = {},
   ) {
-    this.weaponFactories = options.weaponFactories ?? {};
+    const weaponFactories =
+      options.weaponFactories ?? defaultWeaponModelFactories;
 
     // ── Create viewmodel camera ──
     this.camera = new THREE.PerspectiveCamera(
@@ -189,13 +263,25 @@ export class ViewmodelRenderer {
     handBone.position.set(0, -FOREARM_H, 0);
     forearmBone.add(handBone);
 
+    // weapon_attach bone — the per-weapon grip data is applied here on swap.
+    //
+    // Position: bone is anchored at the bottom of the hand (`-HAND_H` below
+    //   the hand pivot). Per-weapon `gripOffset` is ADDED to this base in
+    //   `swapWeapon()`, not replacing it. The base persists across swaps so
+    //   weapons with `gripOffset = (0, 0, 0)` render at the natural hand
+    //   anchor (preserving pre-#125 behavior 1:1 for the longsword).
+    //
+    // Rotation: NO hardcoded rotation at construction (#125). A fresh
+    //   renderer with no weapon equipped sits at rotation identity. The
+    //   first `swapWeapon()` copies the active weapon's `gripRotation`
+    //   (or the legacy fallback) onto the bone.
     const weaponAttachBone = new THREE.Bone();
     weaponAttachBone.name = 'vm_weapon_attach';
     weaponAttachBone.position.set(0, -HAND_H, 0);
-    weaponAttachBone.rotation.x = Math.PI * 0.85; // Angle weapon slightly forward for natural grip
     handBone.add(weaponAttachBone);
 
     this.weaponAttachBone = weaponAttachBone;
+    this.weaponAttachBasePos = weaponAttachBone.position.clone();
 
     // Expose bones without vm_ prefix (matches AnimationData.ts bone names)
     this.bones = {
@@ -283,15 +369,31 @@ export class ViewmodelRenderer {
     // Add root bone to group so skeleton transforms propagate
     this.group.add(upperArmBone);
 
-    // Set all viewmodel meshes to Layer 1
+    // Set all viewmodel meshes (arm + bones) to Layer 1.
+    // Cached weapon models below have their layers set per-entry, since
+    // `setLayerRecursive` traverses children — we want each cached group's
+    // own meshes layered, NOT just the live-attached one.
     setLayerRecursive(this.group, VIEWMODEL_LAYER);
+
+    // ── Pre-warm weapon model cache (#125, doc §8.1) ──
+    //
+    // Call each registered factory exactly once and stash the result. Layer 1
+    // is set at cache time, not per-swap, so swap is allocation-free.
+    // Materials/geometries live until dispose() — with 4 weapons of ~5 KB
+    // geometry each the memory cost is negligible.
+    for (const [name, factory] of Object.entries(weaponFactories)) {
+      const result = factory();
+      result.group.name = `viewmodel_weapon_${name}`;
+      setLayerRecursive(result.group, VIEWMODEL_LAYER);
+      this.weaponModelCache.set(name, result);
+    }
 
     // Add to scene (viewmodel camera will see it; world camera won't)
     scene.add(this.group);
 
-    // Attach initial weapon if specified
+    // Attach initial weapon if it's in the cache
     const initialWeaponName = options.initialWeapon ?? 'Dagger';
-    if (this.weaponFactories[initialWeaponName]) {
+    if (this.weaponModelCache.has(initialWeaponName)) {
       this.swapWeapon(initialWeaponName);
     }
   }
@@ -375,34 +477,61 @@ export class ViewmodelRenderer {
 
   /**
    * Swap the weapon model on the viewmodel.
-   * Removes the old weapon, creates a new one from the factory, and sets layers.
-   * Weapon is attached to the weapon_attach bone.
+   *
+   * Detaches the previously mounted weapon (without disposing — the cached
+   * group stays alive for re-equip), looks up the new weapon's cached
+   * `WeaponModelResult`, applies its grip offset / rotation to the
+   * `weapon_attach` bone (or the legacy fallback when grip data is missing),
+   * and re-parents the cached group. Zero allocations after init.
+   *
+   * Returns false if the weapon name is not in the cache (e.g. a typo or a
+   * weapon registered after construction). Logs a warning.
    */
   swapWeapon(weaponName: string): boolean {
-    const factory = this.weaponFactories[weaponName];
-    if (!factory) {
-      console.warn(`ViewmodelRenderer.swapWeapon: no factory for "${weaponName}"`);
+    const cached = this.weaponModelCache.get(weaponName);
+    if (!cached) {
+      console.warn(
+        `ViewmodelRenderer.swapWeapon: no cached model for "${weaponName}"`,
+      );
       return false;
     }
 
-    // Remove old weapon
+    // Detach current weapon (do NOT dispose — it stays in the cache)
     if (this.weaponGroup) {
       this.weaponAttachBone.remove(this.weaponGroup);
       this.weaponGroup = null;
     }
 
-    // Create new weapon from factory (separate instance from world model)
-    const { group: newWeapon } = factory();
-    newWeapon.name = `viewmodel_weapon_${weaponName}`;
+    // Apply per-weapon grip (#125, doc §4.2 — additive position, replacement
+    // rotation):
+    //
+    // Position is **additive** from the construction-time hand-bottom anchor.
+    //   Weapons that omit gripOffset render at the natural anchor; weapons
+    //   that supply one shift relative to it. This keeps weapon authors out
+    //   of the HAND_H baseline and makes the doc's "preserves current
+    //   behavior" promise for the longsword (gripOffset (0,0,0)) literally
+    //   true — pre-#125 the bone sat at (0, -HAND_H, 0); post-#125 with
+    //   default offset it still sits at (0, -HAND_H, 0).
+    //
+    // Rotation is **replacement** — the bone has no construction rotation
+    //   post-#125. The fallback `DEFAULT_GRIP_ROTATION` matches the pre-#125
+    //   hardcoded `Math.PI * 0.85` so a freshly registered factory without
+    //   grip data renders identically to a longsword.
+    this.weaponAttachBone.position.copy(this.weaponAttachBasePos);
+    if (cached.gripOffset) {
+      this.weaponAttachBone.position.add(cached.gripOffset);
+    } else {
+      this.weaponAttachBone.position.add(DEFAULT_GRIP_OFFSET);
+    }
+    this.weaponAttachBone.rotation.copy(
+      cached.gripRotation ?? DEFAULT_GRIP_ROTATION,
+    );
 
-    // No position/rotation needed — weapon_attach bone provides both
-    // (bone is pre-positioned at hand bottom, pre-rotated Math.PI on X)
-
-    // Set layer on all weapon meshes
-    setLayerRecursive(newWeapon, VIEWMODEL_LAYER);
-
-    this.weaponAttachBone.add(newWeapon);
-    this.weaponGroup = newWeapon;
+    // Attach cached group as child of weapon_attach
+    this.weaponAttachBone.add(cached.group);
+    this.weaponGroup = cached.group;
+    // Track the renderer's reality (used by the --debug-viewmodel overlay
+    // via getCurrentWeaponName(), not from FSM weaponId — see #161).
     this.currentWeaponName = weaponName;
 
     return true;
@@ -434,19 +563,27 @@ export class ViewmodelRenderer {
   }
 
   /**
-   * Dispose of all viewmodel resources.
+   * Dispose of all viewmodel resources, including every cached weapon model.
+   * After dispose, the renderer is unusable — construct a fresh one to
+   * resume.
    */
   dispose(): void {
     this.group.parent?.remove(this.group);
-    this.group.traverse((obj) => {
-      if (obj instanceof THREE.Mesh) {
-        obj.geometry.dispose();
-        if (Array.isArray(obj.material)) {
-          obj.material.forEach((m) => m.dispose());
-        } else {
-          obj.material.dispose();
-        }
-      }
-    });
+
+    // Arm meshes + the currently mounted weapon (which is also in the cache,
+    // but the traverse handles double-disposal safely as long as we don't
+    // re-enter it below — Three.js disposers are idempotent for a single
+    // call, but cheap to skip).
+    disposeMeshes(this.group);
+
+    // Cached weapon groups that aren't currently mounted. The currently
+    // mounted weapon is a child of weapon_attach, which is a child of the
+    // group, so it was already disposed by the traversal above. Skip it.
+    for (const [, result] of this.weaponModelCache) {
+      if (result.group === this.weaponGroup) continue;
+      disposeMeshes(result.group);
+    }
+    this.weaponModelCache.clear();
+    this.weaponGroup = null;
   }
 }

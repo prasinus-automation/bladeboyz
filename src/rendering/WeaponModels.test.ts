@@ -29,6 +29,21 @@ describe('createMaceModel', () => {
     const { group } = createMaceModel();
     expect(group.children.length).toBe(2);
   });
+
+  // ── #125: per-weapon viewmodel grip data ────────────────────
+  it('supplies gripOffset and gripRotation per doc §4.3', () => {
+    const result = createMaceModel();
+    expect(result.gripOffset).toBeDefined();
+    expect(result.gripRotation).toBeDefined();
+    // Doc §4.3 starting values: (0,0,0), (Math.PI*0.75, 0, -0.15).
+    // Pinned here so visual-tuning changes surface as test diffs.
+    expect(result.gripOffset!.x).toBeCloseTo(0);
+    expect(result.gripOffset!.y).toBeCloseTo(0);
+    expect(result.gripOffset!.z).toBeCloseTo(0);
+    expect(result.gripRotation!.x).toBeCloseTo(Math.PI * 0.75);
+    expect(result.gripRotation!.y).toBeCloseTo(0);
+    expect(result.gripRotation!.z).toBeCloseTo(-0.15);
+  });
 });
 
 describe('createDaggerModel', () => {
@@ -54,6 +69,20 @@ describe('createDaggerModel', () => {
     const { group } = createDaggerModel();
     expect(group.children.length).toBe(2);
   });
+
+  // ── #125: per-weapon viewmodel grip data ────────────────────
+  it('supplies gripOffset and gripRotation per doc §4.3', () => {
+    const result = createDaggerModel();
+    expect(result.gripOffset).toBeDefined();
+    expect(result.gripRotation).toBeDefined();
+    // Doc §4.3 starting values: (0,0,-0.02), (Math.PI*0.90, 0, 0).
+    expect(result.gripOffset!.x).toBeCloseTo(0);
+    expect(result.gripOffset!.y).toBeCloseTo(0);
+    expect(result.gripOffset!.z).toBeCloseTo(-0.02);
+    expect(result.gripRotation!.x).toBeCloseTo(Math.PI * 0.9);
+    expect(result.gripRotation!.y).toBeCloseTo(0);
+    expect(result.gripRotation!.z).toBeCloseTo(0);
+  });
 });
 
 describe('createBattleaxeModel', () => {
@@ -78,6 +107,20 @@ describe('createBattleaxeModel', () => {
   it('group has 2 children (handle, head)', () => {
     const { group } = createBattleaxeModel();
     expect(group.children.length).toBe(2);
+  });
+
+  // ── #125: per-weapon viewmodel grip data ────────────────────
+  it('supplies gripOffset and gripRotation per doc §4.3', () => {
+    const result = createBattleaxeModel();
+    expect(result.gripOffset).toBeDefined();
+    expect(result.gripRotation).toBeDefined();
+    // Doc §4.3 starting values: (0,-0.05,0), (Math.PI*0.80, 0, 0.1).
+    expect(result.gripOffset!.x).toBeCloseTo(0);
+    expect(result.gripOffset!.y).toBeCloseTo(-0.05);
+    expect(result.gripOffset!.z).toBeCloseTo(0);
+    expect(result.gripRotation!.x).toBeCloseTo(Math.PI * 0.8);
+    expect(result.gripRotation!.y).toBeCloseTo(0);
+    expect(result.gripRotation!.z).toBeCloseTo(0.1);
   });
 });
 
