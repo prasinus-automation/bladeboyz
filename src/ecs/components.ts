@@ -310,16 +310,22 @@ export const HitReactComp = defineComponent({
 /**
  * Animation state — tracks blending progress for the animation system.
  *
- * - upperBlend: 0..1 progress of upper body blend to target pose
- * - lowerBlend: 0..1 progress of lower body blend to target pose
- * - movementState: MovementState enum value (derived from velocity)
- * - walkCycle: accumulated walk cycle phase (radians, wraps at 2*PI)
- * - prevCombatState: previous combat state for transition detection
- * - prevDirection: previous direction for transition detection
+ * Issue #128 rebuild: replaces the per-layer `upperBlend`/`lowerBlend`
+ * pair with a single `crossfadeT` timer that ramps `0 → 1` over
+ * `CROSSFADE_DURATION_SEC` after every state-or-direction transition.
+ * The actual per-bone snapshot lives in a side-table (`prevPoseSnapshots`
+ * inside `AnimationSystem.ts`) because bitECS only stores numeric fields.
+ *
+ * - crossfadeT: 0..1 progress of the post-transition crossfade. Drives
+ *   `effectiveT = smoothstep(max(phaseT, crossfadeT))` per `docs/animation-architecture.md` §6.
+ * - movementState: MovementState enum value (derived from `MovementState`
+ *   ECS component, kept here so the HUD/debug overlay can read it).
+ * - walkCycle: accumulated walk cycle phase (radians, wraps at 2π).
+ * - prevCombatState: previous combat state for transition detection.
+ * - prevDirection: previous direction for transition detection.
  */
 export const AnimationComp = defineComponent({
-  upperBlend: Types.f32,
-  lowerBlend: Types.f32,
+  crossfadeT: Types.f32,
   movementState: Types.ui8,
   walkCycle: Types.f32,
   prevCombatState: Types.ui8,

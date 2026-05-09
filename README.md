@@ -233,6 +233,33 @@ Spawn points live in `src/world/SpawnPoints.ts` as a `Map<id, SpawnPoint>`. Each
 
 Both initial spawn (`createPlayer`) and post-death respawn (`processRespawns`) consult this registry — the only difference is initial spawn passes an empty enemies list. The arena (`src/arena/createArena.ts`) is the sole producer of registry entries: it `clearSpawnPoints()` first, then registers the six arena-defined points (S1..S6 from the design doc). The legacy `seedPlaceholderSpawnPoints()` helper is no longer wired in production — it's kept around for unit tests that need a registry without spinning up an arena.
 
+## Animation
+
+Skeletons are driven by a **layered procedural animation system** keyed off `CombatStateComp` (FSM read-model) and the `MovementState` ECS component. Issue #128 rebuilt the system from the ground up — every change visible to the eye now reads as `f(phaseT)`, frame-rate independent and free of the legacy "exponential settling" bug.
+
+### Layered composition
+
+Each tick, exactly **one** layer writes each bone — no shared writers, no fixed-ratio blends. The three layers are:
+
+1. **Movement (lower-body procedural)** — drives `thigh_L/R`, `shin_L/R`, `foot_L/R` from a sinusoidal walk/run cycle keyed off `MovementState.speedFactor`. Always active.
+2. **Combat (upper-body keyframe + arc)** — drives `shoulder_L/R`, `upper_arm_L/R`, `forearm_L/R`, `hand_L/R`, `chest`, `neck`, `head` and (sometimes) `spine`. Active in every state — `Idle` runs the "ready stance" `IDLE_POSE`, the rest of the FSM runs their respective keyframe poses, with `Release` swapped for an arc-driven swing.
+3. **Idle arm-swing (upper-body procedural)** — overrides `shoulder_L/R` with a counter-swing of the gait cycle when `state === Idle && speedFactor > IDLE_SPEED_FACTOR_THRESHOLD`.
+
+Spine ownership follows a small precedence rule: combat owns it iff the combat pose has a `spine` entry, else movement owns it iff the movement base pose has one, else it stays at rest. This replaces the legacy 60/40 spine blend (`AnimationSystem.ts:294-303` pre-rebuild) which drifted as the layers changed.
+
+### Hybrid pose strategy
+
+- **Keyframe slerp** (Idle, Blocking, Parry, HitStun, Windup, Recovery): on every state-or-direction transition the system snapshots each bone's current quaternion into a per-entity side-table (`prevPoseSnapshots`); each frame the bone is `slerp(snapshot → targetPose, smoothstep(max(phaseT, crossfadeT)))`. Slerping from the **snapshot** (not from `bone.quaternion` live) is the bug fix that gives proper phase-progress motion instead of the old exponential settling.
+- **Arc-driven swing** (Release only): the right arm's `shoulder_R / forearm_R / hand_R` follow an explicit per-direction arc (`src/animation/arcSwing.ts`) — Euler-angle endpoints lerped by `phaseT`. The arc swing slerps from the snapshot using `smoothstep(crossfadeT)` only (since the target moves with `phaseT`, double-blending would visually drag).
+
+### Hit-react lean
+
+When a hit lands, `DamageSystem` writes a `HitReactComp` carrying a target-body-local push direction + magnitude + spawn tick. While `state === HitStun && HitReactComp.active === 1`, the animation system overlays a directional spine + chest tilt that peaks at ~30° around `t = 0.3` and decays to 0 by `t = 1`. The overlay is multiplied **on top** of the static `HITSTUN_POSE` (`bone.quaternion.multiply(reactQuat)`) so the layers compose cleanly.
+
+### Shared blend pipeline
+
+The slerp loop lives in `src/animation/poseBlending.ts` so both the third-person `AnimationSystem` and the first-person `ViewmodelAnimationSystem` (issue #D) can share it — no more independently-buggy copies of the same code in two files. The full architecture spec is at [`docs/animation-architecture.md`](docs/animation-architecture.md).
+
 ## Test Arena (Arena v1)
 
 The world is a single 30×30 m arena built code-first from `src/arena/createArena.ts` — no glTF, no JSON map files. Layout (top-down, +X = east, −Z = north):
@@ -325,7 +352,9 @@ src/
 ├── animation/
 │   ├── AnimationData.ts     # Combat pose definitions + bone sets
 │   ├── ViewmodelAnimationData.ts # Per-weapon first-person viewmodel poses
-│   └── AnimationData.test.ts
+│   ├── poseBlending.ts      # Shared slerp pipeline (applyPoseLayer, smoothstepEase) — #128
+│   ├── arcSwing.ts          # Per-direction arc-swing pose computation (Release phase) — #128
+│   └── hitReact.ts          # Directional stagger lean overlay during HitStun — #128
 ├── inventory/
 │   ├── InventoryData.ts     # Legacy side-table (dead code — see AGENTS.md)
 │   └── PickupRegistry.ts    # Side-table for ground weapon pickups (#109, foundation for #94)
