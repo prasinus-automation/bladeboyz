@@ -247,7 +247,8 @@ describe('ViewmodelAnimationSystem', () => {
       // This test verifies the function runs without error
       for (let i = 0; i < 100; i++) {
         CombatStateComp.state[eid] = i % 2 === 0 ? CombatState.Idle : CombatState.Windup;
-        CombatStateComp.direction[eid] = i % 5;
+        // FSM v2 (#131): 4 attack directions (0..3), so cycle modulo 4.
+        CombatStateComp.direction[eid] = i % 4;
         CombatStateComp.phaseElapsed[eid] = i % 10;
         CombatStateComp.phaseTotal[eid] = 20;
         viewmodelAnimationSystem(viewmodel, eid, 0.016, WEAPON_ID_TO_NAME);
@@ -284,7 +285,6 @@ describe('ViewmodelAnimationSystem', () => {
       ['Windup Left', CombatState.Windup, AttackDirection.Left],
       ['Windup Right', CombatState.Windup, AttackDirection.Right],
       ['Windup Overhead', CombatState.Windup, AttackDirection.Overhead],
-      ['Windup Underhand', CombatState.Windup, AttackDirection.Underhand],
       ['Windup Stab', CombatState.Windup, AttackDirection.Stab],
       ['Release Left', CombatState.Release, AttackDirection.Left],
       ['Recovery', CombatState.Recovery, AttackDirection.Left],

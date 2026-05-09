@@ -27,7 +27,12 @@ const damageEventQuery = defineQuery([DamageEvent]);
 /**
  * Check if the target's block direction counters the attack direction.
  * Left attacks are blocked by Right blocks and vice versa.
- * Overhead is blocked by Top, Underhand by Bottom, Stab by any.
+ * Overhead is blocked by Top; Stab is blocked by any active block direction.
+ *
+ * FSM v2 (#88, #131): `Underhand` is gone — vertical-down swings now resolve
+ * to `Stab`, so the old `Underhand → Bottom` mapping is unreachable. The
+ * `Bottom` block direction is preserved (UI still shows the bottom wedge),
+ * but it doesn't counter any attack on its own — it's a defensive choice.
  */
 function doesBlockCounter(
   attackDir: AttackDirection,
@@ -40,8 +45,6 @@ function doesBlockCounter(
       return blockDir === BlockDirection.Left;
     case AttackDirection.Overhead:
       return blockDir === BlockDirection.Top;
-    case AttackDirection.Underhand:
-      return blockDir === BlockDirection.Bottom;
     case AttackDirection.Stab:
       // Stab can be blocked by any active block direction
       return true;

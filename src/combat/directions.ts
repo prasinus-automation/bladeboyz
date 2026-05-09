@@ -7,12 +7,24 @@
 
 // ── Enums ─────────────────────────────────────────────────
 
+/**
+ * Attack direction enum.
+ *
+ * FSM v2 (#88) trims to 4 directions — `Underhand` was removed because it
+ * animated similarly to `Overhead` and added detection noise. `Stab` was
+ * renumbered from 4 → 3 so the values stay contiguous.
+ *
+ * Wire format note: when the network protocol (#92, see
+ * `docs/networking/02-replication-and-protocol.md`) encodes attack direction,
+ * it uses these numeric values directly. Re-adding `Underhand` post-MVP
+ * MUST give it a new numeric slot (e.g. `Underhand = 4`) — never reuse the
+ * old 3, since 3 now means `Stab` on the wire.
+ */
 export const enum AttackDirection {
   Left = 0,
   Right = 1,
   Overhead = 2,
-  Underhand = 3,
-  Stab = 4,
+  Stab = 3,
 }
 
 export const enum BlockDirection {
@@ -91,7 +103,8 @@ function sumRecentDeltas(
  * - Dominant horizontal left  → Left
  * - Dominant horizontal right → Right
  * - Dominant vertical up      → Overhead
- * - Dominant vertical down    → Underhand
+ * - Dominant vertical down    → Stab (FSM v2: folds the old Underhand swing
+ *                                     into Stab — same forward-thrust intent)
  * - Below threshold / ambiguous → Stab
  *
  * Stab can also be forced externally (scroll wheel / middle mouse) —
@@ -123,8 +136,8 @@ export function detectAttackDirection(
     // Horizontal dominant
     return totalDx < 0 ? AttackDirection.Left : AttackDirection.Right;
   } else if (absY > absX * config.axisRatio) {
-    // Vertical dominant (negative Y = up in screen coords)
-    return totalDy < 0 ? AttackDirection.Overhead : AttackDirection.Underhand;
+    // Vertical dominant: up = Overhead, down folds into Stab in FSM v2
+    return totalDy < 0 ? AttackDirection.Overhead : AttackDirection.Stab;
   }
 
   // Ambiguous — no clear dominant axis → stab

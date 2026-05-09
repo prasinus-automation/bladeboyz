@@ -19,9 +19,9 @@ import { StaminaBar } from './StaminaBar';
 import { DirectionIndicator } from './DirectionIndicator';
 import { GoldCounter } from './GoldCounter';
 
-/** Direction names for debug display */
+/** Direction names for debug display (FSM v2: Underhand removed, Stab renumbered 4 → 3) */
 const ATTACK_DIR_NAMES: Record<number, string> = {
-  0: 'Left', 1: 'Right', 2: 'Overhead', 3: 'Underhand', 4: 'Stab',
+  0: 'Left', 1: 'Right', 2: 'Overhead', 3: 'Stab',
 };
 const BLOCK_DIR_NAMES: Record<number, string> = {
   0: 'Left', 1: 'Right', 2: 'Top', 3: 'Bottom',

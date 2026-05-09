@@ -20,12 +20,12 @@ import { AttackDirection, BlockDirection } from '../combat/directions';
 
 describe('AnimationData', () => {
   describe('getAttackAnimation', () => {
-    it('returns animations for all 5 attack directions', () => {
+    it('returns animations for all 4 attack directions', () => {
+      // FSM v2 (#88, #131): 4 directions — Underhand removed.
       const directions = [
         AttackDirection.Left,
         AttackDirection.Right,
         AttackDirection.Overhead,
-        AttackDirection.Underhand,
         AttackDirection.Stab,
       ];
 
@@ -48,12 +48,11 @@ describe('AnimationData', () => {
     });
 
     it('recovery poses return to idle', () => {
-      // All 5 directions should recover to idle
+      // All 4 directions should recover to idle (FSM v2 — Underhand removed).
       const directions = [
         AttackDirection.Left,
         AttackDirection.Right,
         AttackDirection.Overhead,
-        AttackDirection.Underhand,
         AttackDirection.Stab,
       ];
 
@@ -256,8 +255,8 @@ describe('AnimationData', () => {
       validatePose(STUNNED_POSE, 'stunned');
       validatePose(HITSTUN_POSE, 'hitstun');
 
-      // Validate all attack animations
-      for (const dir of [0, 1, 2, 3, 4]) {
+      // Validate all attack animations (FSM v2: 4 directions, 0..3)
+      for (const dir of [0, 1, 2, 3]) {
         const anim = getAttackAnimation(dir as AttackDirection);
         validatePose(anim.windup, `attack ${dir} windup`);
         validatePose(anim.release, `attack ${dir} release`);

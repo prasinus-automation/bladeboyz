@@ -24,7 +24,6 @@ export const longsword: WeaponConfig = {
     [AttackDirection.Left]: { head: 50, torso: 35, limb: 25 },
     [AttackDirection.Right]: { head: 50, torso: 35, limb: 25 },
     [AttackDirection.Overhead]: { head: 55, torso: 40, limb: 25 },
-    [AttackDirection.Underhand]: { head: 45, torso: 35, limb: 25 },
     [AttackDirection.Stab]: { head: 45, torso: 40, limb: 20 },
   },
 
@@ -36,7 +35,6 @@ export const longsword: WeaponConfig = {
     [AttackDirection.Left]: 18,      // ~300ms
     [AttackDirection.Right]: 18,     // ~300ms
     [AttackDirection.Overhead]: 25,  // ~417ms — slowest but highest damage
-    [AttackDirection.Underhand]: 20, // ~333ms
     [AttackDirection.Stab]: 15,      // ~250ms — fastest windup
   },
 
@@ -48,7 +46,6 @@ export const longsword: WeaponConfig = {
     [AttackDirection.Left]: 12,      // ~200ms
     [AttackDirection.Right]: 12,     // ~200ms
     [AttackDirection.Overhead]: 15,  // ~250ms
-    [AttackDirection.Underhand]: 12, // ~200ms
     [AttackDirection.Stab]: 10,      // ~167ms — narrow hit window
   },
 
@@ -60,7 +57,6 @@ export const longsword: WeaponConfig = {
     [AttackDirection.Left]: 30,      // ~500ms
     [AttackDirection.Right]: 30,     // ~500ms
     [AttackDirection.Overhead]: 40,  // ~667ms — punished if you miss
-    [AttackDirection.Underhand]: 35, // ~583ms
     [AttackDirection.Stab]: 28,      // ~467ms — quickest recovery
   },
 
@@ -72,7 +68,6 @@ export const longsword: WeaponConfig = {
     [AttackDirection.Left]: 20,      // ~333ms
     [AttackDirection.Right]: 20,     // ~333ms
     [AttackDirection.Overhead]: 28,  // ~467ms
-    [AttackDirection.Underhand]: 23, // ~383ms
     [AttackDirection.Stab]: 18,      // ~300ms
   },
 
@@ -82,13 +77,22 @@ export const longsword: WeaponConfig = {
 
   parryWindow: 12,
 
+  // ── Parry recovery (ticks) ────────────────────────────
+  // Time the Parry pose locks before returning to Blocking (FSM v2).
+
+  parryRecovery: 12,
+
+  // ── Block-break stagger (ticks) ───────────────────────
+  // Stagger applied when the blocker's stamina hits ≤ 0 mid-block (FSM v2).
+
+  blockBreakStunTicks: 30,
+
   // ── Stamina costs ─────────────────────────────────────
 
   staminaCost: {
     attack: 15,   // moderate cost per swing
     block: 10,    // holding block drains stamina on impact
     parry: 5,     // successful parry costs very little
-    feint: 20,    // feinting is expensive to prevent spam
   },
 
   // ── Turncaps (radians per tick) ───────────────────────
@@ -99,11 +103,13 @@ export const longsword: WeaponConfig = {
   //   0.08 rad/tick ≈ 4.8 rad/s ≈ 275°/s (windup: fairly free)
   //   0.03 rad/tick ≈ 1.8 rad/s ≈ 103°/s (release: restrictive)
   //   0.05 rad/tick ≈ 3.0 rad/s ≈ 172°/s (recovery: moderate)
+  //   0.005 rad/tick ≈ 0.3 rad/s ≈ 17°/s (hitStun: nearly locked — staggered)
 
   turncap: {
     windup: 0.08,
     release: 0.03,
     recovery: 0.05,
+    hitStun: 0.005,
   },
 
   // ── Tracer points (local space) ───────────────────────

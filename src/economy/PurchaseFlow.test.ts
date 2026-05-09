@@ -35,7 +35,6 @@ function ensureUnsellableWeapon(): void {
     AttackDirection.Left,
     AttackDirection.Right,
     AttackDirection.Overhead,
-    AttackDirection.Underhand,
     AttackDirection.Stab,
   ];
   const dirRecord = <T>(val: T): Record<AttackDirection, T> => {
@@ -51,8 +50,10 @@ function ensureUnsellableWeapon(): void {
     recovery: dirRecord(15),
     comboRecovery: dirRecord(10),
     parryWindow: 8,
-    staminaCost: { attack: 5, block: 3, parry: 2, feint: 4 },
-    turncap: { windup: 0.04, release: 0.02, recovery: 0.05 },
+    parryRecovery: 8,
+    blockBreakStunTicks: 20,
+    staminaCost: { attack: 5, block: 3, parry: 2 },
+    turncap: { windup: 0.04, release: 0.02, recovery: 0.05, hitStun: 0.005 },
     tracerPoints: [[0, 0, 0]],
     range: 1.0,
     blockStaminaDrain: 5,

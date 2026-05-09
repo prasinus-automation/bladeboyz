@@ -43,16 +43,49 @@ export interface WeaponConfig {
   /** Parry window duration at the start of a block (ticks) */
   parryWindow: number;
 
-  /** Stamina costs for different combat actions */
-  staminaCost: Record<'attack' | 'block' | 'parry' | 'feint', number>;
+  /**
+   * Ticks the Parry pose locks before returning to Blocking (FSM v2).
+   * Per-weapon: heavier weapons take longer to recover from a parry.
+   */
+  parryRecovery: number;
+
+  /**
+   * Ticks of stagger when Block breaks because the blocker's stamina hits ≤ 0.
+   * Per-weapon: heavier weapons leave the blocker more vulnerable on a break.
+   * Replaces the v1 module-level `BLOCK_BREAK_STUN_TICKS` constant
+   * (still in use by `StaminaSystem`; migration is FSM v2 — B's job).
+   */
+  blockBreakStunTicks: number;
+
+  /**
+   * Stamina costs for different combat actions.
+   * `feint` is optional: FSM v2 has no Feint state, but the field is kept
+   * optional so a future re-add doesn't require another schema migration.
+   */
+  staminaCost: {
+    attack: number;
+    block: number;
+    parry: number;
+    /** Optional in MVP — FSM v2 removes the Feint state. */
+    feint?: number;
+  };
 
   /**
    * Turn-rate caps during different combat phases (radians per tick).
    * Lower values restrict mouse look more, creating the drag/accel feel.
    *
    * Reference: 0.03 rad/tick at 60Hz ≈ 1.8 rad/s ≈ 103°/s
+   *
+   * `hitStun` is new in FSM v2 — caps turning while staggered. Recommend
+   * 0.005 rad/tick (very low — you're reeling, not aiming).
    */
-  turncap: Record<'windup' | 'release' | 'recovery', number>;
+  turncap: {
+    windup: number;
+    release: number;
+    recovery: number;
+    /** NEW (FSM v2): cap during HitStun. */
+    hitStun: number;
+  };
 
   /**
    * Local-space tracer points along the blade.

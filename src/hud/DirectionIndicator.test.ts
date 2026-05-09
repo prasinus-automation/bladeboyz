@@ -15,13 +15,12 @@ const CombatState = {
   ParryWindow: 5,
 } as const;
 
-// AttackDirection numeric values
+// AttackDirection numeric values (FSM v2: Underhand removed, Stab renumbered 4 → 3)
 const AttackDirection = {
   Left: 0,
   Right: 1,
   Overhead: 2,
-  Underhand: 3,
-  Stab: 4,
+  Stab: 3,
 } as const;
 
 // BlockDirection numeric values
@@ -212,15 +211,6 @@ describe('DirectionIndicator', () => {
   it('dispose removes the container from DOM', () => {
     indicator.dispose();
     expect(document.getElementById('direction-indicator')).toBeNull();
-  });
-
-  it('highlights underhand direction correctly', () => {
-    setPlayerState(CombatState.Windup, AttackDirection.Underhand);
-    indicator.update(PLAYER_EID);
-
-    const arrows = getArrows(container);
-    // Underhand = index 3 (bottom)
-    expect(arrows[3].style.borderBottomColor).toBe(RED);
   });
 
   it('highlights bottom block direction correctly', () => {

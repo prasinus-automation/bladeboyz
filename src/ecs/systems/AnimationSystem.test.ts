@@ -163,12 +163,12 @@ describe('AnimationSystem', () => {
     expect(AnimationComp.walkCycle[eid]).toBeGreaterThan(initialCycle);
   });
 
-  it('handles all 5 attack directions without errors', () => {
+  it('handles all 4 attack directions without errors', () => {
+    // FSM v2 (#88, #131): 4 directions — Underhand removed.
     const directions = [
       AttackDirection.Left,
       AttackDirection.Right,
       AttackDirection.Overhead,
-      AttackDirection.Underhand,
       AttackDirection.Stab,
     ];
 

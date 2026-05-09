@@ -154,14 +154,16 @@ Spawn Y is resolved by `spawnAtGround(world, x, z)`, which raycasts down from `(
 
 All weapons are data-driven via `WeaponConfig` objects — damage, timing, turncaps, and tracer geometry are defined in config, not hardcoded in systems. Swap weapons at runtime through the inventory overlay (**I** key) or the console.
 
-| Weapon | Range | Speed | Damage (head/torso/limb) | Stamina | Style |
-|--------|-------|-------|--------------------------|---------|-------|
-| **Longsword** | 1.4 | Fast | 50–55 / 35–40 / 20–25 | 15 | Balanced all-rounder. Good reach and moderate speed. Reliable across all directions. |
-| **Dagger** | 0.35 | Very Fast | 22–25 / 15–18 / 10–12 | 8 | Lightning-fast but short range. Low stamina cost lets you combo freely. |
-| **Mace** | 0.6 | Slow | 42–55 / 30–40 / 20–25 | 18 | Heavy blunt weapon. High stun duration (68 ticks) punishes failed parries. |
-| **Battleaxe** | 1.2 | Very Slow | 55–75 / 40–55 / 28–35 | 24 | Devastating damage but long windups. Overheads deal up to 75 head damage. |
+| Weapon | Range | Speed | Damage (head/torso/limb) | Stamina | Parry rec. / Block-break stun (ticks) | Style |
+|--------|-------|-------|--------------------------|---------|----------------------------------------|-------|
+| **Longsword** | 1.4 | Fast | 45–55 / 35–40 / 20–25 | 15 | 12 / 30 | Balanced all-rounder. Good reach and moderate speed. Reliable across all directions. |
+| **Dagger** | 0.35 | Very Fast | 22–25 / 16–18 / 10–12 | 8 | 8 / 24 | Lightning-fast but short range. Low stamina cost lets you combo freely. |
+| **Mace** | 0.6 | Slow | 42–55 / 30–40 / 20–25 | 18 | 14 / 36 | Heavy blunt weapon. High stun duration (68 ticks) punishes failed parries. |
+| **Battleaxe** | 1.2 | Very Slow | 55–75 / 40–55 / 28–35 | 24 | 16 / 42 | Devastating damage but long windups. Overheads deal up to 75 head damage. |
 
-*Damage ranges show min–max across attack directions (left, right, overhead, underhand, stab). Actual damage depends on attack direction and body region hit.*
+*Damage ranges show min–max across attack directions (left, right, overhead, stab — the FSM v2 schema removed `Underhand`). Actual damage depends on attack direction and body region hit.*
+
+*`Parry rec.` is how long the Parry pose locks before returning to Blocking (ticks). `Block-break stun` is the stagger applied when a blocker's stamina hits zero mid-block. Both are per-weapon as of FSM v2 (issue #131); the v1 module-level `BLOCK_BREAK_STUN_TICKS = 30` constant is still used by `StaminaSystem` until the FSM v2 wiring lands. Every weapon also has a `turncap.hitStun` of 0.005 rad/tick — the stagger almost completely locks your aim.*
 
 ## Gold & Shop
 
@@ -176,13 +178,13 @@ The wallet is intentionally minimal scaffolding for the shop feature — earning
 BladeBoyz uses a **directional melee combat system** inspired by Mordhau and Chivalry:
 
 ### Directional Attacks & Blocks
-Mouse movement before clicking determines your attack direction — sweep left for a left swing, pull down for an underhand, push forward for a stab. Blocking works the same way: hold RMB in the correct direction to block an incoming attack. Mismatched block direction lets the attack through.
+Mouse movement before clicking determines your attack direction — sweep left for a left swing, sweep right for a right swing, push up for an overhead, or hold steady (or push down) for a stab. The FSM v2 schema (issue #131) trims the attack set to **four directions** (`Left`, `Right`, `Overhead`, `Stab`) — the old `Underhand` swing was folded into `Stab` because it animated similarly to `Overhead`. Blocking still has all four cardinal poses (`Left`, `Right`, `Top`, `Bottom`); the bottom block stays as a defensive option even though no attack is dedicated to it.
 
 ### Parry & Riposte
 Tapping block just as an attack enters its Release phase triggers a **parry**. A successful parry stuns the attacker (40–75 ticks depending on weapon) and opens a **riposte window** — your next attack comes out faster with reduced stamina cost.
 
 ### Stamina
-Every action costs stamina: attacking, blocking, feinting. Blocking drains stamina based on the attacker's weapon weight (8–30 per block). Running out of stamina leaves you unable to block.
+Every action costs stamina: attacking, blocking, parrying. Blocking drains stamina based on the attacker's weapon weight (8–30 per block). Running out of stamina leaves you unable to block. (The legacy `Feint` action was removed in FSM v2, so weapon configs no longer specify a `staminaCost.feint` value — the field stays optional in the type for a future re-add.)
 
 ### Tracer-Based Hit Detection
 Instead of simple raycasts, weapons define **tracer points** along the blade. During the Release phase, the system performs swept-volume collision tests between each tracer point's position on the current and previous ticks. This creates realistic hit detection that respects the actual arc of the weapon swing — edge alignment matters.

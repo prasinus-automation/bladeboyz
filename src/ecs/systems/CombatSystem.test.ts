@@ -58,7 +58,6 @@ function createTestWeapon(): WeaponConfig {
     [AttackDirection.Left]: 6,
     [AttackDirection.Right]: 6,
     [AttackDirection.Overhead]: 8,
-    [AttackDirection.Underhand]: 7,
     [AttackDirection.Stab]: 5,
   };
 
@@ -68,7 +67,6 @@ function createTestWeapon(): WeaponConfig {
       [AttackDirection.Left]: { head: 50, torso: 35, limb: 25 },
       [AttackDirection.Right]: { head: 50, torso: 35, limb: 25 },
       [AttackDirection.Overhead]: { head: 55, torso: 40, limb: 25 },
-      [AttackDirection.Underhand]: { head: 45, torso: 35, limb: 25 },
       [AttackDirection.Stab]: { head: 45, torso: 40, limb: 20 },
     },
     windup: { ...ticks },
@@ -76,26 +74,25 @@ function createTestWeapon(): WeaponConfig {
       [AttackDirection.Left]: 4,
       [AttackDirection.Right]: 4,
       [AttackDirection.Overhead]: 5,
-      [AttackDirection.Underhand]: 4,
       [AttackDirection.Stab]: 3,
     },
     recovery: {
       [AttackDirection.Left]: 12,
       [AttackDirection.Right]: 12,
       [AttackDirection.Overhead]: 15,
-      [AttackDirection.Underhand]: 13,
       [AttackDirection.Stab]: 10,
     },
     comboRecovery: {
       [AttackDirection.Left]: 8,
       [AttackDirection.Right]: 8,
       [AttackDirection.Overhead]: 10,
-      [AttackDirection.Underhand]: 9,
       [AttackDirection.Stab]: 6,
     },
     parryWindow: 6,
-    staminaCost: { attack: 15, block: 10, parry: 5, feint: 20 },
-    turncap: { windup: 0.08, release: 0.03, recovery: 0.05 },
+    parryRecovery: 10,
+    blockBreakStunTicks: 28,
+    staminaCost: { attack: 15, block: 10, parry: 5 },
+    turncap: { windup: 0.08, release: 0.03, recovery: 0.05, hitStun: 0.005 },
     tracerPoints: [[0, 0.5, 0]],
     range: 1.4,
     blockStaminaDrain: 10,
@@ -437,7 +434,7 @@ describe('CombatSystem', () => {
     it('turncap updates correctly after weapon swap', () => {
       // Create a different weapon config with different turncap
       const heavyWeapon = createTestWeapon();
-      heavyWeapon.turncap = { windup: 0.04, release: 0.015, recovery: 0.025 };
+      heavyWeapon.turncap = { windup: 0.04, release: 0.015, recovery: 0.025, hitStun: 0.005 };
 
       // Swap weapon on the FSM
       const fsm = fsmRegistry.get(playerEid)!;
