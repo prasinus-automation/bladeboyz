@@ -213,7 +213,7 @@ Hits are resolved against **hitbox sensor colliders** attached to the target's s
 
 ## Spawn / Death / Respawn
 
-BladeBoyz runs as a **continuous deathmatch** — there are no rounds. When a player's HP hits 0 they enter a `Dead` state for **3 seconds (180 ticks)**, during which input and movement are frozen and a death screen will be shown (HUD landing in a follow-up). After the timer expires the player respawns at a weighted-random spawn point and is auto-equipped with the default starter weapon (**Longsword**).
+BladeBoyz runs as a **continuous deathmatch** — there are no rounds. When a player's HP hits 0 they enter a `Dead` state for **3 seconds (180 ticks)**, during which input and movement are frozen and the death screen overlay (#137) takes over the viewport. After the timer expires the player respawns at a weighted-random spawn point and is auto-equipped with the default starter weapon (**Longsword**).
 
 Death is implemented as two ECS components plus an event bus:
 - `DeadTag` — added to the entity for the duration of the death state. Systems early-out on this tag.
@@ -221,6 +221,18 @@ Death is implemented as two ECS components plus an event bus:
 - `EventBus` (`src/events/EventBus.ts`) — pub/sub for `DamageDealt`, `DeathEvent`, `RespawnEvent`, `WeaponEquipped`. Drained at the end of `fixedUpdate`.
 
 Kill attribution uses a 5-second window: the most recent attacker who damaged the victim within that window is credited as the killer (`killerEid = 0` for environmental / suicide). See [`docs/spawn-death-respawn.md`](docs/spawn-death-respawn.md) for the full lifecycle, state diagram, and event payload table.
+
+#### Death/Respawn HUD (issue #137)
+
+Three HUD overlays consume `DeathEvent` / `RespawnEvent` from the EventBus and surface spawn/death state to the player. All three are owned by `HUD.ts` and update from the same per-frame loop.
+
+| Overlay | File | Visibility | Source |
+| --- | --- | --- | --- |
+| **Death screen** | `src/hud/DeathScreen.ts` | While the local player has `DeadTag`. Shows `Killed by <killerName> with <weaponName>` and a large countdown reading `Math.ceil(RespawnPending.ticksRemaining / 60)`. Pointer events disabled so click-to-acquire-pointer-lock still reaches the canvas. | `DeathEvent` for the title, `DeadTag` + `RespawnPending` for visibility + countdown. |
+| **Killfeed** | `src/hud/Killfeed.ts` | Top-right stack of recent kills, capped at 5 simultaneous entries. Each entry fades out 5 s after creation; a 6th arrival evicts the oldest. Suicides render as `<victim> died`. | `DeathEvent` only — purely event-driven, no per-frame ECS reads. |
+| **Scoreboard** | `src/hud/Scoreboard.ts` | Persistent top-left `K: <kills>  D: <deaths>  Gold: <goldThisLife>` for the local player. | `Score` component each frame. Tab-key full scoreboard with all players is deferred to #98. |
+
+Display names are stubbed (`getDisplayName(eid)` in `DeathScreen.ts`): `0` → `"the void"`, `world.playerEntity` → `"You"`, dummies → `"Dummy <id>"`, other Player-tagged entities → `"Player"`. Real player names land with #92 (networking).
 
 ### Spawn-Point Registry
 
@@ -369,6 +381,9 @@ src/
 │   ├── InventoryPanel.ts    # Inventory overlay UI (weapon selection & gear slots)
 │   ├── ShopPanel.ts         # Shopkeep overlay — weapon list + Buy buttons (#123)
 │   ├── GoldCounter.ts       # Top-right gold balance HUD (#107)
+│   ├── DeathScreen.ts       # Full-screen death overlay + respawn countdown (#137)
+│   ├── Killfeed.ts          # Top-right kill log, fades after 5 s (#137)
+│   ├── Scoreboard.ts        # Persistent K/D/Gold display for the local player (#137)
 │   ├── FloatingDamage.ts    # Floating damage numbers (3D→2D projected HTML)
 │   ├── DummyHealthBar.ts    # Floating health bars above training dummies
 │   ├── WorldLabel.ts        # World-anchored HTML overlay (shopkeep nameplate + prompt)
