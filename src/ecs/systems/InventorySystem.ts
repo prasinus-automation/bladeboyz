@@ -247,6 +247,42 @@ export function resetInventorySystem(): void {
 }
 
 /**
+ * Default starter weapon name. Centralizes the "what does a freshly-spawned
+ * combatant equip" decision so it's not duplicated across `createPlayer`
+ * (initial spawn) and `processRespawns` (every subsequent life).
+ *
+ * Issue #130 made this `'Longsword'` per the spawn/death/respawn design doc.
+ * Changing this is a balance / starter-loadout tweak, NOT a refactor —
+ * touch one line, both spawn paths follow.
+ */
+export const DEFAULT_STARTER_WEAPON = 'Longsword';
+
+/**
+ * Equip the default starter weapon on `eid`. Wraps `equipWeapon` so callers
+ * (currently `processRespawns` and any future spawn code) don't have to
+ * repeat the literal weapon name.
+ *
+ * Adds the starter weapon to inventory if it's missing — a respawning
+ * entity should always be able to start its life with a weapon, even
+ * after a future PR (#94 / drop-on-death) clears their last living weapon.
+ * The protected `starterWeapon` field on `InventoryData` is the source of
+ * truth that #94's drop logic consults; this function only handles the
+ * "make sure they have it equipped right now" half.
+ *
+ * @returns true on successful equip, false if the entity has no inventory
+ *   or `equipWeapon` rejected (e.g. FSM not Idle — which shouldn't happen
+ *   on respawn since processDeaths reset the FSM to Idle).
+ */
+export function equipDefaultStarter(entityId: number): boolean {
+  const inventory = inventoryRegistry.get(entityId);
+  if (!inventory) return false;
+  if (!inventory.weapons.includes(DEFAULT_STARTER_WEAPON)) {
+    inventory.weapons.push(DEFAULT_STARTER_WEAPON);
+  }
+  return equipWeapon(entityId, DEFAULT_STARTER_WEAPON);
+}
+
+/**
  * Drop the entity's currently-equipped weapon at its feet (no-op stub).
  *
  * Issue #130 wires this into `processDeaths` so the death pipeline is

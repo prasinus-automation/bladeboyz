@@ -76,6 +76,24 @@ export function registerPhysicsBody(
 }
 
 /**
+ * Look up the Rapier RigidBody registered for an entity, or undefined if
+ * the entity has no physics body (or hasn't been registered yet).
+ *
+ * Use this rather than `world.physicsWorld.getRigidBody(PhysicsBody.bodyHandle[eid])`:
+ * Rapier handles are composite floats that get truncated into the ui32
+ * `PhysicsBody.bodyHandle` slot, so that lookup path is lossy. Our eid →
+ * body Map is the source of truth (set by `registerPhysicsBody` at entity
+ * creation).
+ *
+ * Added for #134 so `processRespawns` can call `setNextKinematicTranslation`
+ * on a respawning entity's body. Future systems that need to teleport or
+ * impulse an entity should use this same accessor.
+ */
+export function getPhysicsBody(eid: number): RAPIER.RigidBody | undefined {
+  return bodyByEid.get(eid);
+}
+
+/**
  * MovementSystem — applies `MovementIntent` to kinematic character bodies.
  *
  * Reads:

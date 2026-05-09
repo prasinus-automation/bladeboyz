@@ -60,6 +60,23 @@ export function resetStaminaTracking(): void {
 }
 
 /**
+ * Drop the per-entity regen-delay counter for a single eid. Used by
+ * `processRespawns` (#134): when a player respawns we want their stamina
+ * regen clock to start fresh — without this, the regen-delay window from
+ * their previous life carries over and the first tick after spawn either
+ * regens immediately (if they died with a stale clock) or sits idle for a
+ * full second (if they died mid-action). Either is wrong.
+ *
+ * Unlike `resetStaminaTracking()` (which clears every entity, intended for
+ * test isolation), this is per-entity and safe to call in production.
+ *
+ * No-op when the eid has no entry — saves the caller a `has()` check.
+ */
+export function resetEntityStaminaTracking(eid: number): void {
+  ticksSinceLastCost.delete(eid);
+}
+
+/**
  * Process one fixed-update tick of the stamina system.
  *
  * @param ecsWorld - The bitECS world to query entities from

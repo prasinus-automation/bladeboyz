@@ -11,6 +11,8 @@ import { processDeaths } from './ecs/systems/processDeaths';
 import { EventBus } from './events/EventBus';
 import { createPlayer } from './ecs/entities/createPlayer';
 import { createArena } from './arena/createArena';
+import { seedPlaceholderSpawnPoints } from './world/SpawnPoints';
+import { processRespawns } from './ecs/systems/processRespawns';
 import {
   createDummy,
   removeDummy,
@@ -110,9 +112,16 @@ async function main(): Promise<void> {
   // Create arena
   createArena(world);
 
-  // Create player (Y resolved by spawnAtGround raycast).
-  // Issue #130: default starter weapon is now Longsword (was Dagger).
-  const { eid: playerEid, mesh: playerMesh } = createPlayer(world, { x: 0, z: 0 });
+  // Seed placeholder spawn points BEFORE createPlayer so the registry-driven
+  // spawn path picks one of them. When #91 lands, the real arena layout
+  // registers its own and this call disappears.
+  // TODO(#91): replace placeholders with arena-defined spawn points.
+  seedPlaceholderSpawnPoints();
+
+  // Create player (spawn position picked from spawn-point registry — the
+  // placeholders we just seeded — and Y resolved per the registered point).
+  // Issue #130: default starter weapon is Longsword (was Dagger).
+  const { eid: playerEid, mesh: playerMesh } = createPlayer(world);
   world.playerEntity = playerEid;
   cameraController.setPlayerMesh(playerMesh);
 
@@ -323,17 +332,22 @@ async function main(): Promise<void> {
     // Health system (processes damage, handles death/respawn timer).
     // Issue #130: capture `died`/`respawned` arrays. healthSystemTick is
     // pure detection — it adds DeadTag + RespawnPending and ticks the
-    // respawn countdown. processDeaths runs immediately after to handle
-    // the cleanup hook (events, score, FSM reset, weapon drop stub).
-    // The respawn cleanup hook (issue B / #131) will read `respawned`
-    // similarly when it lands.
+    // respawn countdown.
+    //
+    // Issue #134: processRespawns consumes `respawned` to teleport, restore
+    // HP/stamina, equip default weapon, and remove the lifecycle tags.
     // TODO(#A2): weaponPickupSystem(world, currentTick, died, ...);
-    const { died, respawned: _respawned } = healthSystemTick(world.ecs);
+    const { died, respawned } = healthSystemTick(world.ecs);
 
     // Death-cleanup hook. Emits DeathEvent, increments Score, resets FSM,
     // zeros velocity, calls dropEquippedWeapon stub. Restricted to entities
     // with the Player or Bot tag — dummies opt out.
     processDeaths(died, world);
+
+    // Respawn-cleanup hook. Picks a spawn point (weighted away from live
+    // combatants), teleports the entity, restores HP/Stamina, equips the
+    // default starter, removes DeadTag+RespawnPending, emits RespawnEvent.
+    processRespawns(respawned, world);
 
     // Step physics
     world.physicsWorld.step();

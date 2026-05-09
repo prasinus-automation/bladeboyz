@@ -202,6 +202,17 @@ Death is implemented as two ECS components plus an event bus:
 
 Kill attribution uses a 5-second window: the most recent attacker who damaged the victim within that window is credited as the killer (`killerEid = 0` for environmental / suicide). See [`docs/spawn-death-respawn.md`](docs/spawn-death-respawn.md) for the full lifecycle, state diagram, and event payload table.
 
+### Spawn-Point Registry
+
+Spawn points live in `src/world/SpawnPoints.ts` as a `Map<id, SpawnPoint>`. Each entry is `{ id, position: { x, y, z }, yaw }` — feet-position + facing direction in radians. `selectSpawnPoint({ enemies, minEnemyDistance?, random? })` picks a point weighted away from live combatants:
+
+1. Empty registry → `null` (caller logs and skips).
+2. No enemies → uniform random across all candidates.
+3. Otherwise filter to `distToNearestEnemy ≥ minEnemyDistance` (default `8.0`); uniform random over the safe set.
+4. If no candidate is safe, return the candidate that's furthest from its nearest enemy (max-min fallback, so a packed arena still respawns the player).
+
+Both initial spawn (`createPlayer`) and post-death respawn (`processRespawns`) consult this registry — the only difference is initial spawn passes an empty enemies list. Until the real arena layout (#91) lands, `seedPlaceholderSpawnPoints()` registers four corner points at `(±10, SPAWN_HEIGHT, ±10)` with yaws facing the origin. When #91 ships, those placeholders are replaced with arena-defined spawn points and no other code changes.
+
 ## Testing
 
 ```bash
@@ -239,7 +250,9 @@ src/
 │   │   ├── HitboxSystem.ts      # Creates & syncs hitbox sensor colliders to skeleton bones
 │   │   ├── TracerSystem.ts      # Swept-volume hit detection during weapon release phase
 │   │   ├── DamageSystem.ts      # Processes damage events (block/parry/hit resolution)
-│   │   ├── HealthSystem.ts      # Health management, death, respawn after 2s
+│   │   ├── HealthSystem.ts      # Health management, death detection, respawn timer (180 ticks)
+│   │   ├── processDeaths.ts     # Death-cleanup hook: DeathEvent, score, FSM reset, weapon drop
+│   │   ├── processRespawns.ts   # Respawn-cleanup hook: teleport, restore HP/stamina, equip starter
 │   │   ├── StaminaSystem.ts     # Stamina drain/regen based on combat actions
 │   │   ├── AnimationSystem.ts   # Procedural pose blending from combat state
 │   │   ├── PhysicsSystem.ts     # Rapier physics step
@@ -253,6 +266,8 @@ src/
 ├── arena/
 │   ├── types.ts                 # ArenaSpec, SpawnPoint, ShopkeepStallSpec, Volume3D
 │   └── createArena.ts           # Code-authored arena: lights (#117), geometry/spawns (#112)
+├── world/
+│   └── SpawnPoints.ts           # Spawn-point registry + selectSpawnPoint() (placeholder seeds until #91)
 ├── combat/
 │   ├── CombatFSM.ts         # Combat state machine (11 states, data-driven transitions)
 │   ├── states.ts            # CombatState enum (Idle, Windup, Release, Block, etc.)
