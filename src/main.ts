@@ -262,8 +262,11 @@ async function main(): Promise<void> {
   const debugOverlay = new DebugOverlay();
   const debugRenderer = new DebugRenderer(world);
 
-  // HUD (health bar, stamina bar, FSM state label, FPS counter)
-  const hud = new HUD();
+  // HUD (health bar, stamina bar, FSM state label, FPS counter, plus the
+  // spawn/death/respawn overlays from #137: DeathScreen, Killfeed, Scoreboard).
+  // Passing `world` is what enables the #137 overlays — they need ECS state
+  // and EventBus subscription. HUD's update(dt, eid) signature is unchanged.
+  const hud = new HUD(world);
 
   // Weapon-pickup prompt (shown when player is within 1.5m of a ground
   // pickup AND in Idle FSM state — issue #127). KeyE handler that actually

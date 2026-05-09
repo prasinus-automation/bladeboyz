@@ -18,6 +18,10 @@ import { HealthBar } from './HealthBar';
 import { StaminaBar } from './StaminaBar';
 import { DirectionIndicator } from './DirectionIndicator';
 import { GoldCounter } from './GoldCounter';
+import { DeathScreen } from './DeathScreen';
+import { Killfeed } from './Killfeed';
+import { Scoreboard } from './Scoreboard';
+import type { GameWorld } from '../core/types';
 
 /**
  * Direction names for debug display.
@@ -37,6 +41,17 @@ export class HUD {
   private dirIndicator: DirectionIndicator;
   private goldCounter: GoldCounter;
 
+  /**
+   * Spawn/death/respawn HUD modules (issue #137). Instantiated only when a
+   * `GameWorld` is supplied at construction time — they need world.ecs +
+   * world.playerEntity for ECS reads and EventBus subscription. Older HUD
+   * tests (and any other caller that omits `world`) get a HUD without these
+   * three overlays.
+   */
+  private deathScreen: DeathScreen | null = null;
+  private killfeed: Killfeed | null = null;
+  private scoreboard: Scoreboard | null = null;
+
   // FSM state label
   private fsmLabel: HTMLElement;
   private fsmVisible = false;
@@ -48,11 +63,22 @@ export class HUD {
   /** Exponential moving average smoothing factor (higher = more responsive) */
   private readonly fpsSmoothAlpha = 0.1;
 
-  constructor() {
+  /**
+   * @param world - Optional GameWorld. When provided, HUD instantiates
+   *   `DeathScreen`, `Killfeed`, and `Scoreboard` (issue #137). When omitted
+   *   (legacy callers / unit tests that don't need them), those overlays
+   *   are skipped — the rest of the HUD continues to work.
+   */
+  constructor(world?: GameWorld) {
     this.healthBar = new HealthBar();
     this.staminaBar = new StaminaBar();
     this.dirIndicator = new DirectionIndicator();
     this.goldCounter = new GoldCounter();
+    if (world) {
+      this.deathScreen = new DeathScreen(world);
+      this.killfeed = new Killfeed(world);
+      this.scoreboard = new Scoreboard(world);
+    }
 
     // FSM state label (toggled with F4)
     this.fsmLabel = document.createElement('div');
@@ -123,6 +149,14 @@ export class HUD {
     // Update directional crosshair indicator
     this.dirIndicator.update(playerEntity);
 
+    // Spawn/death/respawn overlays (issue #137). Each call is a no-op when
+    // its respective state is unchanged — DeathScreen only writes the DOM
+    // when DeadTag toggles or the integer-second countdown ticks; Killfeed
+    // only walks live entries; Scoreboard caches its last K/D/Gold tuple.
+    if (this.deathScreen) this.deathScreen.update();
+    if (this.killfeed) this.killfeed.update();
+    if (this.scoreboard) this.scoreboard.update();
+
     // Update FSM state label (enhanced with turncap + direction)
     if (this.fsmVisible) {
       const stateNum = CombatStateComponent.state[playerEntity] ?? 0;
@@ -168,6 +202,9 @@ export class HUD {
     this.staminaBar.dispose();
     this.dirIndicator.dispose();
     this.goldCounter.dispose();
+    if (this.deathScreen) this.deathScreen.dispose();
+    if (this.killfeed) this.killfeed.dispose();
+    if (this.scoreboard) this.scoreboard.dispose();
     this.fsmLabel.remove();
     this.fpsEl.remove();
   }
