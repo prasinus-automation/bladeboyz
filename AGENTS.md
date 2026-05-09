@@ -115,7 +115,8 @@ bladeboyz/
 │   ├── networking/                           # Multiplayer architecture spec set (parent #92)
 │   │   ├── README.md                         # Index + read-order for the four-doc set
 │   │   ├── 01-transport-and-authority.md     # Transport, topology, tickrate, authority model (#116)
-│   │   └── 02-replication-and-protocol.md    # Replication model, snapshot/delta encoding, full message catalog, msgpackr (#126)
+│   │   ├── 02-replication-and-protocol.md    # Replication model, snapshot/delta encoding, full message catalog, msgpackr (#126)
+│   │   └── 03-sequences-and-anticheat.md     # End-to-end sequence diagrams (join/move/swing/block/reconnect) + per-message anti-cheat rules + log levels (#133)
 │   ├── spawn-death-respawn.md                # Spawn/death/respawn loop design (issue #93)
 │   ├── training-dummies-and-bots-spec.md     # Training dummies + warmup bots (issue #99)
 │   └── viewmodel-architecture.md             # FP viewmodel rebuild spec (issue #115, parent #90)
