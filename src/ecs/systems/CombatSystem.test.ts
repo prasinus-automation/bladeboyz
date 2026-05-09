@@ -11,7 +11,7 @@ import {
   DeadTag,
 } from '../components';
 import { CombatState } from '../../combat/states';
-import { AttackDirection, BlockDirection } from '../../combat/directions';
+import { Direction } from '../../combat/directions';
 import { CombatInput, fsmRegistry, createFSM } from '../../combat/CombatFSM';
 import { createCombatSystem, resetCombatInputState } from './CombatSystem';
 import type { WeaponConfig } from '../../weapons/WeaponConfig';
@@ -60,38 +60,38 @@ class MockInputManager {
 
 function createTestWeapon(): WeaponConfig {
   const ticks = {
-    [AttackDirection.Left]: 6,
-    [AttackDirection.Right]: 6,
-    [AttackDirection.Overhead]: 8,
-    [AttackDirection.Stab]: 5,
+    [Direction.Left]: 6,
+    [Direction.Right]: 6,
+    [Direction.Overhead]: 8,
+    [Direction.Stab]: 5,
   };
 
   return {
     name: 'TestSword',
     damage: {
-      [AttackDirection.Left]: { head: 50, torso: 35, limb: 25 },
-      [AttackDirection.Right]: { head: 50, torso: 35, limb: 25 },
-      [AttackDirection.Overhead]: { head: 55, torso: 40, limb: 25 },
-      [AttackDirection.Stab]: { head: 45, torso: 40, limb: 20 },
+      [Direction.Left]: { head: 50, torso: 35, limb: 25 },
+      [Direction.Right]: { head: 50, torso: 35, limb: 25 },
+      [Direction.Overhead]: { head: 55, torso: 40, limb: 25 },
+      [Direction.Stab]: { head: 45, torso: 40, limb: 20 },
     },
     windup: { ...ticks },
     release: {
-      [AttackDirection.Left]: 4,
-      [AttackDirection.Right]: 4,
-      [AttackDirection.Overhead]: 5,
-      [AttackDirection.Stab]: 3,
+      [Direction.Left]: 4,
+      [Direction.Right]: 4,
+      [Direction.Overhead]: 5,
+      [Direction.Stab]: 3,
     },
     recovery: {
-      [AttackDirection.Left]: 12,
-      [AttackDirection.Right]: 12,
-      [AttackDirection.Overhead]: 15,
-      [AttackDirection.Stab]: 10,
+      [Direction.Left]: 12,
+      [Direction.Right]: 12,
+      [Direction.Overhead]: 15,
+      [Direction.Stab]: 10,
     },
     comboRecovery: {
-      [AttackDirection.Left]: 8,
-      [AttackDirection.Right]: 8,
-      [AttackDirection.Overhead]: 10,
-      [AttackDirection.Stab]: 6,
+      [Direction.Left]: 8,
+      [Direction.Right]: 8,
+      [Direction.Overhead]: 10,
+      [Direction.Stab]: 6,
     },
     parryWindow: 6,
     parryRecovery: 10,
@@ -203,7 +203,7 @@ describe('CombatSystem', () => {
     tick(); // → Windup
 
     // After one tick, ticksRemaining should be windup - 1 (tick() decremented it)
-    const expected = weapon.windup[AttackDirection.Stab] - 1; // Stab due to no mouse movement
+    const expected = weapon.windup[Direction.Stab] - 1; // Stab due to no mouse movement
     expect(CombatStateComponent.ticksRemaining[playerEid]).toBe(expected);
   });
 
@@ -251,18 +251,18 @@ describe('CombatSystem', () => {
 
     // Tick through windup
     input.releaseMouseButton(0);
-    const windup = weapon.windup[AttackDirection.Stab]; // no mouse movement = Stab
+    const windup = weapon.windup[Direction.Stab]; // no mouse movement = Stab
     for (let i = 1; i < windup; i++) tick();
     tick(); // → Release
     expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Release);
 
     // Tick through release
-    const release = weapon.release[AttackDirection.Stab];
+    const release = weapon.release[Direction.Stab];
     for (let i = 0; i < release; i++) tick();
     expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Recovery);
 
     // Tick through recovery
-    const recovery = weapon.recovery[AttackDirection.Stab];
+    const recovery = weapon.recovery[Direction.Stab];
     for (let i = 0; i < recovery; i++) tick();
     expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Idle);
   });
@@ -280,20 +280,20 @@ describe('CombatSystem', () => {
       input.pressMouseButton(0);
       tick();
       // No mouse movement → Stab direction
-      expect(CombatStateComp.direction[playerEid]).toBe(AttackDirection.Stab);
+      expect(CombatStateComp.direction[playerEid]).toBe(Direction.Stab);
     });
 
     it('syncs phaseTotal for windup state', () => {
       input.pressMouseButton(0);
       tick();
-      expect(CombatStateComp.phaseTotal[playerEid]).toBe(weapon.windup[AttackDirection.Stab]);
+      expect(CombatStateComp.phaseTotal[playerEid]).toBe(weapon.windup[Direction.Stab]);
     });
 
     it('syncs phaseElapsed correctly during windup', () => {
       input.pressMouseButton(0);
       tick(); // 1st tick in Windup
       // After tick: phaseElapsed = phaseTotal - ticksRemaining
-      const phaseTotal = weapon.windup[AttackDirection.Stab];
+      const phaseTotal = weapon.windup[Direction.Stab];
       const ticksRemaining = CombatStateComponent.ticksRemaining[playerEid];
       expect(CombatStateComp.phaseElapsed[playerEid]).toBe(phaseTotal - ticksRemaining);
     });
@@ -303,20 +303,22 @@ describe('CombatSystem', () => {
       tick(); // → Windup
       input.releaseMouseButton(0);
       // Tick through windup
-      const windup = weapon.windup[AttackDirection.Stab];
+      const windup = weapon.windup[Direction.Stab];
       for (let i = 1; i < windup; i++) tick();
       tick(); // → Release (timer expired, auto-transition)
       expect(CombatStateComp.state[playerEid]).toBe(CombatState.Release);
-      expect(CombatStateComp.phaseTotal[playerEid]).toBe(weapon.release[AttackDirection.Stab]);
+      expect(CombatStateComp.phaseTotal[playerEid]).toBe(weapon.release[Direction.Stab]);
     });
 
     it('syncs block direction for Blocking state', () => {
       // FSM v2 (#135): single Blocking state replaces Block + ParryWindow.
+      // FSM v2 (#139): no mouse movement → `detectDirection` returns Stab
+      // (the magnitude-below-threshold fallback). v1's split detect kept
+      // a Top fallback for blocks; that's gone in the unified algorithm.
       input.pressMouseButton(2);
       tick(); // → Blocking
       expect(CombatStateComp.state[playerEid]).toBe(CombatState.Blocking);
-      // Block direction defaults to Top when no mouse movement.
-      expect(CombatStateComp.direction[playerEid]).toBe(BlockDirection.Top);
+      expect(CombatStateComp.direction[playerEid]).toBe(Direction.Stab);
     });
 
     it('phaseElapsed progresses each tick', () => {
@@ -384,7 +386,7 @@ describe('CombatSystem', () => {
       input.pressMouseButton(0);
       turncapTick(); // → Windup
       input.releaseMouseButton(0);
-      const windup = weapon.windup[AttackDirection.Stab];
+      const windup = weapon.windup[Direction.Stab];
       for (let i = 1; i < windup; i++) turncapTick();
       turncapTick(); // → Release
       expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Release);
@@ -395,10 +397,10 @@ describe('CombatSystem', () => {
       input.pressMouseButton(0);
       turncapTick(); // → Windup
       input.releaseMouseButton(0);
-      const windup = weapon.windup[AttackDirection.Stab];
+      const windup = weapon.windup[Direction.Stab];
       for (let i = 1; i < windup; i++) turncapTick();
       turncapTick(); // → Release
-      const release = weapon.release[AttackDirection.Stab];
+      const release = weapon.release[Direction.Stab];
       for (let i = 0; i < release; i++) turncapTick();
       expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Recovery);
       expect(mockCamera.maxTurnRate).toBe(weapon.turncap.recovery);
@@ -408,12 +410,12 @@ describe('CombatSystem', () => {
       input.pressMouseButton(0);
       turncapTick(); // → Windup
       input.releaseMouseButton(0);
-      const windup = weapon.windup[AttackDirection.Stab];
+      const windup = weapon.windup[Direction.Stab];
       for (let i = 1; i < windup; i++) turncapTick();
       turncapTick(); // → Release
-      const release = weapon.release[AttackDirection.Stab];
+      const release = weapon.release[Direction.Stab];
       for (let i = 0; i < release; i++) turncapTick();
-      const recovery = weapon.recovery[AttackDirection.Stab];
+      const recovery = weapon.recovery[Direction.Stab];
       for (let i = 0; i < recovery; i++) turncapTick();
       expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Idle);
       expect(mockCamera.maxTurnRate).toBe(Infinity);

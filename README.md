@@ -165,7 +165,7 @@ All weapons are data-driven via `WeaponConfig` objects — damage, timing, turnc
 | **Mace** | 0.6 | Slow | 42–55 / 30–40 / 20–25 | 18 | 14 / 36 | Heavy blunt weapon. High stun duration (68 ticks) punishes failed parries. |
 | **Battleaxe** | 1.2 | Very Slow | 55–75 / 40–55 / 28–35 | 24 | 16 / 42 | Devastating damage but long windups. Overheads deal up to 75 head damage. |
 
-*Damage ranges show min–max across attack directions (left, right, overhead, stab — the FSM v2 schema removed `Underhand`). Actual damage depends on attack direction and body region hit.*
+*Damage ranges show min–max across attack directions (overhead, left, right, stab — the FSM v2 unified `Direction` enum, #139, dropped the v1 `Underhand`). Actual damage depends on attack direction and body region hit.*
 
 *`Parry rec.` is how long the Parry pose locks before returning to Blocking (ticks). `Block-break stun` is the stagger applied when a blocker's stamina hits zero mid-block. Both are per-weapon as of FSM v2 (issue #131); the v1 module-level `BLOCK_BREAK_STUN_TICKS = 30` constant is still used by `StaminaSystem` until the FSM v2 wiring lands. Every weapon also has a `turncap.hitStun` of 0.005 rad/tick — the stagger almost completely locks your aim.*
 
@@ -182,7 +182,7 @@ The wallet is intentionally minimal scaffolding for the shop feature — earning
 BladeBoyz uses a **directional melee combat system** inspired by Mordhau and Chivalry:
 
 ### Directional Attacks & Blocks
-Mouse movement before clicking determines your attack direction — sweep left for a left swing, sweep right for a right swing, push up for an overhead, or hold steady (or push down) for a stab. The FSM v2 schema (issue #131) trims the attack set to **four directions** (`Left`, `Right`, `Overhead`, `Stab`) — the old `Underhand` swing was folded into `Stab` because it animated similarly to `Overhead`. Blocking still has all four cardinal poses (`Left`, `Right`, `Top`, `Bottom`); the bottom block stays as a defensive option even though no attack is dedicated to it.
+Mouse movement before clicking determines your direction — sweep left for a left swing, sweep right for a right swing, push up for an overhead, or hold steady (or push down) for a stab. FSM v2 (issues #131 + #139) collapses the v1 split `AttackDirection` (5 values) and `BlockDirection` (4 values) into a single unified `Direction` enum with **four values** (`Overhead`, `Left`, `Right`, `Stab`) shared by attacks and blocks. The old `Underhand` swing folded into `Stab`, and `Block(dir)` now defends the **same** incoming `dir` (holding `Direction.Left` blocks an incoming `Direction.Left` slash — v1's opposed-pair scheme is gone). Direction is sampled at click time from a 100 ms rolling mouse buffer rather than the single-frame delta — quick post-click flicks no longer steal the swing direction.
 
 ### Parry
 Tapping block just as an attack lands triggers a **parry**: the parry window is the first `weapon.parryWindow` ticks of `Blocking` (matching-direction only). A successful parry locks the parrier into a brief `Parry` pose for `weapon.parryRecovery` ticks, then drops back to `Blocking` if you keep holding RMB (or `Idle` if you release). The attacker is staggered into `HitStun` for `weapon.parryStunTicks` (40–75 ticks depending on weapon). FSM v2 (#135) cut the v1 `Riposte` state — there's no dedicated post-parry counter-swing; the agility advantage is the uncapped `Parry` turncap (free aim while the attacker is stunned).

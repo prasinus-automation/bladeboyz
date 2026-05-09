@@ -174,9 +174,14 @@ export const Hitboxes = defineComponent({
 export const CombatStateComponent = defineComponent({
   /** Current CombatState enum value */
   state: Types.ui8,
-  /** Current AttackDirection enum value */
+  /**
+   * Current `Direction` enum value (FSM v2 #139). Both `attackDirection` and
+   * `blockDirection` now hold the same unified Direction value — they're
+   * a transitional pair until issue C (#136) collapses
+   * `CombatStateComponent` + `CombatStateComp` into a single component.
+   */
   attackDirection: Types.ui8,
-  /** Current BlockDirection enum value */
+  /** Same value as `attackDirection` (FSM v2 #139). */
   blockDirection: Types.ui8,
   /** Ticks remaining in current state */
   ticksRemaining: Types.ui16,
@@ -251,7 +256,7 @@ export const DamageEvent = defineComponent({
   damage: Types.f32,
   /** BodyRegion hit */
   bodyRegion: Types.ui8,
-  /** AttackDirection of the attack */
+  /** `Direction` enum value of the attack (FSM v2 #139) */
   attackDirection: Types.ui8,
   /** Whether this event has been processed (1 = processed) */
   processed: Types.ui8,
@@ -262,7 +267,7 @@ export const DamageEvent = defineComponent({
  * Written by the CombatSystem (fixedUpdate), read by the AnimationSystem (update).
  *
  * - state: CombatState enum value
- * - direction: AttackDirection or BlockDirection (context-dependent on state)
+ * - direction: `Direction` enum value (FSM v2 #139 — single unified enum)
  * - phaseElapsed: ticks elapsed in current phase
  * - phaseTotal: total ticks for current phase (from weapon config)
  * - phaseT: normalized phase progress in [0, 1] (mirrors CombatFSM.getPhaseT())

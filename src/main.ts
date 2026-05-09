@@ -63,7 +63,7 @@ import { ViewmodelRenderer, getArmOffset } from './rendering/ViewmodelRenderer';
 import { viewmodelAnimationSystem } from './rendering/ViewmodelAnimationSystem';
 import { ViewmodelDebugOverlay } from './hud/ViewmodelDebugOverlay';
 import { CombatStateComp } from './ecs/components';
-import { COMBAT_STATE_NAMES, CombatState } from './combat/states';
+import { COMBAT_STATE_NAMES } from './combat/states';
 import type * as THREE from 'three';
 import type { GameWorld } from './core/types';
 
@@ -435,15 +435,13 @@ async function main(): Promise<void> {
     if (viewmodelDebugEnabled) {
       const stateNum = CombatStateComp.state[playerEid];
       const dirNum = CombatStateComp.direction[playerEid];
-      // Direction labels — context-dependent on state. For Block/ParryWindow
-      // the number is a BlockDirection; otherwise an AttackDirection. Keep
-      // this lookup local to the overlay to avoid coupling HUD's internal
-      // tables.
-      const isBlockState =
-        stateNum === CombatState.Block || stateNum === CombatState.ParryWindow;
-      const dirLabel = isBlockState
-        ? (['Left', 'Right', 'Top', 'Bottom'][dirNum] ?? String(dirNum))
-        : (['Left', 'Right', 'Overhead', 'Stab'][dirNum] ?? String(dirNum));
+      // Direction labels — single unified `Direction` enum after FSM v2 #139
+      // (Overhead=0, Left=1, Right=2, Stab=3). No longer state-dependent —
+      // attack and block share the same enum and the same numeric value.
+      // (Pre-#139 this branched on Block/ParryWindow; those states no
+      // longer exist anyway, having been collapsed into Blocking/Parry.)
+      const dirLabel =
+        ['Overhead', 'Left', 'Right', 'Stab'][dirNum] ?? String(dirNum);
       _boneEulers['upper_arm_R'] = viewmodel.bones['upper_arm_R'].rotation;
       _boneEulers['forearm_R'] = viewmodel.bones['forearm_R'].rotation;
       _boneEulers['hand_R'] = viewmodel.bones['hand_R'].rotation;

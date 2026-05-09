@@ -8,18 +8,18 @@ import {
   resetInventorySystem,
 } from '../ecs/systems/InventorySystem';
 import { registerWeapon, weaponConfigs } from '../weapons/WeaponConfig';
-import { AttackDirection } from '../combat/directions';
+import { Direction } from '../combat/directions';
 
 // Register a test weapon config if not already registered
 function ensureTestWeapons(): void {
   if (!weaponConfigs['TestSword']) {
     const dirs = [
-      AttackDirection.Left,
-      AttackDirection.Right,
-      AttackDirection.Overhead,
-      AttackDirection.Stab,
+      Direction.Left,
+      Direction.Right,
+      Direction.Overhead,
+      Direction.Stab,
     ];
-    const dirRecord = <T>(val: T): Record<AttackDirection, T> => {
+    const dirRecord = <T>(val: T): Record<Direction, T> => {
       const r: any = {};
       for (const d of dirs) r[d] = val;
       return r;

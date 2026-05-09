@@ -11,7 +11,7 @@ import {
   BodyRegion,
 } from '../components';
 import { CombatState } from '../../combat/states';
-import { AttackDirection, BlockDirection } from '../../combat/directions';
+import { Direction } from '../../combat/directions';
 import { fsmRegistry } from '../../combat/CombatFSM';
 import { weaponConfigMap } from './TracerSystem';
 import { getCurrentFixedTick } from '../../core/tickCounter';
@@ -71,31 +71,21 @@ const damageEventQuery = defineQuery([DamageEvent]);
 
 /**
  * Check if the target's block direction counters the attack direction.
- * Left attacks are blocked by Right blocks and vice versa.
- * Overhead is blocked by Top; Stab is blocked by any active block direction.
  *
- * FSM v2 (#88, #131): `Underhand` is gone — vertical-down swings now resolve
- * to `Stab`, so the old `Underhand → Bottom` mapping is unreachable. The
- * `Bottom` block direction is preserved (UI still shows the bottom wedge),
- * but it doesn't counter any attack on its own — it's a defensive choice.
+ * FSM v2 (#139, unified `Direction` enum): a `Block(dir)` defends against
+ * an incoming attack with the **same** `dir` — holding `Direction.Left`
+ * blocks an incoming `Direction.Left` slash. Behavioural change from v1,
+ * which used opposed pairs (Left attacks were blocked by Right blocks).
+ *
+ * The old `Bottom` block direction was deleted along with `Underhand` —
+ * the indicator's bottom wedge is gone, and `Stab` blocks now match the
+ * incoming Stab thrust by their direction value (not "any direction").
  */
 function doesBlockCounter(
-  attackDir: AttackDirection,
-  blockDir: BlockDirection,
+  attackDir: Direction,
+  blockDir: Direction,
 ): boolean {
-  switch (attackDir) {
-    case AttackDirection.Left:
-      return blockDir === BlockDirection.Right;
-    case AttackDirection.Right:
-      return blockDir === BlockDirection.Left;
-    case AttackDirection.Overhead:
-      return blockDir === BlockDirection.Top;
-    case AttackDirection.Stab:
-      // Stab can be blocked by any active block direction
-      return true;
-    default:
-      return false;
-  }
+  return attackDir === blockDir;
 }
 
 // ─── System ──────────────────────────────────────────────────────────────────
@@ -123,11 +113,11 @@ export function DamageSystem(world: GameWorld, _dt: number): void {
     const targetEid = DamageEvent.targetEid[eventEid];
     const attackerEid = DamageEvent.attackerEid[eventEid];
     const damage = DamageEvent.damage[eventEid];
-    const attackDir = DamageEvent.attackDirection[eventEid] as AttackDirection;
+    const attackDir = DamageEvent.attackDirection[eventEid] as Direction;
     const bodyRegion = DamageEvent.bodyRegion[eventEid] as BodyRegion;
 
     const targetState = CombatStateComponent.state[targetEid] as CombatState;
-    const targetBlockDir = CombatStateComponent.blockDirection[targetEid] as BlockDirection;
+    const targetBlockDir = CombatStateComponent.blockDirection[targetEid] as Direction;
 
     // FSM v2 (#135): Block + ParryWindow collapsed into a single `Blocking`
     // state. The parry-vs-block decision now reads `parryActive` from the
@@ -192,7 +182,7 @@ function handleBlock(targetEid: number, attackerEid: number): void {
 
   // Attacker bounces into Recovery
   CombatStateComponent.state[attackerEid] = CombatState.Recovery;
-  const attackDir = CombatStateComponent.attackDirection[attackerEid] as AttackDirection;
+  const attackDir = CombatStateComponent.attackDirection[attackerEid] as Direction;
   const recoveryTicks = config?.recovery[attackDir] ?? 25;
   CombatStateComponent.ticksRemaining[attackerEid] = recoveryTicks;
 }
@@ -210,7 +200,7 @@ function handleHit(
   targetEid: number,
   attackerEid: number,
   damage: number,
-  attackDir: AttackDirection,
+  attackDir: Direction,
   bodyRegion: BodyRegion,
 ): void {
   const tick = getCurrentFixedTick();
@@ -274,7 +264,7 @@ function populateHitReact(
   targetEid: number,
   attackerEid: number,
   damage: number,
-  attackDir: AttackDirection,
+  attackDir: Direction,
   config: WeaponConfig | undefined,
 ): void {
   // World-space delta from attacker → target.
