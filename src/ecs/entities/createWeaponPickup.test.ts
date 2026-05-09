@@ -137,7 +137,10 @@ describe('createWeaponPickup', () => {
     expect(data.group.position.z).toBeCloseTo(-2);
   });
 
-  it('lays the mesh flat (rotation.x = -PI/2) — stub for #B', () => {
+  it('lays the mesh flat (Mace: rotation.x = -PI/2)', () => {
+    // Per-weapon orientation polish (#127) lives in `createGroundPickupModel`
+    // in WeaponModels.ts; Mace inherits the default `-π/2` X-rotation. See
+    // WeaponModels.test.ts for per-weapon orientation coverage.
     const eid = createWeaponPickup(world, {
       weaponName: 'Mace',
       position: { x: 0, y: 0, z: 0 },
