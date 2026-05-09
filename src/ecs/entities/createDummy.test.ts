@@ -119,32 +119,23 @@ describe('Dummy management functions', () => {
   });
 
   describe('toggleDummyBlock', () => {
-    it('should toggle dummy from Idle into a blocking state (ParryWindow)', () => {
+    it('should toggle dummy from Idle into Blocking', () => {
+      // FSM v2 (#135): the old `Block`/`ParryWindow` two-state shape is gone —
+      // a Block input goes directly to `Blocking` (the parry window now lives
+      // inside Blocking via the `parryActive` flag).
       setupFakeDummy(100);
       const result = toggleDummyBlock();
-      // Block goes through ParryWindow first, exactly like the player FSM.
-      expect(CombatStateComponent.state[100]).toBe(CombatState.ParryWindow);
+      expect(CombatStateComponent.state[100]).toBe(CombatState.Blocking);
       expect(result).toContain('Block');
     });
 
-    it('should toggle dummy from Block back to Idle', () => {
+    it('should toggle dummy from Blocking back to Idle', () => {
       setupFakeDummy(100);
-      // Drive the FSM into Block via the legitimate path: ParryWindow → tick → Block.
       const fsm = fsmRegistry.get(100)!;
-      toggleDummyBlock(); // → ParryWindow
-      // Tick the FSM through the parry window so it lands in Block.
-      while (fsm.state === CombatState.ParryWindow) fsm.tick();
-      expect(fsm.state).toBe(CombatState.Block);
+      toggleDummyBlock(); // → Blocking
+      expect(fsm.state).toBe(CombatState.Blocking);
 
       const result = toggleDummyBlock();
-      expect(CombatStateComponent.state[100]).toBe(CombatState.Idle);
-      expect(result).toBe('Idle');
-    });
-
-    it('should toggle dummy from ParryWindow back to Idle', () => {
-      setupFakeDummy(100);
-      toggleDummyBlock(); // → ParryWindow
-      const result = toggleDummyBlock(); // → Idle
       expect(CombatStateComponent.state[100]).toBe(CombatState.Idle);
       expect(result).toBe('Idle');
     });
@@ -157,8 +148,8 @@ describe('Dummy management functions', () => {
       setupFakeDummy(100);
       setupFakeDummy(101);
       toggleDummyBlock();
-      expect(CombatStateComponent.state[100]).toBe(CombatState.ParryWindow);
-      expect(CombatStateComponent.state[101]).toBe(CombatState.ParryWindow);
+      expect(CombatStateComponent.state[100]).toBe(CombatState.Blocking);
+      expect(CombatStateComponent.state[101]).toBe(CombatState.Blocking);
     });
   });
 

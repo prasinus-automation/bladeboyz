@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createWorld, addEntity, addComponent } from 'bitecs';
 import { Stamina, CombatStateComponent } from '../components';
-import { CombatState, BLOCK_BREAK_STUN_TICKS } from '../../combat/states';
+import { CombatState } from '../../combat/states';
 import {
   staminaSystemTick,
   queueStaminaCost,
@@ -63,14 +63,16 @@ describe('StaminaSystem', () => {
     });
 
     it('deducts block cost from stamina', () => {
-      const eid = createTestEntity(world, 100, 100, CombatState.Block);
+      // FSM v2 (#135): single Blocking state replaces Block + ParryWindow.
+      const eid = createTestEntity(world, 100, 100, CombatState.Blocking);
       queueStaminaCost({ entity: eid, type: 'block', weaponConfig: mockWeapon });
       staminaSystemTick(world);
       expect(Stamina.current[eid]).toBe(90); // 100 - 10
     });
 
     it('deducts parry cost from stamina', () => {
-      const eid = createTestEntity(world, 100, 100, CombatState.ParryWindow);
+      // FSM v2 (#135): Parry is the locked pose AFTER a successful parry.
+      const eid = createTestEntity(world, 100, 100, CombatState.Parry);
       queueStaminaCost({ entity: eid, type: 'parry', weaponConfig: mockWeapon });
       staminaSystemTick(world);
       expect(Stamina.current[eid]).toBe(95); // 100 - 5
@@ -91,7 +93,7 @@ describe('StaminaSystem', () => {
     });
 
     it('handles multiple cost events in one tick', () => {
-      const eid = createTestEntity(world, 100, 100, CombatState.Block);
+      const eid = createTestEntity(world, 100, 100, CombatState.Blocking);
       queueStaminaCost({ entity: eid, type: 'block', weaponConfig: mockWeapon });
       queueStaminaCost({ entity: eid, type: 'block', weaponConfig: mockWeapon });
       staminaSystemTick(world);
@@ -99,21 +101,18 @@ describe('StaminaSystem', () => {
     });
   });
 
-  describe('block break → Stunned', () => {
-    it('transitions to Stunned when stamina hits 0 while blocking', () => {
-      const eid = createTestEntity(world, 5, 100, CombatState.Block);
+  describe('block break → HitStun', () => {
+    // FSM v2 (#135): block-break collapses into HitStun (Stunned was
+    // dropped). When an FSM is registered, StaminaSystem dispatches
+    // `CombatInput.BlockBreak` and the FSM picks `weapon.blockBreakStunTicks`.
+    // When no FSM is registered (these tests), the system falls back to the
+    // weapon config's `blockBreakStunTicks` directly.
+    it('transitions to HitStun when stamina hits 0 while blocking', () => {
+      const eid = createTestEntity(world, 5, 100, CombatState.Blocking);
       queueStaminaCost({ entity: eid, type: 'block', weaponConfig: mockWeapon });
       const broken = staminaSystemTick(world);
-      expect(CombatStateComponent.state[eid]).toBe(CombatState.Stunned);
-      expect(CombatStateComponent.ticksRemaining[eid]).toBe(BLOCK_BREAK_STUN_TICKS);
-      expect(broken).toContain(eid);
-    });
-
-    it('transitions to Stunned when stamina hits 0 during ParryWindow', () => {
-      const eid = createTestEntity(world, 3, 100, CombatState.ParryWindow);
-      queueStaminaCost({ entity: eid, type: 'parry', weaponConfig: mockWeapon });
-      const broken = staminaSystemTick(world);
-      expect(CombatStateComponent.state[eid]).toBe(CombatState.Stunned);
+      expect(CombatStateComponent.state[eid]).toBe(CombatState.HitStun);
+      expect(CombatStateComponent.ticksRemaining[eid]).toBe(mockWeapon.blockBreakStunTicks);
       expect(broken).toContain(eid);
     });
 
@@ -125,11 +124,13 @@ describe('StaminaSystem', () => {
       expect(broken).not.toContain(eid);
     });
 
-    it('sets stun duration to 30 ticks', () => {
-      const eid = createTestEntity(world, 1, 100, CombatState.Block);
+    it('uses the weapon-config blockBreakStunTicks (28 in this fixture)', () => {
+      // FSM v2 (#135): per-weapon stun replaces the v1 module-level
+      // `BLOCK_BREAK_STUN_TICKS = 30` constant.
+      const eid = createTestEntity(world, 1, 100, CombatState.Blocking);
       queueStaminaCost({ entity: eid, type: 'block', weaponConfig: mockWeapon });
       staminaSystemTick(world);
-      expect(CombatStateComponent.ticksRemaining[eid]).toBe(30);
+      expect(CombatStateComponent.ticksRemaining[eid]).toBe(28);
     });
   });
 
@@ -192,7 +193,7 @@ describe('StaminaSystem', () => {
     });
 
     it('does not regen while blocking', () => {
-      const eid = createTestEntity(world, 50, 100, CombatState.Block);
+      const eid = createTestEntity(world, 50, 100, CombatState.Blocking);
 
       for (let i = 0; i < REGEN_DELAY_TICKS + 30; i++) {
         staminaSystemTick(world);
@@ -236,7 +237,7 @@ describe('StaminaSystem', () => {
   describe('multiple entities', () => {
     it('handles independent stamina tracking per entity', () => {
       const eid1 = createTestEntity(world, 100, 100, CombatState.Idle);
-      const eid2 = createTestEntity(world, 50, 100, CombatState.Block);
+      const eid2 = createTestEntity(world, 50, 100, CombatState.Blocking);
 
       queueStaminaCost({ entity: eid2, type: 'block', weaponConfig: mockWeapon });
       staminaSystemTick(world);

@@ -51,6 +51,18 @@ const VIEWMODEL_NEAR = 0.01;
 const VIEWMODEL_FAR = 5;
 
 /**
+ * Size of the per-bone AxesHelper added when `--debug-viewmodel` is enabled.
+ * Small enough to inspect bone-local rotations without obscuring the arm.
+ * (Issue #122 spec: 0.05; doc §10.2 mentions 0.08 but the issue is the
+ * authoritative spec for this PR.)
+ */
+const DEBUG_AXES_SIZE = 0.05;
+
+/** Names of the bones we attach AxesHelpers to in debug mode. Keys match
+ * `ViewmodelRenderer.bones`. */
+const DEBUG_BONE_NAMES = ['upper_arm_R', 'forearm_R', 'hand_R', 'weapon_attach'] as const;
+
+/**
  * Arm offset from camera in camera-local space (lower-right of view).
  *
  * The shoulder bone sits at the group origin (see upperArmBone.position below),
@@ -75,6 +87,14 @@ const ARM_OFFSET = new THREE.Vector3(0.25, -0.1, -0.4);
  */
 const DEFAULT_GRIP_OFFSET = new THREE.Vector3(0, 0, 0);
 const DEFAULT_GRIP_ROTATION = new THREE.Euler(Math.PI * 0.85, 0, 0);
+
+/**
+ * Read-only view of `ARM_OFFSET` for the debug overlay. Exposed so the overlay
+ * can display the live offset without reaching into the renderer's internals.
+ */
+export function getArmOffset(): THREE.Vector3 {
+  return ARM_OFFSET;
+}
 
 /** Pre-allocated vector for syncWithCamera (avoids per-frame allocation) */
 const _worldOffset = new THREE.Vector3();
@@ -158,6 +178,9 @@ export class ViewmodelRenderer {
    */
   private weaponGroup: THREE.Group | null = null;
 
+  /** Currently equipped weapon name (matches `weaponFactories` key). */
+  private currentWeaponName: string | null = null;
+
   /** The weapon_attach bone — weapon models attach here */
   private weaponAttachBone: THREE.Bone;
 
@@ -178,6 +201,16 @@ export class ViewmodelRenderer {
    * Disposed in `dispose()`.
    */
   private weaponModelCache: Map<string, WeaponModelResult> = new Map();
+
+  /**
+   * --debug-viewmodel state.
+   *
+   * Allocated lazily on first `setDebugMode(true)` so disabled mode pays
+   * zero scene-graph cost. Keyed by canonical bone name (without `vm_`
+   * prefix); values are AxesHelper children of the corresponding bone.
+   */
+  private _debugMode = false;
+  private _debugAxes: Map<string, THREE.AxesHelper> | null = null;
 
   constructor(
     scene: THREE.Scene,
@@ -365,6 +398,72 @@ export class ViewmodelRenderer {
     }
   }
 
+  /**
+   * Get the currently equipped weapon name, or null if none.
+   *
+   * Used by the `--debug-viewmodel` overlay to label the current weapon —
+   * exposed as a getter rather than reading `weaponFactories` because the
+   * FSM-tracked `weaponId` and the renderer's currently-attached model are
+   * the same value but maintained on different paths (combat ECS vs.
+   * `swapWeapon` calls), and the overlay wants the renderer's reality.
+   */
+  getCurrentWeaponName(): string | null {
+    return this.currentWeaponName;
+  }
+
+  /**
+   * Toggle the `--debug-viewmodel` diagnostic mode.
+   *
+   * When enabled:
+   *   - One `THREE.AxesHelper(DEBUG_AXES_SIZE)` is parented to each bone
+   *     listed in `DEBUG_BONE_NAMES` (created lazily on first call).
+   *   - Helpers are set to Layer 1 so they render in the viewmodel pass.
+   *
+   * When disabled:
+   *   - Helpers' `.visible` is set to false. They remain in the scene graph
+   *     so re-enabling is allocation-free, but they are not drawn.
+   *
+   * Zero-cost when never enabled: `_debugAxes` stays null, no AxesHelpers
+   * are constructed, and per-frame code paths can early-out via `_debugMode`.
+   *
+   * @param enabled true to show axes, false to hide
+   */
+  setDebugMode(enabled: boolean): void {
+    this._debugMode = enabled;
+
+    if (enabled) {
+      // Lazy-allocate on first enable.
+      if (this._debugAxes === null) {
+        this._debugAxes = new Map();
+        for (const boneName of DEBUG_BONE_NAMES) {
+          const bone = this.bones[boneName];
+          if (!bone) continue;
+          const helper = new THREE.AxesHelper(DEBUG_AXES_SIZE);
+          // Set the helper itself + any descendants (lines) to Layer 1 so
+          // the viewmodel camera renders them. AxesHelper extends LineSegments
+          // and has no children today, but setLayerRecursive is defensive.
+          setLayerRecursive(helper, VIEWMODEL_LAYER);
+          bone.add(helper);
+          this._debugAxes.set(boneName, helper);
+        }
+      }
+      // Show all helpers.
+      for (const helper of this._debugAxes.values()) {
+        helper.visible = true;
+      }
+    } else if (this._debugAxes !== null) {
+      // Disable existing helpers (keep them in the graph for cheap re-enable).
+      for (const helper of this._debugAxes.values()) {
+        helper.visible = false;
+      }
+    }
+  }
+
+  /** Returns whether `--debug-viewmodel` is currently enabled. */
+  get debugMode(): boolean {
+    return this._debugMode;
+  }
+
   /** Get current visibility */
   get visible(): boolean {
     return this._visible;
@@ -431,6 +530,9 @@ export class ViewmodelRenderer {
     // Attach cached group as child of weapon_attach
     this.weaponAttachBone.add(cached.group);
     this.weaponGroup = cached.group;
+    // Track the renderer's reality (used by the --debug-viewmodel overlay
+    // via getCurrentWeaponName(), not from FSM weaponId — see #161).
+    this.currentWeaponName = weaponName;
 
     return true;
   }

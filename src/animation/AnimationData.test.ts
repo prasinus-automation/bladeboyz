@@ -130,35 +130,26 @@ describe('AnimationData', () => {
       expect(pose).toBe(anim.recovery);
     });
 
-    it('returns block pose for Block state', () => {
-      const pose = getCombatPose(CombatState.Block, BlockDirection.Left);
+    it('returns block pose for Blocking state', () => {
+      // FSM v2 (#135): `Block` was renamed to `Blocking` and `ParryWindow`
+      // is gone — block-pose lookup now keys off the single `Blocking` state.
+      const pose = getCombatPose(CombatState.Blocking, BlockDirection.Left);
       expect(pose).toBe(getBlockPose(BlockDirection.Left));
     });
 
-    it('returns parry pose for ParryWindow state', () => {
-      const pose = getCombatPose(CombatState.ParryWindow, 0);
+    it('returns parry pose for Parry state', () => {
+      // FSM v2 (#135): `ParryWindow` collapsed into Blocking; the standalone
+      // `Parry` state is the brief locked pose AFTER a successful parry.
+      const pose = getCombatPose(CombatState.Parry, 0);
       expect(pose).toBe(PARRY_POSE);
     });
 
-    it('returns stunned pose for Stunned and Clash states', () => {
-      expect(getCombatPose(CombatState.Stunned, 0)).toBe(STUNNED_POSE);
-      expect(getCombatPose(CombatState.Clash, 0)).toBe(STUNNED_POSE);
-    });
-
     it('returns hitstun pose for HitStun state', () => {
+      // FSM v2 (#135): `Stunned` (parry penalty) and `Clash` were both
+      // collapsed into `HitStun`. The single state covers all stun durations.
       expect(getCombatPose(CombatState.HitStun, 0)).toBe(HITSTUN_POSE);
-    });
-
-    it('returns windup pose for Riposte state (uses windup of attack)', () => {
-      const pose = getCombatPose(CombatState.Riposte, AttackDirection.Right);
-      const anim = getAttackAnimation(AttackDirection.Right);
-      expect(pose).toBe(anim.windup);
-    });
-
-    it('returns recovery pose for Feint state', () => {
-      const pose = getCombatPose(CombatState.Feint, AttackDirection.Left);
-      const anim = getAttackAnimation(AttackDirection.Left);
-      expect(pose).toBe(anim.recovery);
+      // Defensive: STUNNED_POSE is still exported but unreachable via getCombatPose.
+      expect(STUNNED_POSE).toBeDefined();
     });
   });
 

@@ -5,14 +5,15 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { CombatStateComponent } from '../ecs/components';
 import { DirectionIndicator } from './DirectionIndicator';
 
-// CombatState numeric values (const enum — duplicated for tests)
+// CombatState numeric values — FSM v2 (#135), const enum duplicated for tests.
 const CombatState = {
   Idle: 0,
   Windup: 1,
   Release: 2,
   Recovery: 3,
-  Block: 4,
-  ParryWindow: 5,
+  Blocking: 4,
+  Parry: 5,
+  HitStun: 6,
 } as const;
 
 // AttackDirection numeric values (FSM v2: Underhand removed, Stab renumbered 4 → 3)
@@ -156,8 +157,9 @@ describe('DirectionIndicator', () => {
     });
   });
 
-  it('highlights block direction in blue during Block', () => {
-    setPlayerState(CombatState.Block, AttackDirection.Left, BlockDirection.Right);
+  it('highlights block direction in blue during Blocking', () => {
+    // FSM v2 (#135): single Blocking state replaces Block + ParryWindow.
+    setPlayerState(CombatState.Blocking, AttackDirection.Left, BlockDirection.Right);
     indicator.update(PLAYER_EID);
 
     const arrows = getArrows(container);
@@ -166,8 +168,10 @@ describe('DirectionIndicator', () => {
     expect(arrows[0].style.borderBottomColor).toBe(DIM);
   });
 
-  it('highlights block direction in blue during ParryWindow', () => {
-    setPlayerState(CombatState.ParryWindow, AttackDirection.Left, BlockDirection.Top);
+  it('highlights block direction in blue during Parry', () => {
+    // FSM v2 (#135): Parry is the locked pose AFTER a successful parry —
+    // the indicator should still show the defensive (blue) wedge.
+    setPlayerState(CombatState.Parry, AttackDirection.Left, BlockDirection.Top);
     indicator.update(PLAYER_EID);
 
     const arrows = getArrows(container);
@@ -214,7 +218,7 @@ describe('DirectionIndicator', () => {
   });
 
   it('highlights bottom block direction correctly', () => {
-    setPlayerState(CombatState.Block, AttackDirection.Left, BlockDirection.Bottom);
+    setPlayerState(CombatState.Blocking, AttackDirection.Left, BlockDirection.Bottom);
     indicator.update(PLAYER_EID);
 
     const arrows = getArrows(container);

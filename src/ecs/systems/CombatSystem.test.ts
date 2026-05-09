@@ -159,30 +159,39 @@ describe('CombatSystem', () => {
     expect(CombatStateComponent.ticksRemaining[playerEid]).toBe(ticksBefore - 1);
   });
 
-  it('right click triggers block from Idle', () => {
+  it('right click triggers block from Idle (Blocking with parry window active)', () => {
+    // FSM v2 (#135): a Block input goes directly to `Blocking`. The parry
+    // window is a *time slice* inside Blocking — read via `parryActive`
+    // on the FSM, not a separate state.
     input.pressMouseButton(2);
     tick();
-    expect(CombatStateComponent.state[playerEid]).toBe(CombatState.ParryWindow);
+    expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Blocking);
+    const fsm = fsmRegistry.get(playerEid);
+    expect(fsm?.parryActive).toBe(true);
   });
 
-  it('right click during Windup triggers feint', () => {
+  it('right click during Windup is a no-op (Feint removed in FSM v2)', () => {
+    // Acceptance: Feint state is gone (#135). RMB during Windup is rejected
+    // by `canTransition(Block)` and the FSM stays in Windup.
     input.pressMouseButton(0);
     tick(); // → Windup
     input.releaseMouseButton(0);
     tick(); // edge detection reset
 
     input.pressMouseButton(2);
-    tick(); // right-click during windup → Feint
-    expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Feint);
+    tick(); // right-click during windup → ignored
+    expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Windup);
   });
 
   it('release right mouse button releases block', () => {
     input.pressMouseButton(2);
-    tick(); // → ParryWindow
+    tick(); // → Blocking
+    expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Blocking);
 
-    // Tick through parry window to get to Block
+    // Tick past the parry window (Blocking has no fixed duration so this
+    // just exercises that Blocking is stable while RMB is held).
     for (let i = 0; i < weapon.parryWindow; i++) tick();
-    expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Block);
+    expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Blocking);
 
     input.releaseMouseButton(2);
     tick(); // → Idle
@@ -301,11 +310,12 @@ describe('CombatSystem', () => {
       expect(CombatStateComp.phaseTotal[playerEid]).toBe(weapon.release[AttackDirection.Stab]);
     });
 
-    it('syncs block direction for ParryWindow state', () => {
+    it('syncs block direction for Blocking state', () => {
+      // FSM v2 (#135): single Blocking state replaces Block + ParryWindow.
       input.pressMouseButton(2);
-      tick(); // → ParryWindow
-      expect(CombatStateComp.state[playerEid]).toBe(CombatState.ParryWindow);
-      // Block direction defaults to Top when no mouse movement
+      tick(); // → Blocking
+      expect(CombatStateComp.state[playerEid]).toBe(CombatState.Blocking);
+      // Block direction defaults to Top when no mouse movement.
       expect(CombatStateComp.direction[playerEid]).toBe(BlockDirection.Top);
     });
 
@@ -409,31 +419,24 @@ describe('CombatSystem', () => {
       expect(mockCamera.maxTurnRate).toBe(Infinity);
     });
 
-    it('maxTurnRate stays Infinity during Block', () => {
+    it('maxTurnRate stays Infinity during Blocking', () => {
+      // FSM v2 (#135): single Blocking state — uncapped, full agility.
       input.pressMouseButton(2);
-      turncapTick(); // → ParryWindow
-      // Tick through parry window to Block
+      turncapTick(); // → Blocking
+      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Blocking);
+      expect(mockCamera.maxTurnRate).toBe(Infinity);
+      // Tick through what would have been the parry window — still uncapped.
       for (let i = 0; i < weapon.parryWindow; i++) turncapTick();
-      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Block);
       expect(mockCamera.maxTurnRate).toBe(Infinity);
     });
 
-    it('maxTurnRate stays Infinity during ParryWindow', () => {
-      input.pressMouseButton(2);
-      turncapTick(); // → ParryWindow
-      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.ParryWindow);
-      expect(mockCamera.maxTurnRate).toBe(Infinity);
-    });
-
-    it('maxTurnRate uses recovery turncap during Feint', () => {
-      input.pressMouseButton(0);
-      turncapTick(); // → Windup
-      input.releaseMouseButton(0);
+    it('maxTurnRate uses hitStun turncap during HitStun', () => {
+      // Acceptance #27: new HitStun cap from issue A.
+      const fsm = fsmRegistry.get(playerEid)!;
+      fsm.transition(CombatInput.HitReceived);
       turncapTick();
-      input.pressMouseButton(2);
-      turncapTick(); // → Feint
-      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Feint);
-      expect(mockCamera.maxTurnRate).toBe(weapon.turncap.recovery);
+      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.HitStun);
+      expect(mockCamera.maxTurnRate).toBe(weapon.turncap.hitStun);
     });
 
     it('turncap updates correctly after weapon swap', () => {

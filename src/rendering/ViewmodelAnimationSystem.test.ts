@@ -88,7 +88,7 @@ describe('ViewmodelAnimationSystem', () => {
     });
 
     it('applies block poses', () => {
-      CombatStateComp.state[eid] = CombatState.Block;
+      CombatStateComp.state[eid] = CombatState.Blocking;
       CombatStateComp.direction[eid] = BlockDirection.Top;
 
       for (let i = 0; i < 10; i++) {
@@ -131,7 +131,7 @@ describe('ViewmodelAnimationSystem', () => {
     });
 
     it('detects direction change as state transition', () => {
-      CombatStateComp.state[eid] = CombatState.Block;
+      CombatStateComp.state[eid] = CombatState.Blocking;
       CombatStateComp.direction[eid] = BlockDirection.Left;
 
       for (let i = 0; i < 20; i++) {
@@ -261,7 +261,7 @@ describe('ViewmodelAnimationSystem', () => {
   describe('resetViewmodelAnimationSystem', () => {
     it('resets module state so next call treats state as new', () => {
       // Run several frames
-      CombatStateComp.state[eid] = CombatState.Block;
+      CombatStateComp.state[eid] = CombatState.Blocking;
       CombatStateComp.direction[eid] = BlockDirection.Top;
       for (let i = 0; i < 10; i++) {
         viewmodelAnimationSystem(viewmodel, eid, 0.016, WEAPON_ID_TO_NAME);
@@ -280,6 +280,8 @@ describe('ViewmodelAnimationSystem', () => {
   });
 
   describe('all combat states produce valid poses', () => {
+    // FSM v2 (#135): only the 7 surviving states need coverage. Riposte,
+    // Feint, Clash, Stunned, ParryWindow are gone; Block was renamed to Blocking.
     const statesToTest: Array<[string, CombatState, number]> = [
       ['Idle', CombatState.Idle, 0],
       ['Windup Left', CombatState.Windup, AttackDirection.Left],
@@ -288,14 +290,11 @@ describe('ViewmodelAnimationSystem', () => {
       ['Windup Stab', CombatState.Windup, AttackDirection.Stab],
       ['Release Left', CombatState.Release, AttackDirection.Left],
       ['Recovery', CombatState.Recovery, AttackDirection.Left],
-      ['Block Left', CombatState.Block, BlockDirection.Left],
-      ['Block Right', CombatState.Block, BlockDirection.Right],
-      ['Block Top', CombatState.Block, BlockDirection.Top],
-      ['Block Bottom', CombatState.Block, BlockDirection.Bottom],
-      ['ParryWindow', CombatState.ParryWindow, 0],
-      ['Riposte', CombatState.Riposte, AttackDirection.Left],
-      ['Feint', CombatState.Feint, AttackDirection.Left],
-      ['Stunned', CombatState.Stunned, 0],
+      ['Blocking Left', CombatState.Blocking, BlockDirection.Left],
+      ['Blocking Right', CombatState.Blocking, BlockDirection.Right],
+      ['Blocking Top', CombatState.Blocking, BlockDirection.Top],
+      ['Blocking Bottom', CombatState.Blocking, BlockDirection.Bottom],
+      ['Parry', CombatState.Parry, 0],
       ['HitStun', CombatState.HitStun, 0],
     ];
 

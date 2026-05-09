@@ -341,26 +341,25 @@ export function getCombatPose(
       return IDLE_POSE;
 
     case CombatState.Windup:
-    case CombatState.Riposte: // riposte uses windup pose of the attack
       return getAttackAnimation(direction as AttackDirection).windup;
 
     case CombatState.Release:
       return getAttackAnimation(direction as AttackDirection).release;
 
     case CombatState.Recovery:
-    case CombatState.Feint: // feint snaps to recovery
       return getAttackAnimation(direction as AttackDirection).recovery;
 
-    case CombatState.Block:
+    case CombatState.Blocking:
       return getBlockPose(direction as BlockDirection);
 
-    case CombatState.ParryWindow:
+    // FSM v2 (#135): `Parry` is a brief locked pose after a successful
+    // parry (formerly `ParryWindow`). The standalone parry-window state
+    // is gone — incoming-parry detection now reads `parryActive` off the
+    // FSM, not a separate state.
+    case CombatState.Parry:
       return PARRY_POSE;
 
-    case CombatState.Clash:
-    case CombatState.Stunned:
-      return STUNNED_POSE;
-
+    // FSM v2: `Stunned` and `Clash` were absorbed into `HitStun`.
     case CombatState.HitStun:
       return HITSTUN_POSE;
 

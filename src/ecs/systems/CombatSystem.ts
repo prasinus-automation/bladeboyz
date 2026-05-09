@@ -1,12 +1,16 @@
 /**
  * CombatSystem — ECS system that bridges input to the per-entity CombatFSM.
  *
- * Runs in fixedUpdate() at 60Hz. Each tick:
+ * Runs in fixedUpdate() at 60 Hz. Each tick:
  * 1. Reads input state (mouse buttons, mouse deltas for direction)
  * 2. Calls FSM transitions based on input
- * 3. Ticks the FSM (timer countdown + auto-transitions)
+ * 3. Ticks the FSM (phaseElapsed countdown + auto-transitions)
  * 4. Syncs FSM state back to the CombatStateComponent for other systems to read
  * 5. Drains stamina events and queues them with StaminaSystem
+ *
+ * FSM v2 (#135): Feint input is gone — RMB-during-Windup no longer triggers
+ * a feint. RMB always evaluates as a Block input now (rejected by the FSM
+ * if state is Windup, since canTransition(Block) is false there).
  */
 
 import { defineQuery, hasComponent, type IWorld } from 'bitecs';
@@ -104,22 +108,17 @@ export function createCombatSystem(
       const fsm = fsmRegistry.get(eid);
       if (!fsm) continue;
 
-      // Attack input (left mouse button press)
+      // Attack input (left mouse button press) — FSM handles morph + combo.
       if (leftJustPressed) {
         const attackDir = detectAttackDirection(deltas, now);
         fsm.transition(CombatInput.Attack, attackDir);
       }
 
-      // Block input (right mouse button press)
+      // Block input (right mouse button press). FSM v2: always a Block —
+      // Feint is gone, so RMB during Windup just no-ops via `canTransition`.
       if (rightJustPressed) {
-        const currentState = fsm.state;
-        if (currentState === CombatState.Windup) {
-          // Right-click during windup = feint
-          fsm.transition(CombatInput.Feint);
-        } else {
-          const blockDir = detectBlockDirection(deltas, now);
-          fsm.transition(CombatInput.Block, undefined, blockDir);
-        }
+        const blockDir = detectBlockDirection(deltas, now);
+        fsm.transition(CombatInput.Block, blockDir);
       }
 
       // Release block (right mouse button released)
@@ -138,7 +137,7 @@ export function createCombatSystem(
       const fsm = fsmRegistry.get(eid);
       if (!fsm) continue;
 
-      // Advance FSM timer
+      // Advance FSM timer (increments phaseElapsed; auto-transitions on phase end).
       fsm.tick();
 
       // Sync FSM state to ECS component
@@ -149,21 +148,20 @@ export function createCombatSystem(
 
       // Sync CombatStateComp (read by AnimationSystem)
       CombatStateComp.state[eid] = fsm.state;
-      // Direction: use attackDirection for attack states, blockDirection for block states
+      // Direction: block direction in defensive states, attack direction otherwise.
+      // FSM v2: Blocking absorbs old Block + ParryWindow; Parry replaces Riposte.
       const currentState = fsm.state;
       if (
-        currentState === CombatState.Block ||
-        currentState === CombatState.ParryWindow
+        currentState === CombatState.Blocking ||
+        currentState === CombatState.Parry
       ) {
         CombatStateComp.direction[eid] = fsm.blockDirection;
       } else {
         CombatStateComp.direction[eid] = fsm.attackDirection;
       }
-      // Compute phase fields from FSM (single source of truth for phase math)
-      const phaseTotal = fsm.getPhaseTotal();
-      CombatStateComp.phaseTotal[eid] = phaseTotal;
-      CombatStateComp.phaseElapsed[eid] =
-        phaseTotal > 0 ? phaseTotal - fsm.ticksRemaining : 0;
+      // Phase fields straight from the FSM (single source of truth).
+      CombatStateComp.phaseTotal[eid] = fsm.phaseTotal;
+      CombatStateComp.phaseElapsed[eid] = fsm.phaseElapsed;
       CombatStateComp.phaseT[eid] = fsm.getPhaseT();
       CombatStateComp.weaponId[eid] = CombatStateComponent.weaponId[eid];
 

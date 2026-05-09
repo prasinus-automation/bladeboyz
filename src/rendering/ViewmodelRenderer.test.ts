@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as THREE from 'three';
-import { ViewmodelRenderer, VIEWMODEL_LAYER } from './ViewmodelRenderer';
+import { ViewmodelRenderer, VIEWMODEL_LAYER, getArmOffset } from './ViewmodelRenderer';
 
 // Helper: create a minimal scene
 function createTestScene(): THREE.Scene {
@@ -768,6 +768,162 @@ describe('ViewmodelRenderer', () => {
         expect(vm.swapWeapon('Battleaxe')).toBe(true);
         expect(vm.swapWeapon('Longsword')).toBe(true);
       });
+    });
+  });
+
+  describe('getCurrentWeaponName', () => {
+    it('returns the initial weapon name', () => {
+      expect(viewmodel.getCurrentWeaponName()).toBe('Dagger');
+    });
+
+    it('returns null when initial weapon factory was missing', () => {
+      const vm = new ViewmodelRenderer(scene, 1, {
+        initialWeapon: 'NonExistent',
+        weaponFactories: {},
+      });
+      expect(vm.getCurrentWeaponName()).toBeNull();
+    });
+
+    it('updates after a swapWeapon call', () => {
+      viewmodel.swapWeapon('Mace');
+      expect(viewmodel.getCurrentWeaponName()).toBe('Mace');
+      viewmodel.swapWeapon('Battleaxe');
+      expect(viewmodel.getCurrentWeaponName()).toBe('Battleaxe');
+    });
+
+    it('does not update on a failed swap', () => {
+      // Initial weapon is Dagger.
+      const result = viewmodel.swapWeapon('NotARealWeapon');
+      expect(result).toBe(false);
+      expect(viewmodel.getCurrentWeaponName()).toBe('Dagger');
+    });
+  });
+
+  describe('getArmOffset', () => {
+    it('returns a Vector3 with the FPS lower-right offset', () => {
+      const offset = getArmOffset();
+      expect(offset).toBeInstanceOf(THREE.Vector3);
+      expect(offset.x).toBeCloseTo(0.25);
+      expect(offset.y).toBeCloseTo(-0.1);
+      expect(offset.z).toBeCloseTo(-0.4);
+    });
+  });
+
+  describe('setDebugMode (--debug-viewmodel toggle)', () => {
+    it('defaults to off (no AxesHelpers in scene)', () => {
+      // Walk the bone hierarchy and confirm zero AxesHelpers exist before
+      // setDebugMode(true) is ever called. This pins the zero-cost-when-disabled
+      // contract from the issue.
+      let helperCount = 0;
+      viewmodel.group.traverse((obj) => {
+        if (obj instanceof THREE.AxesHelper) helperCount++;
+      });
+      expect(helperCount).toBe(0);
+      expect(viewmodel.debugMode).toBe(false);
+    });
+
+    it('parents an AxesHelper to each animatable bone when enabled', () => {
+      viewmodel.setDebugMode(true);
+      expect(viewmodel.debugMode).toBe(true);
+
+      // Each of the four bones should have an AxesHelper child.
+      for (const boneName of ['upper_arm_R', 'forearm_R', 'hand_R', 'weapon_attach']) {
+        const bone = viewmodel.bones[boneName];
+        const helpers = bone.children.filter((c) => c instanceof THREE.AxesHelper);
+        expect(helpers.length).toBe(1);
+      }
+    });
+
+    it('AxesHelpers are on Layer 1 (viewmodel layer)', () => {
+      viewmodel.setDebugMode(true);
+
+      for (const boneName of ['upper_arm_R', 'forearm_R', 'hand_R', 'weapon_attach']) {
+        const bone = viewmodel.bones[boneName];
+        const helper = bone.children.find((c) => c instanceof THREE.AxesHelper);
+        expect(helper).toBeDefined();
+        expect(helper!.layers.mask).toBe(1 << VIEWMODEL_LAYER);
+      }
+    });
+
+    it('hides existing AxesHelpers when disabled (without re-allocating)', () => {
+      viewmodel.setDebugMode(true);
+      const upperArmHelper = viewmodel.bones['upper_arm_R'].children.find(
+        (c) => c instanceof THREE.AxesHelper,
+      ) as THREE.AxesHelper;
+      expect(upperArmHelper.visible).toBe(true);
+
+      viewmodel.setDebugMode(false);
+
+      // Helper still in scene (lazy: cheap re-enable) but hidden.
+      const stillThere = viewmodel.bones['upper_arm_R'].children.find(
+        (c) => c instanceof THREE.AxesHelper,
+      );
+      expect(stillThere).toBe(upperArmHelper); // same instance, no re-alloc
+      expect(upperArmHelper.visible).toBe(false);
+      expect(viewmodel.debugMode).toBe(false);
+    });
+
+    it('re-enabling does not allocate new AxesHelpers', () => {
+      viewmodel.setDebugMode(true);
+      const original = viewmodel.bones['upper_arm_R'].children.find(
+        (c) => c instanceof THREE.AxesHelper,
+      ) as THREE.AxesHelper;
+
+      viewmodel.setDebugMode(false);
+      viewmodel.setDebugMode(true);
+
+      // Should still be exactly one helper per bone, and it should be the
+      // same instance allocated on the first enable.
+      const helpers = viewmodel.bones['upper_arm_R'].children.filter(
+        (c) => c instanceof THREE.AxesHelper,
+      );
+      expect(helpers.length).toBe(1);
+      expect(helpers[0]).toBe(original);
+      expect(original.visible).toBe(true);
+    });
+
+    it('uses the size constant 0.05 (matches issue spec)', () => {
+      viewmodel.setDebugMode(true);
+      const helper = viewmodel.bones['upper_arm_R'].children.find(
+        (c) => c instanceof THREE.AxesHelper,
+      ) as THREE.AxesHelper;
+
+      // AxesHelper geometry stores six vertices at +/- size on each axis.
+      // The largest absolute coordinate equals the size argument.
+      const posAttr = helper.geometry.getAttribute('position');
+      let maxAbs = 0;
+      for (let i = 0; i < posAttr.count * 3; i++) {
+        maxAbs = Math.max(maxAbs, Math.abs(posAttr.array[i]));
+      }
+      expect(maxAbs).toBeCloseTo(0.05);
+    });
+
+    it('handles repeated toggles without leaks', () => {
+      // Toggle a bunch of times — should always end with exactly one helper
+      // per bone in the scene.
+      for (let i = 0; i < 10; i++) {
+        viewmodel.setDebugMode(i % 2 === 0);
+      }
+      viewmodel.setDebugMode(true);
+
+      let total = 0;
+      viewmodel.group.traverse((obj) => {
+        if (obj instanceof THREE.AxesHelper) total++;
+      });
+      expect(total).toBe(4);
+    });
+
+    it('setDebugMode(false) is a safe no-op when never enabled', () => {
+      // Flag never went on, _debugAxes is still null — disable must not throw
+      // and must not allocate anything.
+      expect(() => viewmodel.setDebugMode(false)).not.toThrow();
+
+      let total = 0;
+      viewmodel.group.traverse((obj) => {
+        if (obj instanceof THREE.AxesHelper) total++;
+      });
+      expect(total).toBe(0);
+      expect(viewmodel.debugMode).toBe(false);
     });
   });
 });
