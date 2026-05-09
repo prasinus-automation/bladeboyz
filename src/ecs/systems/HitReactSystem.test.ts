@@ -318,8 +318,9 @@ describe('DamageSystem populates HitReactComp on unblocked hit', () => {
     HitReactComp.magnitude[target] = -1;
     HitReactComp.spawnedAtTick[target] = 9999;
 
-    // Target is in Block facing the correct direction for Stab.
-    CombatStateComponent.state[target] = CombatState.Block;
+    // Target is Blocking facing the correct direction for Stab.
+    // FSM v2 (#135): single Blocking state replaces Block + ParryWindow.
+    CombatStateComponent.state[target] = CombatState.Blocking;
     CombatStateComponent.blockDirection[target] = 2; // BlockDirection.Top — Stab is blocked by any
     queueDamageEvent(20, AttackDirection.Stab);
     DamageSystem(world, 1 / 60);

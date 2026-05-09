@@ -180,8 +180,8 @@ BladeBoyz uses a **directional melee combat system** inspired by Mordhau and Chi
 ### Directional Attacks & Blocks
 Mouse movement before clicking determines your attack direction — sweep left for a left swing, sweep right for a right swing, push up for an overhead, or hold steady (or push down) for a stab. The FSM v2 schema (issue #131) trims the attack set to **four directions** (`Left`, `Right`, `Overhead`, `Stab`) — the old `Underhand` swing was folded into `Stab` because it animated similarly to `Overhead`. Blocking still has all four cardinal poses (`Left`, `Right`, `Top`, `Bottom`); the bottom block stays as a defensive option even though no attack is dedicated to it.
 
-### Parry & Riposte
-Tapping block just as an attack enters its Release phase triggers a **parry**. A successful parry stuns the attacker (40–75 ticks depending on weapon) and opens a **riposte window** — your next attack comes out faster with reduced stamina cost.
+### Parry
+Tapping block just as an attack lands triggers a **parry**: the parry window is the first `weapon.parryWindow` ticks of `Blocking` (matching-direction only). A successful parry locks the parrier into a brief `Parry` pose for `weapon.parryRecovery` ticks, then drops back to `Blocking` if you keep holding RMB (or `Idle` if you release). The attacker is staggered into `HitStun` for `weapon.parryStunTicks` (40–75 ticks depending on weapon). FSM v2 (#135) cut the v1 `Riposte` state — there's no dedicated post-parry counter-swing; the agility advantage is the uncapped `Parry` turncap (free aim while the attacker is stunned).
 
 ### Stamina
 Every action costs stamina: attacking, blocking, parrying. Blocking drains stamina based on the attacker's weapon weight (8–30 per block). Running out of stamina leaves you unable to block. (The legacy `Feint` action was removed in FSM v2, so weapon configs no longer specify a `staminaCost.feint` value — the field stays optional in the type for a future re-add.)

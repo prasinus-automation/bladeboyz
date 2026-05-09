@@ -12,6 +12,7 @@ import {
 } from '../components';
 import { CombatState } from '../../combat/states';
 import { AttackDirection, BlockDirection } from '../../combat/directions';
+import { fsmRegistry } from '../../combat/CombatFSM';
 import { weaponConfigMap } from './TracerSystem';
 import { getCurrentFixedTick } from '../../core/tickCounter';
 import type { WeaponConfig } from '../../weapons/WeaponConfig';
@@ -128,22 +129,28 @@ export function DamageSystem(world: GameWorld, _dt: number): void {
     const targetState = CombatStateComponent.state[targetEid] as CombatState;
     const targetBlockDir = CombatStateComponent.blockDirection[targetEid] as BlockDirection;
 
-    // Check for parry (ParryWindow + correct direction)
+    // FSM v2 (#135): Block + ParryWindow collapsed into a single `Blocking`
+    // state. The parry-vs-block decision now reads `parryActive` from the
+    // FSM instead of two separate ECS state values. Direct lookup keeps
+    // DamageSystem's existing direct-write style (issue E migrates this
+    // whole branch to dispatch FSM inputs).
+    const targetFsm = fsmRegistry.get(targetEid);
+    const targetIsBlocking = targetState === CombatState.Blocking;
+    const targetIsParrying = targetFsm?.parryActive ?? false;
+
     if (
-      targetState === CombatState.ParryWindow &&
+      targetIsBlocking &&
+      targetIsParrying &&
       doesBlockCounter(attackDir, targetBlockDir)
     ) {
       handleParry(attackerEid);
-    }
-    // Check for block (Block state + correct direction)
-    else if (
-      targetState === CombatState.Block &&
+    } else if (
+      targetIsBlocking &&
       doesBlockCounter(attackDir, targetBlockDir)
     ) {
       handleBlock(targetEid, attackerEid);
-    }
-    // Unblocked hit — apply damage
-    else {
+    } else {
+      // Unblocked hit (incl. mismatched block direction) — apply damage.
       handleHit(world, targetEid, attackerEid, damage, attackDir, bodyRegion);
     }
 
@@ -154,15 +161,18 @@ export function DamageSystem(world: GameWorld, _dt: number): void {
 }
 
 /**
- * Successful parry — no damage, attacker enters longer Stunned recovery.
+ * Successful parry — no damage, attacker enters longer HitStun penalty.
+ *
+ * FSM v2 (#135): `Stunned` was collapsed into `HitStun`. Issue E will
+ * dispatch `WasParried` to the attacker's FSM here instead of writing
+ * `CombatStateComponent.state` directly.
  */
 function handleParry(attackerEid: number): void {
   const weaponId = CombatStateComponent.weaponId[attackerEid];
   const config = weaponConfigMap.get(weaponId);
   const stunTicks = config?.parryStunTicks ?? 40;
 
-  // Attacker → Stunned with parry penalty
-  CombatStateComponent.state[attackerEid] = CombatState.Stunned;
+  CombatStateComponent.state[attackerEid] = CombatState.HitStun;
   CombatStateComponent.ticksRemaining[attackerEid] = stunTicks;
 }
 

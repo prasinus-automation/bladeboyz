@@ -130,6 +130,7 @@ export class HUD {
       const fsm = fsmRegistry.get(playerEntity);
       const turncap = fsm ? fsm.getCurrentTurncap() : Infinity;
       const turncapStr = turncap === Infinity ? 'none' : `${(turncap * 60).toFixed(1)} rad/s`;
+      // FSM v2 (#135): Blocking=4, Parry=5 are the defensive states.
       const dirStr = stateNum >= 4 && stateNum <= 5
         ? `Block: ${BLOCK_DIR_NAMES[blkDir] ?? blkDir}`
         : `Atk: ${ATTACK_DIR_NAMES[atkDir] ?? atkDir}`;

@@ -587,25 +587,22 @@ export function getViewmodelPose(
       return anims.idle;
 
     case CombatState.Windup:
-    case CombatState.Riposte:
       return anims.attacks[direction as number]?.windup ?? anims.idle;
 
     case CombatState.Release:
       return anims.attacks[direction as number]?.release ?? anims.idle;
 
     case CombatState.Recovery:
-    case CombatState.Feint:
       return anims.attacks[direction as number]?.recovery ?? anims.idle;
 
-    case CombatState.Block:
+    case CombatState.Blocking:
       return anims.blocks[direction as number] ?? anims.idle;
 
-    case CombatState.ParryWindow:
+    // FSM v2 (#135): `Parry` is the brief locked pose after a successful
+    // parry. `Riposte`, `Feint`, `Clash`, `Stunned` were dropped from the
+    // state set; their animation cases come out with them.
+    case CombatState.Parry:
       return anims.parry;
-
-    case CombatState.Clash:
-    case CombatState.Stunned:
-      return anims.stunned;
 
     case CombatState.HitStun:
       return anims.hitStun;

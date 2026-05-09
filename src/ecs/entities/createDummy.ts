@@ -234,13 +234,11 @@ export function toggleDummyBlock(): string {
 
     const currentState = fsm.state;
     const blockDir = CombatStateComponent.blockDirection[eid] as BlockDirection;
-    if (
-      currentState === CombatState.Block ||
-      currentState === CombatState.ParryWindow
-    ) {
+    if (currentState === CombatState.Blocking) {
+      // FSM v2 (#135): single Blocking state absorbs old Block + ParryWindow.
       fsm.transition(CombatInput.ReleaseBlock);
     } else if (currentState === CombatState.Idle) {
-      fsm.transition(CombatInput.Block, undefined, blockDir);
+      fsm.transition(CombatInput.Block, blockDir);
     }
     // Other states (Windup/Recovery/HitStun/etc.) — toggle is a no-op,
     // matching the FSM's `canTransition` rules.
@@ -254,7 +252,7 @@ export function toggleDummyBlock(): string {
   if (activeDummies.length === 0) return 'No dummies';
   const firstFsm = fsmRegistry.get(activeDummies[0]);
   const state = firstFsm ? firstFsm.state : CombatState.Idle;
-  if (state === CombatState.Block || state === CombatState.ParryWindow) {
+  if (state === CombatState.Blocking) {
     const dir = CombatStateComponent.blockDirection[activeDummies[0]];
     return `Block: ${BLOCK_DIR_NAMES[dir] ?? 'Top'}`;
   }
