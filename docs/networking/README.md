@@ -20,12 +20,14 @@ pass — each later doc takes the earlier ones as given.
 | #   | File                                                                       | Topic                                          | One-line summary                                                                                                            |
 | --- | -------------------------------------------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | 01  | [`01-transport-and-authority.md`](./01-transport-and-authority.md)         | Transport, topology, tickrate, authority model | WebSocket + single Node.js process, 60Hz server tick / 30Hz broadcast, server-authoritative combat, client-predicted movement. |
-| 02  | `02-snapshot-and-state-sync.md` *(planned, see #126)*                      | Snapshot format, delta encoding, interest mgmt | What goes on the wire each tick: which components are replicated, baseline-vs-delta encoding, per-entity ordering.          |
-| 03  | `03-message-protocol-and-handshake.md` *(planned, see #133)*               | Wire protocol, joining flow, error codes       | Binary frame layout, message-type enum, version handshake, disconnect/reconnect sequence, anti-cheat validation rules.      |
+| 02  | [`02-replication-and-protocol.md`](./02-replication-and-protocol.md)       | Replication model + protocol message catalog   | Which ECS components cross the wire, snapshot vs. delta encoding with a per-entity changed-mask byte, full C↔S message catalog, msgpackr binary format. |
+| 03  | `03-handshake-and-error-codes.md` *(planned, see #133)*                    | Handshake byte layout, error codes, anti-cheat | Byte-by-byte joining/disconnect flow, the `DisconnectReason` / `PlayerLeftReason` enums, the per-message validation rules behind doc 01 §6. |
 | 04  | `04-server-runtime-and-deploy.md` *(planned, see #138)*                    | Server process layout, build, deploy           | Node.js entry point, how the existing fixed-timestep loop is reused server-side, Docker image, port mapping, smoke tests.   |
 
-Doc 01 (this PR) is the load-bearing one — every later doc references it for
-"what gets sent at what rate" and "who is the source of truth for component X".
+Doc 01 is the load-bearing foundation — every later doc references it for
+"what gets sent at what rate" and "who is the source of truth for component
+X". Doc 02 is the wire-format contract that the implementation PRs cite
+verbatim.
 
 ## Out of scope across all four docs
 
