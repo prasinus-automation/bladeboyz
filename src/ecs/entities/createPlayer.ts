@@ -30,6 +30,7 @@ import { weaponIdToName } from '../systems/CombatSystem';
 import { weaponBoneMap } from '../systems/TracerSystem';
 import { createHitboxes } from '../systems/HitboxSystem';
 import { CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS } from '../../core/types';
+import { selectSpawnPoint } from '../../world/SpawnPoints';
 import type { GameWorld } from '../../core/types';
 
 /** Options for creating a player entity */
@@ -50,12 +51,24 @@ export interface CreatePlayerOptions {
 /**
  * Create the player entity with physics body and skeletal character model.
  *
- * Spawn position: pass `{ x, z }`; Y is resolved by `spawnAtGround` (raycast
- * from y=50 down). Pass an explicit `y` to override (used by tests).
+ * Spawn position resolution (in priority order):
+ *   1. If `spawnPos` is supplied, use those coordinates directly. Y is
+ *      resolved by `spawnAtGround` raycast unless an explicit `y` is given
+ *      (test path).
+ *   2. Otherwise consult `selectSpawnPoint({ enemies: [] })` — the
+ *      spawn-point registry seeded by the arena (#91) or the placeholder
+ *      helper (#134). The initial spawn passes no enemies because no other
+ *      combatants exist yet at world-load time.
+ *   3. Fall back to `(0, raycast, 0)` if the registry is empty (tests, or
+ *      a future game mode that doesn't seed spawn points).
  *
  * Capsule collider sits at `(0, R+H, 0)` inside the body so the body's
  * origin (= ECS Position) is at the **feet**. Mesh root is also at feet,
  * so `meshGroup.position = ECS Position` is a direct copy with NO offset.
+ *
+ * TODO(#91): when the real arena lands, the registry-driven path becomes
+ * the dominant one — placeholder corners get replaced with arena-defined
+ * spawn locations. No code change needed here; the registry is the seam.
  *
  * Returns entity ID and the Three.js group for camera attachment.
  */
@@ -65,11 +78,35 @@ export function createPlayer(
   options: CreatePlayerOptions = {},
 ): { eid: number; mesh: THREE.Group } {
   const startingWeapon = options.startingWeapon ?? 'Longsword';
-  const x = spawnPos?.x ?? 0;
-  const z = spawnPos?.z ?? 0;
-  // Resolve feet Y via raycast unless explicitly overridden
-  const resolvedY =
-    typeof spawnPos?.y === 'number' ? spawnPos.y : spawnAtGround(world, x, z).y;
+
+  let x: number;
+  let resolvedY: number;
+  let z: number;
+  let initialYaw = 0;
+
+  if (spawnPos !== undefined) {
+    // Explicit override path — tests pass concrete coordinates.
+    x = spawnPos.x ?? 0;
+    z = spawnPos.z ?? 0;
+    resolvedY =
+      typeof spawnPos.y === 'number' ? spawnPos.y : spawnAtGround(world, x, z).y;
+  } else {
+    // Registry path — the arena (or seedPlaceholderSpawnPoints in dev)
+    // is responsible for populating the registry before this runs.
+    const sp = selectSpawnPoint({ enemies: [] });
+    if (sp) {
+      x = sp.position.x;
+      resolvedY = sp.position.y;
+      z = sp.position.z;
+      initialYaw = sp.yaw;
+    } else {
+      // Empty registry — preserve legacy behavior so unit tests that
+      // don't seed spawn points still get a usable spawn at the origin.
+      x = 0;
+      z = 0;
+      resolvedY = spawnAtGround(world, x, z).y;
+    }
+  }
 
   const eid = addEntity(world.ecs);
 
@@ -102,6 +139,10 @@ export function createPlayer(
   PreviousPosition.x[eid] = x;
   PreviousPosition.y[eid] = resolvedY;
   PreviousPosition.z[eid] = z;
+  // Apply spawn-point yaw if one was selected. Unit tests that build the
+  // player at (0,0) with no registry leave Rotation.y at 0 — which matches
+  // the pre-#134 behavior where spawn rotation was always identity.
+  Rotation.y[eid] = initialYaw;
   Velocity.x[eid] = 0;
   Velocity.y[eid] = 0;
   Velocity.z[eid] = 0;
