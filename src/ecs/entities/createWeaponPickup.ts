@@ -1,8 +1,7 @@
 import { addEntity, addComponent, removeEntity } from 'bitecs';
-import * as THREE from 'three';
 import { Position, WeaponPickup } from '../components';
 import { weaponIdToName } from '../systems/CombatSystem';
-import { weaponModelFactories } from '../../rendering/WeaponModels';
+import { createGroundPickupModel } from '../../rendering/WeaponModels';
 import { pickupRegistry, type PickupData } from '../../inventory/PickupRegistry';
 import type { GameWorld } from '../../core/types';
 
@@ -21,59 +20,13 @@ export interface CreateWeaponPickupArgs {
 }
 
 /**
- * Build the ground-pickup mesh for a weapon.
- *
- * **Stub for #B.** Sub-issue #B will implement this in `WeaponModels.ts`
- * with proper ground-flat orientation, weapon-specific tilt, and spin
- * animation hooks. For #109 (foundation), we just call the existing
- * `weaponModelFactories[weaponName]` and lay the group flat so a pickup
- * is visible at the requested position.
- *
- * Materials are collected here (not in `createWeaponPickup`) so #B can
- * cache shader uniforms / clones for blink-fade without leaking factory
- * details upstream.
- */
-function createGroundPickupModel(weaponName: string): {
-  group: THREE.Group;
-  materials: THREE.Material[];
-} {
-  const factory = weaponModelFactories[weaponName];
-  if (!factory) {
-    throw new Error(
-      `createGroundPickupModel: unknown weapon "${weaponName}" — not in weaponModelFactories`,
-    );
-  }
-  const { group } = factory();
-  // Lay flat. #B will replace with weapon-specific orientation tuning.
-  group.rotation.x = -Math.PI / 2;
-
-  const materials: THREE.Material[] = [];
-  group.traverse((obj) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mat = (obj as any).material as
-      | THREE.Material
-      | THREE.Material[]
-      | undefined;
-    if (!mat) return;
-    if (Array.isArray(mat)) {
-      for (const m of mat) {
-        if (m && !materials.includes(m)) materials.push(m);
-      }
-    } else if (!materials.includes(mat)) {
-      materials.push(mat);
-    }
-  });
-
-  return { group, materials };
-}
-
-/**
  * Spawn a ground weapon pickup entity.
  *
- * Foundation only — this just stands up the entity, components, mesh, and
- * registry entry. Drop-on-death, proximity pickup, KeyE wiring, and
- * despawn-timer behavior all live in #A2. Visual tuning (flat orientation
- * polish, spin, blink/fade) lives in #B.
+ * Foundation (#109) stands up the entity, components, mesh, and registry
+ * entry. Drop-on-death, proximity pickup, KeyE wiring, and despawn-timer
+ * behavior live in #121. Visual tuning (per-weapon flat orientation, spin,
+ * blink/fade) lives in #127 — see `createGroundPickupModel` in
+ * `src/rendering/WeaponModels.ts` and the `PickupRenderer`.
  *
  * @returns the new entity id
  */

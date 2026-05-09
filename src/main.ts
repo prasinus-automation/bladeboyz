@@ -35,7 +35,7 @@ import { TracerSystem, weaponConfigMap } from './ecs/systems/TracerSystem';
 import { DamageSystem } from './ecs/systems/DamageSystem';
 import { hitReactSystemTick } from './ecs/systems/HitReactSystem';
 import { hitboxSystem } from './ecs/systems/HitboxSystem';
-import { advanceFixedTick } from './core/tickCounter';
+import { advanceFixedTick, getCurrentFixedTick } from './core/tickCounter';
 import { TracerDebugRenderer } from './rendering/TracerDebugRenderer';
 import { FloatingDamage } from './hud/FloatingDamage';
 import { DummyHealthBar } from './hud/DummyHealthBar';
@@ -60,7 +60,9 @@ import {
 import { weaponModelFactories } from './rendering/WeaponModels';
 import { ViewmodelRenderer, getArmOffset } from './rendering/ViewmodelRenderer';
 import { viewmodelAnimationSystem } from './rendering/ViewmodelAnimationSystem';
+import { pickupRenderer } from './rendering/PickupRenderer';
 import { ViewmodelDebugOverlay } from './hud/ViewmodelDebugOverlay';
+import { PickupPrompt } from './hud/PickupPrompt';
 import { CombatStateComp } from './ecs/components';
 import { COMBAT_STATE_NAMES, CombatState } from './combat/states';
 import type * as THREE from 'three';
@@ -236,6 +238,11 @@ async function main(): Promise<void> {
 
   // HUD (health bar, stamina bar, FSM state label, FPS counter)
   const hud = new HUD();
+
+  // Weapon-pickup prompt (shown when player is within 1.5m of a ground
+  // pickup AND in Idle FSM state — issue #127). KeyE handler that actually
+  // consumes the pickup is wired by sibling issue #121.
+  const pickupPrompt = new PickupPrompt();
 
   // Inventory panel (I key to toggle)
   const inventoryPanel = new InventoryPanel(input, playerEid);
@@ -424,6 +431,12 @@ async function main(): Promise<void> {
     // Variable-rate updates: animation blending
     animationSystem(world, dt);
     viewmodelAnimationSystem(viewmodel, playerEid, dt, weaponIdToName);
+    // Weapon-pickup visuals — spin / bob / blink+fade in last 5s. Reads the
+    // current fixed tick from the global tick counter so the blink phase is
+    // tick-aligned (rather than wall-clock).
+    const currentTick = getCurrentFixedTick();
+    pickupRenderer(world, currentTick, dt);
+    pickupPrompt.update(playerEid);
     debugOverlay.update(dt, playerEid, cameraController);
     hud.update(dt, playerEid);
 
