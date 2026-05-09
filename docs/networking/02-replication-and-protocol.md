@@ -1255,4 +1255,4 @@ describes them correctly (and update both in the same PR if not).
 | `protocolVersion` location                                         | future `src/shared/protocol/version.ts` (doc 01 §7)              |
 | Codec module                                                       | future `src/shared/protocol/codec.ts` (§4.1)                     |
 | Doc 03 — wire byte layout, error codes, joining flow               | planned, see #133                                                |
-| Doc 04 — server runtime, deploy                                    | planned, see #138                                                |
+| Doc 04 — headless server packaging, deploy                         | [`docs/networking/04-server-packaging.md`](./04-server-packaging.md) |
