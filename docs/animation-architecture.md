@@ -71,8 +71,12 @@ Per-bone summary (constants from `CharacterModel.ts:31-43`):
 
 Note: `weapon_attach` has `rotation.x = Math.PI` in third-person (flips +Y to
 point outward from the hand). This is **different from the viewmodel**, where
-`vm_weapon_attach` is rotated `Math.PI * 0.85` for a slightly forward grip
-(see `ViewmodelRenderer.ts` and AGENTS.md "First-Person Viewmodel").
+`vm_weapon_attach` is no longer pre-rotated at construction; the renderer
+copies per-weapon `gripRotation` from each `WeaponModelResult` onto
+`vm_weapon_attach.rotation` on `swapWeapon()` (see #125 / `docs/viewmodel-architecture.md`
+§4 and AGENTS.md "First-Person Viewmodel"). Longsword's grip rotation is
+`(Math.PI * 0.85, 0, 0)` to preserve the pre-#125 visual; other weapons have
+their own values.
 
 ---
 
