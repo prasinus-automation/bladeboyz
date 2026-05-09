@@ -2,7 +2,7 @@
 
 Browser-based multiplayer melee combat game with an ultra-low-poly BattleBit-style aesthetic and Mordhau/Chivalry-inspired directional combat mechanics. Built with Three.js, Rapier3D physics, and a bitECS entity-component-system architecture.
 
-Currently in the scaffolding phase: single player, test arena with training dummies, no networking yet. The combat system features tracer-based hit detection (swept-volume collision along the blade), directional attacks and blocks, a parry/riposte system, and data-driven weapon configurations. Players can open an inventory overlay to swap between unlocked weapons mid-session.
+Currently in the scaffolding phase: single player, **Arena v1** with training dummies, no networking yet. The combat system features tracer-based hit detection (swept-volume collision along the blade), directional attacks and blocks, a parry/riposte system, and data-driven weapon configurations. Players can open an inventory overlay to swap between unlocked weapons mid-session.
 
 ## Getting Started
 
@@ -57,7 +57,7 @@ In first-person mode, a **viewmodel** renders your right arm and equipped weapon
 |-----|--------|
 | **E** | Interact (when prompt shown) — e.g. open the shop while standing near the shopkeep |
 
-> A **shopkeep NPC** stands at one corner of the arena (around `(8, _, 8)`). Walk close enough and a "Press [E] to shop" prompt appears above their head; pressing **E** opens the shop overlay.
+> A **shopkeep NPC** stands behind the wood counter in the SW corner of the arena (around `(-12, _, 13)`). Walk close enough and a "Press [E] to shop" prompt appears above their head; pressing **E** opens the shop overlay.
 
 ### Shop
 
@@ -152,7 +152,7 @@ All character ECS `Position` values represent the entity's **feet** (point of co
 
 Capsule colliders are offset upward inside the body via `ColliderDesc.capsule(...).setTranslation(0, R+H, 0)` so the bottom hemisphere sits at the body origin (= feet). This applies uniformly to the player and to training dummies.
 
-Spawn Y is resolved by `spawnAtGround(world, x, z)`, which raycasts down from `(x, 50, z)` and returns the surface hit + a small `CHARACTER_CONTROLLER_OFFSET` epsilon. Entity factories never hard-code Y. The arena ground top is at `y = GROUND_TOP_Y = 0.1` (a 25×0.1×25 cuboid centered at origin).
+Spawn Y is resolved by `spawnAtGround(world, x, z)`, which raycasts down from `(x, 50, z)` and returns the surface hit + a small `CHARACTER_CONTROLLER_OFFSET` epsilon. Entity factories never hard-code Y. The arena ground top is at `y = GROUND_TOP_Y = 0.1` (a 30×0.2×30 cuboid centered at origin in Arena v1).
 
 ## Weapons
 
@@ -215,7 +215,19 @@ Spawn points live in `src/world/SpawnPoints.ts` as a `Map<id, SpawnPoint>`. Each
 3. Otherwise filter to `distToNearestEnemy ≥ minEnemyDistance` (default `8.0`); uniform random over the safe set.
 4. If no candidate is safe, return the candidate that's furthest from its nearest enemy (max-min fallback, so a packed arena still respawns the player).
 
-Both initial spawn (`createPlayer`) and post-death respawn (`processRespawns`) consult this registry — the only difference is initial spawn passes an empty enemies list. Until the real arena layout (#91) lands, `seedPlaceholderSpawnPoints()` registers four corner points at `(±10, SPAWN_HEIGHT, ±10)` with yaws facing the origin. When #91 ships, those placeholders are replaced with arena-defined spawn points and no other code changes.
+Both initial spawn (`createPlayer`) and post-death respawn (`processRespawns`) consult this registry — the only difference is initial spawn passes an empty enemies list. The arena (`src/arena/createArena.ts`) is the sole producer of registry entries: it `clearSpawnPoints()` first, then registers the six arena-defined points (S1..S6 from the design doc). The legacy `seedPlaceholderSpawnPoints()` helper is no longer wired in production — it's kept around for unit tests that need a registry without spinning up an arena.
+
+## Test Arena (Arena v1)
+
+The world is a single 30×30 m arena built code-first from `src/arena/createArena.ts` — no glTF, no JSON map files. Layout (top-down, +X = east, −Z = north):
+
+- **Ground plane** — 30 × 0.2 × 30 olive-green floor; top surface at `y = 0.1` (matches `GROUND_TOP_Y`).
+- **Perimeter walls** — four 2 m-tall warm-grey walls forming a closed playspace at `x = ±15.25` and `z = ±15.25`.
+- **Cover pillars** — two 2 × 3 × 2 m light-grey pillars at `(±5, 0)` that break sightlines through the central killing floor.
+- **Shopkeep stall** — a 3 × 1 × 0.5 m wood-brown counter at `(-12, 0, 12)` plus a 0.5 × 3 × 4 m back wall at `(-13.25, 0, 12)`. The Shopkeep NPC stands at `(-12, 0.1, 13)`, behind the counter, facing north into the arena.
+- **6 spawn points (S1..S6)** — two on the E-W axis (`S1 = (-13, 0)`, `S4 = (13, 0)`) and four interior points mirror-symmetric across `z = 0` (`S2/S3` north, `S5/S6` south). All spawn yaws face the arena center.
+
+Every visible prop has a matching Rapier static (`RigidBodyType.Fixed`) cuboid collider with identical extents — if you can see it, you collide with it. The arena's `ArenaSpec` (returned by `createArena()` and stored on `world.arena`) exposes `spawnPoints`, `bounds`, `shopkeepStall.{counter, npcAnchor, facing}`, and `weaponPickupSafeVolume` for systems (spawn, weapon-pickup, shopkeep AI) to query. The full design — including dimensions tables and spawn-point yaw values — lives in [`docs/arena-v1.md`](docs/arena-v1.md).
 
 ## Testing
 
@@ -269,7 +281,7 @@ src/
 │       └── spawnAtGround.ts     # Raycast-down feet-Y resolver (used by all entity factories)
 ├── arena/
 │   ├── types.ts                 # ArenaSpec, SpawnPoint, ShopkeepStallSpec, Volume3D
-│   └── createArena.ts           # Code-authored arena: lights (#117), geometry/spawns (#112)
+│   └── createArena.ts           # Code-authored Arena v1: lights, 9 static props, 6 spawn points (#112)
 ├── world/
 │   └── SpawnPoints.ts           # Spawn-point registry + selectSpawnPoint() (placeholder seeds until #91)
 ├── combat/
