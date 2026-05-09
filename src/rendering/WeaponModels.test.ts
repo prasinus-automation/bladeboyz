@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import * as THREE from 'three';
 import {
   createMaceModel,
   createDaggerModel,
   createBattleaxeModel,
+  createGroundPickupModel,
   weaponModelFactories,
 } from './WeaponModels';
 
@@ -136,11 +138,96 @@ describe('weaponModelFactories', () => {
   });
 
   it('all factories return valid WeaponModelResult', () => {
-    for (const [name, factory] of Object.entries(weaponModelFactories)) {
+    for (const [, factory] of Object.entries(weaponModelFactories)) {
       const result = factory();
       expect(result.group).toBeDefined();
       expect(result.tracerPoints).toBeDefined();
       expect(result.tracerPoints.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+// ── #127: Ground pickup model + per-weapon orientation ──────
+
+describe('createGroundPickupModel', () => {
+  it.each(['Longsword', 'Mace', 'Dagger', 'Battleaxe'])(
+    'returns { group, materials } for %s',
+    (name) => {
+      const { group, materials } = createGroundPickupModel(name);
+      expect(group).toBeInstanceOf(THREE.Group);
+      expect(Array.isArray(materials)).toBe(true);
+      expect(materials.length).toBeGreaterThan(0);
+    },
+  );
+
+  it.each(['Longsword', 'Mace', 'Dagger', 'Battleaxe'])(
+    'cached materials are unique (no duplicates from shared instances) — %s',
+    (name) => {
+      const { materials } = createGroundPickupModel(name);
+      expect(new Set(materials).size).toBe(materials.length);
+    },
+  );
+
+  it('throws on unknown weapon name', () => {
+    expect(() => createGroundPickupModel('NotARealWeapon')).toThrow(
+      /NotARealWeapon/,
+    );
+  });
+
+  it('Longsword lies flat on -π/2 X (default orientation)', () => {
+    const { group } = createGroundPickupModel('Longsword');
+    expect(group.rotation.x).toBeCloseTo(-Math.PI / 2);
+    expect(group.rotation.y).toBeCloseTo(0);
+    expect(group.rotation.z).toBeCloseTo(0);
+  });
+
+  it('Mace lies flat on -π/2 X (default orientation)', () => {
+    const { group } = createGroundPickupModel('Mace');
+    expect(group.rotation.x).toBeCloseTo(-Math.PI / 2);
+    expect(group.rotation.z).toBeCloseTo(0);
+  });
+
+  it('Dagger lies flat on -π/2 X (default orientation)', () => {
+    const { group } = createGroundPickupModel('Dagger');
+    expect(group.rotation.x).toBeCloseTo(-Math.PI / 2);
+    expect(group.rotation.z).toBeCloseTo(0);
+  });
+
+  it('Battleaxe gets an extra π/4 Z roll for its asymmetric head', () => {
+    // Battleaxe head sits to one side of the haft — without the Z roll the
+    // model balances on the haft edge instead of lying on the broad face.
+    const { group } = createGroundPickupModel('Battleaxe');
+    expect(group.rotation.x).toBeCloseTo(-Math.PI / 2);
+    expect(group.rotation.z).toBeCloseTo(Math.PI / 4);
+  });
+
+  it('flips material.transparent = true at creation time (sticky for fade)', () => {
+    // PickupRenderer relies on transparent staying true for the pickup's
+    // life — it only mutates `opacity`. Avoids per-frame style recalcs from
+    // toggling `transparent` on/off.
+    const { materials } = createGroundPickupModel('Mace');
+    for (const m of materials) {
+      expect(m.transparent).toBe(true);
+    }
+  });
+
+  it('initial opacity is 1.0 (fade ramp starts from full visibility)', () => {
+    const { materials } = createGroundPickupModel('Mace');
+    for (const m of materials) {
+      expect(m.opacity).toBeCloseTo(1);
+    }
+  });
+
+  it('subsequent calls return DISTINCT material instances (no cross-pickup leak)', () => {
+    // If two pickups shared a material reference, fading one would fade the
+    // other. The factories allocate fresh `MeshStandardMaterial` per call,
+    // so cached arrays must not overlap.
+    const a = createGroundPickupModel('Mace');
+    const b = createGroundPickupModel('Mace');
+    for (const ma of a.materials) {
+      for (const mb of b.materials) {
+        expect(ma).not.toBe(mb);
+      }
     }
   });
 });

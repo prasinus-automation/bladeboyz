@@ -55,9 +55,25 @@ In first-person mode, a **viewmodel** renders your right arm and equipped weapon
 ### Interaction
 | Key | Action |
 |-----|--------|
-| **E** | Interact (when prompt shown) — e.g. open the shop while standing near the shopkeep |
+| **E** | Interact (when prompt shown) — open the shop near the shopkeep, or pick up a nearby weapon |
 
 > A **shopkeep NPC** stands behind the wood counter in the SW corner of the arena (around `(-12, _, 13)`). Walk close enough and a "Press [E] to shop" prompt appears above their head; pressing **E** opens the shop overlay.
+
+### Weapon pickups
+
+Killed combatants drop their equipped weapon to the ground (the permanent **starter weapon** is never dropped — see #94). Pickups are visible from a distance: they lie flat, gently spin, and bob slightly above the ground.
+
+| Behaviour | Detail |
+|-----------|--------|
+| **Pickup radius** | 1.5 m (3D Euclidean from player feet to pickup) |
+| **Despawn timer** | 30 s after spawn |
+| **Blink/fade warning** | Last 5 s before despawn — opacity ramps `1.0 → 0.3` and the model blinks at ~10 Hz |
+| **Pickup gate** | Player FSM must be in **Idle** (you can't loot mid-swing) |
+| **Effect** | Picking up a weapon adds it to the inventory and equips it in place of the current weapon |
+
+When a pickup is in range, a centred prompt reads *"Press [E] to pick up `{Weapon}`"*. If multiple pickups are in range, the closest one is shown.
+
+> The visual layer (orientation, spin, fade, prompt) is implemented in #127. The behaviour layer (drop on death, pickup consumption, despawn timer) lands in #121.
 
 ### Shop
 
