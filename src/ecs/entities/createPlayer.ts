@@ -19,9 +19,11 @@ import {
   CharacterModel,
   TracerTag,
   Hitboxes,
+  Gold,
   Score,
   meshRegistry,
 } from '../components';
+import { getGold } from '../../economy/Wallet';
 import { registerPhysicsBody } from '../systems/MovementSystem';
 import { spawnAtGround } from '../utils/spawnAtGround';
 import { createCharacterModel } from '../../rendering/CharacterModel';
@@ -128,6 +130,7 @@ export function createPlayer(
   addComponent(world.ecs, HitReactComp, eid);
   addComponent(world.ecs, TracerTag, eid);
   addComponent(world.ecs, Hitboxes, eid);
+  addComponent(world.ecs, Gold, eid);
   // Score is initialized to all-zeroes via bitECS's typed-array default.
   // Lifetime kills/deaths persist across the respawn loop.
   addComponent(world.ecs, Score, eid);
@@ -161,6 +164,13 @@ export function createPlayer(
   Health.max[eid] = 100;
   Stamina.current[eid] = 100;
   Stamina.max[eid] = 100;
+  // Bridge to the legacy `Wallet` module (`src/economy/Wallet.ts`). Wallet is
+  // the current source of truth for the player's gold balance (HUD, shop,
+  // purchase flow). The `Gold` ECS slot is the migration target per
+  // docs/networking/04-server-packaging.md §3; initializing it from
+  // `Wallet.getGold()` keeps the two in sync until #105 (persistence) and
+  // #108 (HUD) finish the migration.
+  Gold.amount[eid] = getGold();
   Score.kills[eid] = 0;
   Score.deaths[eid] = 0;
   Score.goldThisLife[eid] = 0;

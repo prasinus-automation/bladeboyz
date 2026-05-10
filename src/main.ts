@@ -9,6 +9,7 @@ import { staminaSystemTick } from './ecs/systems/StaminaSystem';
 import { healthSystemTick } from './ecs/systems/HealthSystem';
 import { processDeaths } from './ecs/systems/processDeaths';
 import { EventBus } from './events/EventBus';
+import { awardGoldOnKill } from './economy/goldEconomy';
 import { createPlayer } from './ecs/entities/createPlayer';
 import { createArena } from './arena/createArena';
 import { processRespawns } from './ecs/systems/processRespawns';
@@ -215,6 +216,24 @@ async function main(): Promise<void> {
     if (payload.eid === playerEid) {
       viewmodel.snap(world.camera);
     }
+  });
+
+  // Award gold on kill. The kill-attribution pipeline lives in
+  // DamageSystem → processDeaths (#130/#134): every successful unblocked hit
+  // records `{ attackerEid, weaponId, bodyRegion, tick }` into a per-victim
+  // attribution map with a 5 s (300 tick) window, and `processDeaths` then
+  // resolves the killer and emits `DeathEvent { victimEid, killerEid, ... }`.
+  // We just subscribe — no parallel attribution path in HealthSystem.
+  //
+  // `killerEid === 0` is the documented sentinel for environmental / suicide;
+  // pass `undefined` to keep `awardGoldOnKill`'s 4-rule body (env / self /
+  // non-Player / missing-Gold) unchanged.
+  EventBus.on('DeathEvent', (payload) => {
+    awardGoldOnKill(
+      world.ecs,
+      payload.victimEid,
+      payload.killerEid === 0 ? undefined : payload.killerEid,
+    );
   });
 
   // ─── --debug-viewmodel toggle (issue #122) ───
