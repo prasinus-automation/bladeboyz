@@ -39,6 +39,7 @@
 import * as THREE from 'three';
 import {
   weaponModelFactories as defaultWeaponModelFactories,
+  type WeaponModelFactory,
   type WeaponModelResult,
 } from './WeaponModels';
 import { ARM_OFFSET, AIM_SWAY_TAU_SECONDS } from './ViewmodelTuning';
@@ -148,8 +149,11 @@ export interface ViewmodelRendererOptions {
    * renderer falls back to the canonical `weaponModelFactories` registry
    * exported from `./WeaponModels` so `main.ts` does not need to inline the
    * factory list (see #125 cleanup). Tests pass their own fakes here.
+   *
+   * Each factory must obey the `WeaponModelFactory` contract — see its
+   * JSDoc for the post-cache immutability requirement (#173).
    */
-  weaponFactories?: Record<string, () => WeaponModelResult>;
+  weaponFactories?: Record<string, WeaponModelFactory>;
 }
 
 export class ViewmodelRenderer {
@@ -531,6 +535,20 @@ export class ViewmodelRenderer {
     // Track the renderer's reality (used by the --debug-viewmodel overlay
     // via getCurrentWeaponName(), not from FSM weaponId — see #161).
     this.currentWeaponName = weaponName;
+
+    // Defensive layer-leak guard (#173):
+    //
+    // Layer 1 is set at cache-warm time, so a well-behaved factory needs
+    // no further help. But factories are user-extensible — if any
+    // `WeaponModelFactory` ever mutates its returned Group post-cache
+    // (adds runtime children, swaps materials, etc.), those new children
+    // would inherit Layer 0 and render through world geometry (z-fight
+    // with everything, pierced by walls). Re-applying the layer on every
+    // swap is one cheap traverse per swap (swaps are rare — equipping a
+    // new weapon, not per-frame) and closes the latent hazard without
+    // changing observable behavior for any factory that obeys the
+    // post-cache-immutability contract documented on `WeaponModelFactory`.
+    setLayerRecursive(cached.group, VIEWMODEL_LAYER);
 
     return true;
   }

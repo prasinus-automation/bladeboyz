@@ -987,6 +987,249 @@ describe('ViewmodelRenderer', () => {
     });
   });
 
+  // ─── Layer-leak contract guard (#173, parent #171) ───
+  //
+  // The two-pass render pipeline relies on every Object3D under the
+  // viewmodel group being on Layer 1. The viewmodel camera renders Layer 1
+  // ONLY, and the world camera renders Layer 0 ONLY (after `scene.background`
+  // is nulled). Any object that drifts to Layer 0 would render in the world
+  // pass — z-fighting with everything and visibly pierced by walls. These
+  // tests pin the invariant under construction + repeated swaps so a future
+  // factory that mutates its returned group post-cache surfaces immediately
+  // instead of as a runtime visual artifact.
+  describe('layer-leak contract (#173)', () => {
+    const SWAP_CYCLE = ['Longsword', 'Mace', 'Dagger', 'Battleaxe'] as const;
+
+    function assertAllLayer1(root: THREE.Object3D): void {
+      root.traverse((obj) => {
+        expect(obj.layers.mask).toBe(1 << VIEWMODEL_LAYER);
+      });
+    }
+
+    it('every Object3D in the viewmodel group is on Layer 1 after construction (all 4 weapons)', () => {
+      for (const initial of SWAP_CYCLE) {
+        const localScene = createTestScene();
+        const vm = new ViewmodelRenderer(localScene, 1, {
+          initialWeapon: initial,
+          weaponFactories,
+        });
+        assertAllLayer1(vm.group);
+      }
+    });
+
+    it('100-cycle swapWeapon stress (A→B→C→D→A→…) keeps every Object3D on Layer 1', () => {
+      const localScene = createTestScene();
+      const vm = new ViewmodelRenderer(localScene, 1, {
+        initialWeapon: 'Dagger',
+        weaponFactories,
+      });
+      for (let i = 0; i < 100; i++) {
+        const name = SWAP_CYCLE[i % SWAP_CYCLE.length];
+        expect(vm.swapWeapon(name)).toBe(true);
+        // Spot-check inside the loop too — surfaces the offending iteration
+        // if the invariant ever breaks, not just the final state.
+        assertAllLayer1(vm.group);
+      }
+    });
+
+    it('swap-stress against real weapon factories also keeps every Object3D on Layer 1', async () => {
+      const { weaponModelFactories: realFactories } = await import('./WeaponModels');
+      const localScene = createTestScene();
+      const vm = new ViewmodelRenderer(localScene, 1, {
+        initialWeapon: 'Longsword',
+        weaponFactories: realFactories,
+      });
+      for (let i = 0; i < 100; i++) {
+        const name = SWAP_CYCLE[i % SWAP_CYCLE.length];
+        vm.swapWeapon(name);
+      }
+      assertAllLayer1(vm.group);
+    });
+
+    it('AxesHelpers stay on Layer 1 through swap stress with debug mode on', () => {
+      // Layer-guard re-application must NOT inadvertently affect helpers
+      // parented to arm bones (which live outside the cached weapon group).
+      const localScene = createTestScene();
+      const vm = new ViewmodelRenderer(localScene, 1, {
+        initialWeapon: 'Dagger',
+        weaponFactories,
+      });
+      vm.setDebugMode(true);
+      for (let i = 0; i < 100; i++) {
+        vm.swapWeapon(SWAP_CYCLE[i % SWAP_CYCLE.length]);
+      }
+      let axesCount = 0;
+      vm.group.traverse((obj) => {
+        if (obj instanceof THREE.AxesHelper) {
+          axesCount++;
+          expect(obj.layers.mask).toBe(1 << VIEWMODEL_LAYER);
+        }
+      });
+      // One AxesHelper per animatable bone (4 bones in DEBUG_BONE_NAMES).
+      expect(axesCount).toBe(4);
+    });
+
+    it('defensive guard rescues a post-cache mutated group (no-Layer-0 escape)', () => {
+      // Simulates the hazard the issue describes: a factory that adds a
+      // child to its returned group AFTER the renderer has cached it. The
+      // hostile child enters at Layer 0; the next swapWeapon call must
+      // re-apply Layer 1 recursively and rescue it.
+      const localScene = createTestScene();
+      const vm = new ViewmodelRenderer(localScene, 1, {
+        initialWeapon: 'Longsword',
+        weaponFactories,
+      });
+
+      // Reach into the live cache and add a Layer-0 mesh to the Longsword
+      // group, mimicking a misbehaving factory or animation system.
+      const weaponAttach = vm.bones['weapon_attach'];
+      const cachedLongswordGroup = weaponAttach.children.find((c) =>
+        c.name.startsWith('viewmodel_weapon_'),
+      ) as THREE.Group;
+      const hostileMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(0.01, 0.01, 0.01),
+        new THREE.MeshBasicMaterial(),
+      );
+      // Default Object3D layers mask = 1 << 0 (Layer 0).
+      expect(hostileMesh.layers.mask).toBe(1 << 0);
+      cachedLongswordGroup.add(hostileMesh);
+
+      // Swap to a different weapon, then back. The defensive
+      // `setLayerRecursive` on swap should rescue the hostile mesh.
+      vm.swapWeapon('Mace');
+      vm.swapWeapon('Longsword');
+
+      expect(hostileMesh.layers.mask).toBe(1 << VIEWMODEL_LAYER);
+      assertAllLayer1(vm.group);
+    });
+  });
+
+  // ─── Cache stability contract (#173) ───
+  //
+  // `swapWeapon` must re-parent the cached `THREE.Group`, never reallocate.
+  // Reference equality before/after no-op (A→A) and roundtrip (A→B→A)
+  // swaps pins this — a future "convenience" rewrite that calls the factory
+  // again on swap would fail these tests.
+  describe('swap cache stability (#173)', () => {
+    function makeRefStableFactory(name: string) {
+      const group = new THREE.Group();
+      group.name = `stable_weapon_${name}`;
+      group.add(
+        new THREE.Mesh(
+          new THREE.BoxGeometry(0.1, 0.5, 0.1),
+          new THREE.MeshBasicMaterial({ color: 0xabcdef }),
+        ),
+      );
+      const result = { group, tracerPoints: [] as THREE.Vector3[] };
+      let calls = 0;
+      const factory = () => {
+        calls++;
+        return result;
+      };
+      return { factory, group, getCalls: () => calls };
+    }
+
+    it('A→A no-op swap returns the same cached Group instance (no re-alloc)', () => {
+      const longsword = makeRefStableFactory('Longsword');
+      const localScene = createTestScene();
+      const vm = new ViewmodelRenderer(localScene, 1, {
+        initialWeapon: 'Longsword',
+        weaponFactories: { Longsword: longsword.factory },
+      });
+      const weaponAttach = vm.bones['weapon_attach'];
+      const before = weaponAttach.children.find((c) =>
+        c.name.startsWith('viewmodel_weapon_'),
+      );
+      expect(before).toBe(longsword.group);
+
+      const ok = vm.swapWeapon('Longsword'); // A→A no-op swap
+      expect(ok).toBe(true);
+
+      const after = weaponAttach.children.find((c) =>
+        c.name.startsWith('viewmodel_weapon_'),
+      );
+      // Same exact Group instance from the cache, never reallocated.
+      expect(after).toBe(before);
+      // And the factory was only ever called once (pre-warm) — A→A swap
+      // does not re-invoke it.
+      expect(longsword.getCalls()).toBe(1);
+    });
+
+    it('A→B→A returns the same A instance both times', () => {
+      const longsword = makeRefStableFactory('Longsword');
+      const mace = makeRefStableFactory('Mace');
+      const localScene = createTestScene();
+      const vm = new ViewmodelRenderer(localScene, 1, {
+        initialWeapon: 'Longsword',
+        weaponFactories: {
+          Longsword: longsword.factory,
+          Mace: mace.factory,
+        },
+      });
+      const weaponAttach = vm.bones['weapon_attach'];
+
+      const firstA = weaponAttach.children.find((c) =>
+        c.name.startsWith('viewmodel_weapon_'),
+      );
+      expect(firstA).toBe(longsword.group);
+
+      vm.swapWeapon('Mace');
+      vm.swapWeapon('Longsword');
+
+      const secondA = weaponAttach.children.find((c) =>
+        c.name.startsWith('viewmodel_weapon_'),
+      );
+      expect(secondA).toBe(firstA);
+      expect(secondA).toBe(longsword.group);
+
+      // Each factory called exactly once during pre-warm — swaps are
+      // cache-hits, not factory invocations.
+      expect(longsword.getCalls()).toBe(1);
+      expect(mace.getCalls()).toBe(1);
+    });
+
+    it('100-cycle swap stress preserves cache reference equality', () => {
+      const factories = {
+        Longsword: makeRefStableFactory('Longsword'),
+        Mace: makeRefStableFactory('Mace'),
+        Dagger: makeRefStableFactory('Dagger'),
+        Battleaxe: makeRefStableFactory('Battleaxe'),
+      };
+      const localScene = createTestScene();
+      const vm = new ViewmodelRenderer(localScene, 1, {
+        initialWeapon: 'Dagger',
+        weaponFactories: {
+          Longsword: factories.Longsword.factory,
+          Mace: factories.Mace.factory,
+          Dagger: factories.Dagger.factory,
+          Battleaxe: factories.Battleaxe.factory,
+        },
+      });
+      const weaponAttach = vm.bones['weapon_attach'];
+      const cycle = ['Longsword', 'Mace', 'Dagger', 'Battleaxe'] as const;
+      const expectedByName: Record<string, THREE.Group> = {
+        Longsword: factories.Longsword.group,
+        Mace: factories.Mace.group,
+        Dagger: factories.Dagger.group,
+        Battleaxe: factories.Battleaxe.group,
+      };
+      for (let i = 0; i < 100; i++) {
+        const name = cycle[i % cycle.length];
+        vm.swapWeapon(name);
+        const mounted = weaponAttach.children.find((c) =>
+          c.name.startsWith('viewmodel_weapon_'),
+        );
+        expect(mounted).toBe(expectedByName[name]);
+      }
+      // Every factory still called exactly once — no swap re-invoked any of
+      // them across 100 cycles.
+      expect(factories.Longsword.getCalls()).toBe(1);
+      expect(factories.Mace.getCalls()).toBe(1);
+      expect(factories.Dagger.getCalls()).toBe(1);
+      expect(factories.Battleaxe.getCalls()).toBe(1);
+    });
+  });
+
   describe('setDebugMode (--debug-viewmodel toggle)', () => {
     it('defaults to off (no AxesHelpers in scene)', () => {
       // Walk the bone hierarchy and confirm zero AxesHelpers exist before
