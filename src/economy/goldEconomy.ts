@@ -16,6 +16,8 @@
 import { hasComponent, type IWorld } from 'bitecs';
 import { Gold, Player } from '../ecs/components';
 import { addGold as walletAddGold } from './Wallet';
+import { getPlayerId } from './playerIdentity';
+import { saveGold } from './goldPersistence';
 
 /** Flat gold reward per kill — exported so other modules / tests don't hard-code. */
 export const GOLD_PER_KILL = 25;
@@ -84,6 +86,18 @@ export function awardGold(playerEid: number, amount: number, reason: AwardReason
   // `Player` on the kill path, and admin/test callers are responsible for not
   // mixing this with a future per-bot wallet.
   walletAddGold(amount);
+
+  // Persistence (#105). `playerIdentity` attaches a stable browser id in
+  // `createPlayer`; if this `playerEid` has one, debounce-write the new
+  // balance to localStorage. Entities without an attached identity (e.g.
+  // future bots awarded gold via admin tools, or tests that skip
+  // `attachPlayerIdentity`) are silently skipped — the persistence layer
+  // is per-player-id, not per-entity. `saveGold` itself debounces, so
+  // rapid kill sequences coalesce into a single `setItem`.
+  const playerId = getPlayerId(playerEid);
+  if (playerId !== undefined) {
+    saveGold(playerId, newBalance);
+  }
 
   // Notify subscribers AFTER balance is updated so listeners (HUD, persistence)
   // see the new amount immediately.
