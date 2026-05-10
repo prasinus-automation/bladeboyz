@@ -33,6 +33,21 @@ export const enum Direction {
   Stab = 3,
 }
 
+/**
+ * Human-readable labels for `Direction` values. Indexed by numeric value.
+ *
+ * Mirrors the `COMBAT_STATE_NAMES` pattern in `./states.ts`. Needed because
+ * `Direction` is a `const enum` — `Direction[value]` reverse-lookup is
+ * erased at compile time and cannot be used at runtime. Any consumer that
+ * wants to log/display a direction by name should read this table.
+ */
+export const DIRECTION_NAMES: Record<number, string> = {
+  0: 'Overhead',
+  1: 'Left',
+  2: 'Right',
+  3: 'Stab',
+};
+
 // ── Configuration ─────────────────────────────────────────
 
 /** Thresholds for direction detection — tweak these to adjust sensitivity */
