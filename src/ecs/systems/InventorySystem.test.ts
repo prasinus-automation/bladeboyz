@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createWorld, addEntity, addComponent, type IWorld } from 'bitecs';
 import { CombatStateComponent, Player, meshRegistry } from '../components';
 import { CombatState } from '../../combat/states';
-import { AttackDirection } from '../../combat/directions';
+import { Direction } from '../../combat/directions';
 import { fsmRegistry, createFSM } from '../../combat/CombatFSM';
 import { weaponConfigs, registerWeapon } from '../../weapons/WeaponConfig';
 import type { WeaponConfig } from '../../weapons/WeaponConfig';
@@ -29,47 +29,44 @@ import {
 
 function createTestWeapon(name: string): WeaponConfig {
   const ticks = {
-    [AttackDirection.Left]: 6,
-    [AttackDirection.Right]: 6,
-    [AttackDirection.Overhead]: 8,
-    [AttackDirection.Underhand]: 7,
-    [AttackDirection.Stab]: 5,
+    [Direction.Left]: 6,
+    [Direction.Right]: 6,
+    [Direction.Overhead]: 8,
+    [Direction.Stab]: 5,
   };
 
   return {
     name,
     damage: {
-      [AttackDirection.Left]: { head: 50, torso: 35, limb: 25 },
-      [AttackDirection.Right]: { head: 50, torso: 35, limb: 25 },
-      [AttackDirection.Overhead]: { head: 55, torso: 40, limb: 25 },
-      [AttackDirection.Underhand]: { head: 45, torso: 35, limb: 25 },
-      [AttackDirection.Stab]: { head: 45, torso: 40, limb: 20 },
+      [Direction.Left]: { head: 50, torso: 35, limb: 25 },
+      [Direction.Right]: { head: 50, torso: 35, limb: 25 },
+      [Direction.Overhead]: { head: 55, torso: 40, limb: 25 },
+      [Direction.Stab]: { head: 45, torso: 40, limb: 20 },
     },
     windup: { ...ticks },
     release: {
-      [AttackDirection.Left]: 4,
-      [AttackDirection.Right]: 4,
-      [AttackDirection.Overhead]: 5,
-      [AttackDirection.Underhand]: 4,
-      [AttackDirection.Stab]: 3,
+      [Direction.Left]: 4,
+      [Direction.Right]: 4,
+      [Direction.Overhead]: 5,
+      [Direction.Stab]: 3,
     },
     recovery: {
-      [AttackDirection.Left]: 12,
-      [AttackDirection.Right]: 12,
-      [AttackDirection.Overhead]: 15,
-      [AttackDirection.Underhand]: 13,
-      [AttackDirection.Stab]: 10,
+      [Direction.Left]: 12,
+      [Direction.Right]: 12,
+      [Direction.Overhead]: 15,
+      [Direction.Stab]: 10,
     },
     comboRecovery: {
-      [AttackDirection.Left]: 8,
-      [AttackDirection.Right]: 8,
-      [AttackDirection.Overhead]: 10,
-      [AttackDirection.Underhand]: 9,
-      [AttackDirection.Stab]: 6,
+      [Direction.Left]: 8,
+      [Direction.Right]: 8,
+      [Direction.Overhead]: 10,
+      [Direction.Stab]: 6,
     },
     parryWindow: 6,
-    staminaCost: { attack: 15, block: 10, parry: 5, feint: 20 },
-    turncap: { windup: 0.08, release: 0.03, recovery: 0.05 },
+    parryRecovery: 10,
+    blockBreakStunTicks: 28,
+    staminaCost: { attack: 15, block: 10, parry: 5 },
+    turncap: { windup: 0.08, release: 0.03, recovery: 0.05, hitStun: 0.005 },
     tracerPoints: [[0, 0.5, 0]],
     range: 1.4,
     blockStaminaDrain: 10,
@@ -184,6 +181,38 @@ describe('InventorySystem', () => {
       weapons.push('Extra');
       expect(inventoryRegistry.get(eid)!.weapons).toHaveLength(2);
     });
+
+    // ── starterWeapon (foundation for #94 / #109) ───────────
+
+    it('defaults starterWeapon to the initially-equipped weapon', () => {
+      initInventory(eid, ['TestSword', 'TestMace'], 'TestSword');
+      expect(inventoryRegistry.get(eid)!.starterWeapon).toBe('TestSword');
+    });
+
+    it('defaults starterWeapon to null when nothing equipped', () => {
+      initInventory(eid, ['TestSword']);
+      expect(inventoryRegistry.get(eid)!.starterWeapon).toBeNull();
+    });
+
+    it('honors an explicit starterWeapon arg', () => {
+      // Equipped is TestMace, but TestSword is the protected starter
+      initInventory(eid, ['TestSword', 'TestMace'], 'TestMace', 'TestSword');
+      expect(inventoryRegistry.get(eid)!.starterWeapon).toBe('TestSword');
+      expect(inventoryRegistry.get(eid)!.equippedWeapon).toBe('TestMace');
+    });
+
+    it('honors an explicit null starterWeapon (no protected starter)', () => {
+      initInventory(eid, ['TestSword'], 'TestSword', null);
+      expect(inventoryRegistry.get(eid)!.starterWeapon).toBeNull();
+      expect(inventoryRegistry.get(eid)!.equippedWeapon).toBe('TestSword');
+    });
+
+    it('preserves starterWeapon through getInventory copy', () => {
+      initInventory(eid, ['TestSword', 'TestMace'], 'TestSword');
+      const inv = inventoryRegistry.get(eid)!;
+      // Even when reading via the registry, the field should be visible.
+      expect(inv.starterWeapon).toBe('TestSword');
+    });
   });
 
   // ── getInventory ─────────────────────────────────────
@@ -249,7 +278,7 @@ describe('InventorySystem', () => {
     it('should reject when entity is not idle', () => {
       // Put FSM into Windup state
       const fsm = fsmRegistry.get(eid)!;
-      fsm.transition(1 as any, AttackDirection.Left); // CombatInput.Attack
+      fsm.transition(1 as any, Direction.Left); // CombatInput.Attack
       expect(fsm.state).not.toBe(CombatState.Idle);
 
       const result = equipWeapon(eid, 'TestMace');

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createWorld, addEntity, addComponent } from 'bitecs';
-import { Health } from '../components';
+import { createWorld, addEntity, addComponent, hasComponent } from 'bitecs';
+import { Health, DeadTag, RespawnPending } from '../components';
 import {
   healthSystemTick,
   queueDamage,
@@ -61,13 +61,13 @@ describe('HealthSystem', () => {
     });
   });
 
-  describe('death detection', () => {
+  describe('death detection (issue #130: component-based)', () => {
     it('detects death when health reaches 0', () => {
       const eid = createTestEntity(world, 5);
       queueDamage({ target: eid, amount: 10 });
       const result = healthSystemTick(world);
       expect(result.died).toContain(eid);
-      expect(isDead(eid)).toBe(true);
+      expect(isDead(world, eid)).toBe(true);
     });
 
     it('does not detect death when health is above 0', () => {
@@ -75,12 +75,41 @@ describe('HealthSystem', () => {
       queueDamage({ target: eid, amount: 10 });
       const result = healthSystemTick(world);
       expect(result.died).not.toContain(eid);
-      expect(isDead(eid)).toBe(false);
+      expect(isDead(world, eid)).toBe(false);
+    });
+
+    it('adds DeadTag component on death', () => {
+      const eid = createTestEntity(world, 5);
+      queueDamage({ target: eid, amount: 10 });
+      healthSystemTick(world);
+      expect(hasComponent(world, DeadTag, eid)).toBe(true);
+    });
+
+    it('adds RespawnPending component with full timer on death', () => {
+      const eid = createTestEntity(world, 5);
+      queueDamage({ target: eid, amount: 10 });
+      healthSystemTick(world);
+      expect(hasComponent(world, RespawnPending, eid)).toBe(true);
+      expect(RespawnPending.ticksRemaining[eid]).toBe(RESPAWN_DELAY_TICKS);
+    });
+
+    it('does not double-fire died event for an already-dead entity', () => {
+      const eid = createTestEntity(world, 5);
+      queueDamage({ target: eid, amount: 10 });
+      const first = healthSystemTick(world);
+      expect(first.died).toContain(eid);
+
+      const second = healthSystemTick(world);
+      expect(second.died).not.toContain(eid);
     });
   });
 
-  describe('respawn', () => {
-    it('respawns after RESPAWN_DELAY_TICKS (120 ticks = 2 seconds)', () => {
+  describe('respawn (issue #130: 180 ticks = 3 seconds)', () => {
+    it('RESPAWN_DELAY_TICKS is 180 (3.0s @ 60Hz)', () => {
+      expect(RESPAWN_DELAY_TICKS).toBe(180);
+    });
+
+    it('signals respawn after RESPAWN_DELAY_TICKS', () => {
       const eid = createTestEntity(world, 5, 100);
       queueDamage({ target: eid, amount: 10 });
       healthSystemTick(world); // dies, starts respawn timer
@@ -91,11 +120,25 @@ describe('HealthSystem', () => {
         expect(result.respawned).not.toContain(eid);
       }
 
-      // Final tick — respawn
+      // Final tick — respawn signaled
       const result = healthSystemTick(world);
       expect(result.respawned).toContain(eid);
-      expect(Health.current[eid]).toBe(100); // reset to max
-      expect(isDead(eid)).toBe(false);
+      // HP is NOT restored here (#130: that's processRespawns' job in issue B).
+      expect(Health.current[eid]).toBe(0);
+    });
+
+    it('decrements RespawnPending.ticksRemaining each tick', () => {
+      const eid = createTestEntity(world, 5);
+      queueDamage({ target: eid, amount: 10 });
+      healthSystemTick(world); // tick 0: dies, ticksRemaining = 180
+
+      expect(RespawnPending.ticksRemaining[eid]).toBe(RESPAWN_DELAY_TICKS);
+
+      healthSystemTick(world);
+      expect(RespawnPending.ticksRemaining[eid]).toBe(RESPAWN_DELAY_TICKS - 1);
+
+      healthSystemTick(world);
+      expect(RespawnPending.ticksRemaining[eid]).toBe(RESPAWN_DELAY_TICKS - 2);
     });
 
     it('does not respawn before delay expires', () => {
@@ -103,12 +146,30 @@ describe('HealthSystem', () => {
       queueDamage({ target: eid, amount: 10 });
       healthSystemTick(world);
 
-      // Tick 50 times (not enough)
+      // Tick 50 times (not enough — delay is 180)
       for (let i = 0; i < 50; i++) {
         healthSystemTick(world);
       }
-      expect(isDead(eid)).toBe(true);
+      expect(isDead(world, eid)).toBe(true);
       expect(Health.current[eid]).toBe(0);
+    });
+
+    it('clamps RespawnPending.ticksRemaining at 0 after respawn signal', () => {
+      const eid = createTestEntity(world, 5, 100);
+      queueDamage({ target: eid, amount: 10 });
+      healthSystemTick(world);
+      // Tick all the way to 0
+      for (let i = 0; i < RESPAWN_DELAY_TICKS; i++) {
+        healthSystemTick(world);
+      }
+      expect(RespawnPending.ticksRemaining[eid]).toBe(0);
+      // Defensive: subsequent ticks should not underflow the ui16. Until
+      // processRespawns removes the components, healthSystemTick should
+      // keep returning the eid in `respawned` (the cleanup hook is responsible
+      // for removing the components).
+      const after = healthSystemTick(world);
+      expect(RespawnPending.ticksRemaining[eid]).toBe(0);
+      expect(after.respawned).toContain(eid);
     });
   });
 
@@ -123,91 +184,16 @@ describe('HealthSystem', () => {
       expect(Health.current[eid1]).toBe(70);
       expect(Health.current[eid2]).toBe(50); // untouched
     });
-  });
 
-  describe('kill attribution', () => {
-    it('emits a KillEvent with the attacker when victim dies from attributed damage', () => {
-      const victim = createTestEntity(world, 5);
-      const attacker = createTestEntity(world, 100);
+    it('isDead is per-entity (one entity dying does not flag others)', () => {
+      const eid1 = createTestEntity(world, 5);
+      const eid2 = createTestEntity(world, 100);
 
-      queueDamage({ target: victim, amount: 10, attackerEid: attacker });
-      const result = healthSystemTick(world);
+      queueDamage({ target: eid1, amount: 10 });
+      healthSystemTick(world);
 
-      expect(result.died).toContain(victim);
-      expect(result.kills).toEqual([{ victimEid: victim, attackerEid: attacker }]);
-    });
-
-    it('emits a KillEvent with attackerEid=undefined for environmental death', () => {
-      const victim = createTestEntity(world, 5);
-
-      // No attackerEid passed
-      queueDamage({ target: victim, amount: 10 });
-      const result = healthSystemTick(world);
-
-      expect(result.died).toContain(victim);
-      expect(result.kills).toHaveLength(1);
-      expect(result.kills[0].victimEid).toBe(victim);
-      expect(result.kills[0].attackerEid).toBeUndefined();
-    });
-
-    it('attributes the kill to the LAST attacker when multiple attackers hit in the same tick', () => {
-      const victim = createTestEntity(world, 100);
-      const a1 = createTestEntity(world, 100);
-      const a2 = createTestEntity(world, 100);
-
-      queueDamage({ target: victim, amount: 50, attackerEid: a1 });
-      queueDamage({ target: victim, amount: 60, attackerEid: a2 }); // killing blow
-      const result = healthSystemTick(world);
-
-      expect(result.died).toContain(victim);
-      expect(result.kills).toEqual([{ victimEid: victim, attackerEid: a2 }]);
-    });
-
-    it('does NOT emit a KillEvent for non-fatal damage', () => {
-      const victim = createTestEntity(world, 100);
-      const attacker = createTestEntity(world, 100);
-
-      queueDamage({ target: victim, amount: 30, attackerEid: attacker });
-      const result = healthSystemTick(world);
-
-      expect(result.died).toEqual([]);
-      expect(result.kills).toEqual([]);
-    });
-
-    it('does not leak attacker attribution across ticks', () => {
-      const victim1 = createTestEntity(world, 100);
-      const victim2 = createTestEntity(world, 5);
-      const attacker = createTestEntity(world, 100);
-
-      // Tick 1: non-fatal hit on victim1 — attacker recorded but no death
-      queueDamage({ target: victim1, amount: 20, attackerEid: attacker });
-      let result = healthSystemTick(world);
-      expect(result.kills).toEqual([]);
-
-      // Tick 2: victim2 dies from environmental damage — must NOT inherit
-      // attacker from tick 1's transient map.
-      queueDamage({ target: victim2, amount: 10 });
-      result = healthSystemTick(world);
-      expect(result.died).toContain(victim2);
-      expect(result.kills).toHaveLength(1);
-      expect(result.kills[0].attackerEid).toBeUndefined();
-    });
-
-    it('skips attribution for damage to already-dead entities (already-dead guard)', () => {
-      const victim = createTestEntity(world, 5);
-      const a1 = createTestEntity(world, 100);
-      const a2 = createTestEntity(world, 100);
-
-      // Tick 1: a1 lands the kill
-      queueDamage({ target: victim, amount: 10, attackerEid: a1 });
-      let result = healthSystemTick(world);
-      expect(result.kills).toEqual([{ victimEid: victim, attackerEid: a1 }]);
-
-      // Tick 2: a2 tries to land posthumous damage — must NOT reattribute
-      queueDamage({ target: victim, amount: 10, attackerEid: a2 });
-      result = healthSystemTick(world);
-      expect(result.died).toEqual([]); // already dead, not detected again
-      expect(result.kills).toEqual([]);
+      expect(isDead(world, eid1)).toBe(true);
+      expect(isDead(world, eid2)).toBe(false);
     });
   });
 });

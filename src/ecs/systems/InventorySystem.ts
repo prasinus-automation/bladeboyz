@@ -21,6 +21,13 @@ export interface InventoryData {
   weapons: string[];
   /** Currently equipped weapon name, or null if unarmed */
   equippedWeapon: string | null;
+  /**
+   * The "permanent" starter weapon that should NOT be dropped on death (#94 / #A2).
+   * Defaults to the initially-equipped weapon when not specified at init time —
+   * keeps existing callsites backward-compatible. Null means "drop everything"
+   * (no protected starter).
+   */
+  starterWeapon: string | null;
 }
 
 /** Event emitted when a weapon is equipped */
@@ -82,15 +89,24 @@ function emitEquipEvent(event: EquipEvent): void {
  * @param entityId - The ECS entity ID
  * @param weapons - Array of weapon names available
  * @param equippedWeapon - Initially equipped weapon name (or null)
+ * @param starterWeapon - The permanent starter weapon (won't be dropped on
+ *   death, see #94). Defaults to `equippedWeapon` when omitted, which
+ *   preserves the legacy behavior of "the first weapon you spawn with is
+ *   yours forever". Pass `null` explicitly for "no protected starter".
  */
 export function initInventory(
   entityId: number,
   weapons: string[],
   equippedWeapon: string | null = null,
+  starterWeapon?: string | null,
 ): void {
   inventoryRegistry.set(entityId, {
     weapons: [...weapons],
     equippedWeapon,
+    // `starterWeapon` is intentionally `string | null | undefined` at the
+    // call boundary so we can distinguish "omitted" (default to
+    // equippedWeapon) from "explicit null" (no protected starter).
+    starterWeapon: starterWeapon === undefined ? equippedWeapon : starterWeapon,
   });
 }
 
@@ -104,6 +120,7 @@ export function getInventory(entityId: number): InventoryData | null {
   return {
     weapons: [...data.weapons],
     equippedWeapon: data.equippedWeapon,
+    starterWeapon: data.starterWeapon,
   };
 }
 
@@ -227,4 +244,67 @@ export function removeWeaponFromInventory(entityId: number, weaponName: string):
 export function resetInventorySystem(): void {
   inventoryRegistry.clear();
   equipListeners.length = 0;
+}
+
+/**
+ * Default starter weapon name. Centralizes the "what does a freshly-spawned
+ * combatant equip" decision so it's not duplicated across `createPlayer`
+ * (initial spawn) and `processRespawns` (every subsequent life).
+ *
+ * Issue #130 made this `'Longsword'` per the spawn/death/respawn design doc.
+ * Changing this is a balance / starter-loadout tweak, NOT a refactor —
+ * touch one line, both spawn paths follow.
+ */
+export const DEFAULT_STARTER_WEAPON = 'Longsword';
+
+/**
+ * Equip the default starter weapon on `eid`. Wraps `equipWeapon` so callers
+ * (currently `processRespawns` and any future spawn code) don't have to
+ * repeat the literal weapon name.
+ *
+ * Adds the starter weapon to inventory if it's missing — a respawning
+ * entity should always be able to start its life with a weapon, even
+ * after a future PR (#94 / drop-on-death) clears their last living weapon.
+ * The protected `starterWeapon` field on `InventoryData` is the source of
+ * truth that #94's drop logic consults; this function only handles the
+ * "make sure they have it equipped right now" half.
+ *
+ * @returns true on successful equip, false if the entity has no inventory
+ *   or `equipWeapon` rejected (e.g. FSM not Idle — which shouldn't happen
+ *   on respawn since processDeaths reset the FSM to Idle).
+ */
+export function equipDefaultStarter(entityId: number): boolean {
+  const inventory = inventoryRegistry.get(entityId);
+  if (!inventory) return false;
+  if (!inventory.weapons.includes(DEFAULT_STARTER_WEAPON)) {
+    inventory.weapons.push(DEFAULT_STARTER_WEAPON);
+  }
+  return equipWeapon(entityId, DEFAULT_STARTER_WEAPON);
+}
+
+/**
+ * Drop the entity's currently-equipped weapon at its feet (no-op stub).
+ *
+ * Issue #130 wires this into `processDeaths` so the death pipeline is
+ * complete; the actual implementation — spawn a `WeaponPickup` entity at
+ * the victim's feet, unequip the weapon, skip the protected `starterWeapon` —
+ * is owned by issue #94 / #A2 (drop-on-death). The signature here is the
+ * contract those PRs implement against.
+ *
+ * Until then this is a deliberate no-op. Tests that assert the function
+ * is called pass via spy / mock; production behavior is unchanged.
+ *
+ * @param entityId the dying entity
+ * @param world the GameWorld (will be needed to spawn the pickup); typed
+ *   loosely so this module doesn't have to import GameWorld and create
+ *   an import cycle with `core/types`.
+ */
+export function dropEquippedWeapon(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  entityId: number,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
+  world: any,
+): void {
+  // Intentionally empty — see #94. The hook is wired so processDeaths can
+  // be tested end-to-end now without waiting for the drop implementation.
 }

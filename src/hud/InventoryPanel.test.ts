@@ -8,19 +8,18 @@ import {
   resetInventorySystem,
 } from '../ecs/systems/InventorySystem';
 import { registerWeapon, weaponConfigs } from '../weapons/WeaponConfig';
-import { AttackDirection } from '../combat/directions';
+import { Direction } from '../combat/directions';
 
 // Register a test weapon config if not already registered
 function ensureTestWeapons(): void {
   if (!weaponConfigs['TestSword']) {
     const dirs = [
-      AttackDirection.Left,
-      AttackDirection.Right,
-      AttackDirection.Overhead,
-      AttackDirection.Underhand,
-      AttackDirection.Stab,
+      Direction.Left,
+      Direction.Right,
+      Direction.Overhead,
+      Direction.Stab,
     ];
-    const dirRecord = <T>(val: T): Record<AttackDirection, T> => {
+    const dirRecord = <T>(val: T): Record<Direction, T> => {
       const r: any = {};
       for (const d of dirs) r[d] = val;
       return r;
@@ -34,8 +33,10 @@ function ensureTestWeapons(): void {
       recovery: dirRecord(25),
       comboRecovery: dirRecord(15),
       parryWindow: 10,
-      staminaCost: { attack: 15, block: 10, parry: 5, feint: 8 },
-      turncap: { windup: 0.04, release: 0.02, recovery: 0.05 },
+      parryRecovery: 12,
+      blockBreakStunTicks: 30,
+      staminaCost: { attack: 15, block: 10, parry: 5 },
+      turncap: { windup: 0.04, release: 0.02, recovery: 0.05, hitStun: 0.005 },
       tracerPoints: [[0, 0, 0]],
       range: 2.0,
       blockStaminaDrain: 20,
@@ -51,8 +52,10 @@ function ensureTestWeapons(): void {
       recovery: dirRecord(30),
       comboRecovery: dirRecord(18),
       parryWindow: 8,
-      staminaCost: { attack: 20, block: 12, parry: 6, feint: 10 },
-      turncap: { windup: 0.03, release: 0.015, recovery: 0.04 },
+      parryRecovery: 14,
+      blockBreakStunTicks: 36,
+      staminaCost: { attack: 20, block: 12, parry: 6 },
+      turncap: { windup: 0.03, release: 0.015, recovery: 0.04, hitStun: 0.005 },
       tracerPoints: [[0, 0, 0]],
       range: 1.8,
       blockStaminaDrain: 25,

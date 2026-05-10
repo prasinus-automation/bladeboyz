@@ -44,6 +44,58 @@ export const Player = defineComponent();
 /** Alias for Player tag (used by character model subsystem) */
 export const IsPlayer = Player;
 
+/**
+ * Tag: entity is an AI-controlled bot. Stub component for #99 (warmup bots);
+ * shipped here so #130's `processDeaths` can include bots in the kill/death
+ * event pipeline alongside players without a follow-up plumbing PR.
+ */
+export const Bot = defineComponent();
+
+/**
+ * Tag: entity is currently dead, awaiting respawn.
+ *
+ * Added by `processDeaths` (issue #130) when HP first crosses to 0; removed
+ * by `processRespawns` (issue B in the spawn/death/respawn family) when the
+ * RespawnPending timer expires. Replaces the legacy `respawnTimers` Map
+ * side-table that previously lived in HealthSystem.
+ *
+ * Systems that should NOT run for dead entities (CombatSystem, MovementSystem)
+ * early-out via `hasComponent(world.ecs, DeadTag, eid)`.
+ *
+ * See `docs/spawn-death-respawn.md` for the full lifecycle.
+ */
+export const DeadTag = defineComponent();
+
+/**
+ * RespawnPending — per-entity respawn countdown.
+ *
+ * `ticksRemaining` is decremented each fixed tick by HealthSystem; when it
+ * hits 0 the entity is pushed into the `respawned` array and processRespawns
+ * (issue B) handles teleport + HP/stamina restore.
+ *
+ * Stored as a component (not a side-table Map) so the future networking
+ * layer can serialize remaining time per-entity in snapshots without a
+ * separate replication path.
+ */
+export const RespawnPending = defineComponent({
+  ticksRemaining: Types.ui16,
+});
+
+/**
+ * Score — per-life and lifetime score tracking.
+ *
+ * - `kills`: total kills across all lives (incremented when this entity is
+ *   credited as the killer in a `DeathEvent`).
+ * - `deaths`: total deaths across all lives (incremented on every death).
+ * - `goldThisLife`: gold earned during the current life. Reset to 0 in
+ *   processDeaths. Total persistent gold lives elsewhere (issue #95 / Wallet).
+ */
+export const Score = defineComponent({
+  kills: Types.ui16,
+  deaths: Types.ui16,
+  goldThisLife: Types.ui32,
+});
+
 /** Physics body reference (index into lookup table) */
 export const PhysicsBody = defineComponent({
   bodyHandle: Types.ui32,
@@ -60,6 +112,36 @@ export const MovementState = defineComponent({
   crouching: Types.ui8,
   /** Current speed factor (0..1, for acceleration ramp) */
   speedFactor: Types.f32,
+  /**
+   * Vertical velocity for jump/gravity bookkeeping (units/s).
+   * Authoritative for kinematic gravity simulation. Replaces use of
+   * `Velocity.y` in MovementSystem (issue #104).
+   */
+  verticalVelocity: Types.f32,
+  /** Tick of last successful jump (for jump cooldown / debug) */
+  lastJumpTick: Types.i32,
+});
+
+/**
+ * MovementIntent — per-tick movement commands written by an "agent"
+ * (the local player's InputSystem, an AI controller, or a network
+ * deserializer) and consumed by MovementSystem.
+ *
+ * - moveX, moveZ are world-space normalized direction (length 0 or 1).
+ * - sprint, crouch, jumpRequested are 0/1 flags.
+ * - jumpRequested is edge-triggered: written 1 only on the rising edge
+ *   of the jump input, cleared back to 0 by MovementSystem after the
+ *   jump is consumed (or each tick by the writer if not consumed).
+ *
+ * This is the seam where future AI controllers and network input
+ * packets plug in. See AGENTS.md "Character Controller" and issue #86.
+ */
+export const MovementIntent = defineComponent({
+  moveX: Types.f32,
+  moveZ: Types.f32,
+  sprint: Types.ui8,
+  crouch: Types.ui8,
+  jumpRequested: Types.ui8,
 });
 
 /**
@@ -92,9 +174,14 @@ export const Hitboxes = defineComponent({
 export const CombatStateComponent = defineComponent({
   /** Current CombatState enum value */
   state: Types.ui8,
-  /** Current AttackDirection enum value */
+  /**
+   * Current `Direction` enum value (FSM v2 #139). Both `attackDirection` and
+   * `blockDirection` now hold the same unified Direction value — they're
+   * a transitional pair until issue C (#136) collapses
+   * `CombatStateComponent` + `CombatStateComp` into a single component.
+   */
   attackDirection: Types.ui8,
-  /** Current BlockDirection enum value */
+  /** Same value as `attackDirection` (FSM v2 #139). */
   blockDirection: Types.ui8,
   /** Ticks remaining in current state */
   ticksRemaining: Types.ui16,
@@ -141,6 +228,27 @@ export const Hitbox = defineComponent({
 export const TracerTag = defineComponent();
 
 /**
+ * WeaponPickup — marks an entity as a ground-spawned weapon pickup.
+ *
+ * Numeric only (bitECS constraint). The string `weaponName` and the
+ * Three.js Group/Material refs live in the side-table `pickupRegistry`
+ * (see `src/inventory/PickupRegistry.ts`).
+ *
+ * - weaponId: index into `weaponIdToName` (CombatSystem.ts) — used for
+ *   networking-friendly serialization once that lands.
+ * - spawnTick: tick the pickup was created on (for despawn timer + age math).
+ * - despawnTick: tick the pickup will be auto-removed (consumed by #A2).
+ *
+ * See parent issue #94 for the full lifecycle and #109 for the foundation
+ * scope. No behavior here — drop/pickup/despawn live in #A2.
+ */
+export const WeaponPickup = defineComponent({
+  weaponId: Types.ui8,
+  spawnTick: Types.ui32,
+  despawnTick: Types.ui32,
+});
+
+/**
  * DamageEvent component — written by TracerSystem, consumed by DamageSystem.
  * Represents a pending damage event to be processed in the same tick.
  */
@@ -153,7 +261,7 @@ export const DamageEvent = defineComponent({
   damage: Types.f32,
   /** BodyRegion hit */
   bodyRegion: Types.ui8,
-  /** AttackDirection of the attack */
+  /** `Direction` enum value of the attack (FSM v2 #139) */
   attackDirection: Types.ui8,
   /** Whether this event has been processed (1 = processed) */
   processed: Types.ui8,
@@ -164,9 +272,10 @@ export const DamageEvent = defineComponent({
  * Written by the CombatSystem (fixedUpdate), read by the AnimationSystem (update).
  *
  * - state: CombatState enum value
- * - direction: AttackDirection or BlockDirection (context-dependent on state)
+ * - direction: `Direction` enum value (FSM v2 #139 — single unified enum)
  * - phaseElapsed: ticks elapsed in current phase
  * - phaseTotal: total ticks for current phase (from weapon config)
+ * - phaseT: normalized phase progress in [0, 1] (mirrors CombatFSM.getPhaseT())
  * - weaponId: index into weaponRegistry for timing lookups
  */
 export const CombatStateComp = defineComponent({
@@ -174,22 +283,54 @@ export const CombatStateComp = defineComponent({
   direction: Types.ui8,
   phaseElapsed: Types.ui16,
   phaseTotal: Types.ui16,
+  phaseT: Types.f32,
   weaponId: Types.ui8,
+});
+
+/**
+ * HitReactComp — populated by DamageSystem on every successful hit.
+ * Read by AnimationSystem to drive a directional stagger lean.
+ *
+ * `dirX/dirY/dirZ` form a unit vector in the target's body-local space
+ * pointing FROM the attacker TO the target (i.e., the direction the hit
+ * pushes the target). Stored as 3 separate floats because bitECS only
+ * supports scalar fields.
+ *
+ * `magnitude` is normalized in [0, 1] (typically `damage / weapon.maxDamage`).
+ *
+ * `active = 1` until `currentTick >= spawnedAtTick + durationTicks`,
+ * at which point HitReactSystem clears it to 0. Animation reads `active`
+ * to decide whether to apply the lean.
+ */
+export const HitReactComp = defineComponent({
+  dirX: Types.f32,
+  dirY: Types.f32,
+  dirZ: Types.f32,
+  magnitude: Types.f32,
+  spawnedAtTick: Types.ui32,
+  durationTicks: Types.ui16,
+  active: Types.ui8,
 });
 
 /**
  * Animation state — tracks blending progress for the animation system.
  *
- * - upperBlend: 0..1 progress of upper body blend to target pose
- * - lowerBlend: 0..1 progress of lower body blend to target pose
- * - movementState: MovementState enum value (derived from velocity)
- * - walkCycle: accumulated walk cycle phase (radians, wraps at 2*PI)
- * - prevCombatState: previous combat state for transition detection
- * - prevDirection: previous direction for transition detection
+ * Issue #128 rebuild: replaces the per-layer `upperBlend`/`lowerBlend`
+ * pair with a single `crossfadeT` timer that ramps `0 → 1` over
+ * `CROSSFADE_DURATION_SEC` after every state-or-direction transition.
+ * The actual per-bone snapshot lives in a side-table (`prevPoseSnapshots`
+ * inside `AnimationSystem.ts`) because bitECS only stores numeric fields.
+ *
+ * - crossfadeT: 0..1 progress of the post-transition crossfade. Drives
+ *   `effectiveT = smoothstep(max(phaseT, crossfadeT))` per `docs/animation-architecture.md` §6.
+ * - movementState: MovementState enum value (derived from `MovementState`
+ *   ECS component, kept here so the HUD/debug overlay can read it).
+ * - walkCycle: accumulated walk cycle phase (radians, wraps at 2π).
+ * - prevCombatState: previous combat state for transition detection.
+ * - prevDirection: previous direction for transition detection.
  */
 export const AnimationComp = defineComponent({
-  upperBlend: Types.f32,
-  lowerBlend: Types.f32,
+  crossfadeT: Types.f32,
   movementState: Types.ui8,
   walkCycle: Types.f32,
   prevCombatState: Types.ui8,

@@ -12,7 +12,8 @@
 
 import { defineQuery, type IWorld } from 'bitecs';
 import { Stamina, CombatStateComponent } from '../components';
-import { CombatState, BLOCK_BREAK_STUN_TICKS } from '../../combat/states';
+import { CombatState } from '../../combat/states';
+import { CombatInput, fsmRegistry } from '../../combat/CombatFSM';
 import type { WeaponConfig } from '../../weapons/WeaponConfig';
 
 /** Stamina regen rate per second */
@@ -60,6 +61,23 @@ export function resetStaminaTracking(): void {
 }
 
 /**
+ * Drop the per-entity regen-delay counter for a single eid. Used by
+ * `processRespawns` (#134): when a player respawns we want their stamina
+ * regen clock to start fresh — without this, the regen-delay window from
+ * their previous life carries over and the first tick after spawn either
+ * regens immediately (if they died with a stale clock) or sits idle for a
+ * full second (if they died mid-action). Either is wrong.
+ *
+ * Unlike `resetStaminaTracking()` (which clears every entity, intended for
+ * test isolation), this is per-entity and safe to call in production.
+ *
+ * No-op when the eid has no entry — saves the caller a `has()` check.
+ */
+export function resetEntityStaminaTracking(eid: number): void {
+  ticksSinceLastCost.delete(eid);
+}
+
+/**
  * Process one fixed-update tick of the stamina system.
  *
  * @param ecsWorld - The bitECS world to query entities from
@@ -72,15 +90,23 @@ export function staminaSystemTick(ecsWorld: IWorld): number[] {
   for (let i = 0; i < entities.length; i++) {
     const eid = entities[i];
 
-    // Process pending cost events for this entity
+    // Process pending cost events for this entity. Track the most recent
+    // weapon config so the block-break path below can read its
+    // `blockBreakStunTicks` if no FSM is registered for this entity.
     let hadCost = false;
+    let lastWeaponConfig: WeaponConfig | null = null;
     for (let j = pendingCosts.length - 1; j >= 0; j--) {
       const event = pendingCosts[j];
       if (event.entity !== eid) continue;
 
-      const cost = event.weaponConfig.staminaCost[event.type];
+      // FSM v2 (#131): `staminaCost.feint` became optional, so `cost` can
+      // be `undefined` for weapons that omit it. Treat omitted as 0 — same
+      // behavior as the v1 schema, where missing fields would have surfaced
+      // a runtime NaN.
+      const cost = event.weaponConfig.staminaCost[event.type] ?? 0;
       Stamina.current[eid] = Math.max(0, Stamina.current[eid] - cost);
       hadCost = true;
+      lastWeaponConfig = event.weaponConfig;
 
       // Remove processed event
       pendingCosts.splice(j, 1);
@@ -89,15 +115,29 @@ export function staminaSystemTick(ecsWorld: IWorld): number[] {
     if (hadCost) {
       ticksSinceLastCost.set(eid, 0);
 
-      // Check block break: stamina hit 0 while blocking
+      // Block break — stamina hit 0 while blocking. FSM v2 (#135) routes
+      // this through `CombatInput.BlockBreak` → HitStun for
+      // `weapon.blockBreakStunTicks` (per-weapon, replacing the old
+      // module-level `BLOCK_BREAK_STUN_TICKS = 30` constant). Fall back
+      // to a direct ECS write if no FSM is registered (e.g. test fixtures
+      // exercising the stamina pipeline without a real FSM).
       const currentState = CombatStateComponent.state[eid] as CombatState;
       if (
         Stamina.current[eid] <= 0 &&
-        (currentState === CombatState.Block || currentState === CombatState.ParryWindow)
+        currentState === CombatState.Blocking
       ) {
-        // Transition to Stunned
-        CombatStateComponent.state[eid] = CombatState.Stunned;
-        CombatStateComponent.ticksRemaining[eid] = BLOCK_BREAK_STUN_TICKS;
+        const fsm = fsmRegistry.get(eid);
+        if (fsm) {
+          fsm.transition(CombatInput.BlockBreak);
+          // Sync ECS mirror immediately so same-tick readers see HitStun
+          // before CombatSystem runs again next tick.
+          CombatStateComponent.state[eid] = fsm.state;
+          CombatStateComponent.ticksRemaining[eid] = fsm.ticksRemaining;
+        } else {
+          CombatStateComponent.state[eid] = CombatState.HitStun;
+          CombatStateComponent.ticksRemaining[eid] =
+            lastWeaponConfig?.blockBreakStunTicks ?? 30;
+        }
         blockBrokenEntities.push(eid);
       }
     } else {

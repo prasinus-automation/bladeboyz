@@ -1,63 +1,142 @@
 /**
  * CombatFSM — Per-entity finite state machine for directional melee combat.
+ * **FSM v2 (#88, #135, #139)** — 7-state model with unified `Direction`
+ * enum, all writes funneled through `transition()` and `_transitionTo()`.
  *
  * Pure TypeScript logic — no Three.js, no Rapier, no DOM dependencies.
- * All timing is in ticks (1 tick = 1/60th second at 60Hz fixed update).
+ * All timing is in ticks (1 tick = 1/60th second at 60 Hz fixed update).
  *
- * The FSM manages state transitions, timer countdowns, turncap lookup,
- * and combo buffering. External systems read the FSM's current state
- * to drive animations, hit detection, and stamina costs.
+ * ## Invariant
+ *
+ * **Only `_transitionTo(newState)` mutates the internal `_state` field.**
+ * Every external state change goes through `transition(input, payload)`.
+ * This is the discipline that makes v2 correct — see `docs/combat-fsm-v2.md`
+ * §3 (transition rules). If you find yourself wanting to write
+ * `this._state = X` outside `_transitionTo`, you're probably implementing a
+ * side effect that should live in the entry helper for state X.
+ *
+ * Out of scope:
+ * - `CombatStateComponent` + `CombatStateComp` unification (issue C, #136)
+ * - DamageSystem dispatching FSM events instead of direct writes (issue E)
  */
 
 import { CombatState } from './states';
-import { AttackDirection, BlockDirection } from './directions';
+import { Direction } from './directions';
 import type { WeaponConfig } from '../weapons/WeaponConfig';
 
 // ── Input types ──────────────────────────────────────────
 
-/** Inputs the FSM can react to */
+/**
+ * Inputs the FSM can react to. Every input is dispatched via
+ * `FSM.transition(input, payload?)` — no system writes `_state` directly.
+ *
+ * Payload conventions (`payload?: number`):
+ * - `Attack(dir)` — payload is a `Direction`
+ * - `Block(dir)` — payload is a `Direction`
+ * - all others — no payload
+ */
 export const enum CombatInput {
+  /** `Attack(direction)` — gated on stamina ≥ `staminaCost.attack`. */
   Attack = 0,
+  /** `Block(direction)` — RMB just-press; opens parry window when from Idle/Recovery. */
   Block = 1,
+  /** RMB released — exits Blocking back to Idle. */
   ReleaseBlock = 2,
-  /** Feint = right-click during windup */
-  Feint = 3,
-  /** External: target was hit while in Release */
-  HitLanded = 4,
-  /** External: entity was hit while not blocking correctly */
-  HitReceived = 5,
-  /** External: entity blocked an attack (correct direction) */
-  BlockedHit = 6,
-  /** External: entity was parried */
-  WasParried = 7,
-  /** External: parry window entity received a hit */
-  ParryTriggered = 8,
+  /** Dispatched by DamageSystem when a hit lands on a non-blocking target. */
+  HitReceived = 3,
+  /** Dispatched by DamageSystem when defender successfully blocks (parry window expired). */
+  BlockedHit = 4,
+  /** Dispatched by DamageSystem when defender parries (parry window active + direction matches). */
+  ParryTriggered = 5,
+  /** Dispatched to attacker by DamageSystem when their swing was parried. */
+  WasParried = 6,
+  /** Dispatched by StaminaSystem when stamina hits 0 while in Blocking. */
+  BlockBreak = 7,
 }
 
 // ── Stamina cost event type ──────────────────────────────
 
+/**
+ * Stamina-cost event emitted by the FSM, drained by CombatSystem each tick
+ * and forwarded to StaminaSystem via `queueStaminaCost`.
+ *
+ * The `'feint'` value is preserved as a legal type so the StaminaSystem's
+ * existing typed switch keeps narrowing correctly even though FSM v2 doesn't
+ * emit it; once `staminaCost.feint` is fully removed (post-MVP re-add of
+ * Feint behind a weapon flag) this type narrows to the three v2 values.
+ */
 export interface FSMStaminaEvent {
   type: 'attack' | 'block' | 'parry' | 'feint';
+}
+
+// ── HitStun entry mode ───────────────────────────────────
+
+/**
+ * Internal — encodes which duration to use when entering HitStun.
+ * v2 collapses Stunned + block-break into a single HitStun state with
+ * three possible durations (normal hit / parry / block-break).
+ */
+const enum HitStunMode {
+  Normal = 0,
+  Parried = 1,
+  BlockBreak = 2,
 }
 
 // ── FSM class ────────────────────────────────────────────
 
 export class CombatFSM {
   private _state: CombatState = CombatState.Idle;
-  private _ticksRemaining = 0;
-  private _attackDirection: AttackDirection = AttackDirection.Stab;
-  private _blockDirection: BlockDirection = BlockDirection.Top;
+  private _phaseElapsed = 0;
+  private _phaseTotal = 0;
+
+  /**
+   * Unified direction (FSM v2, #139). Represents the most-recent direction
+   * payload from an `Attack` or `Block` input. v1's separate `_attackDirection`
+   * + `_blockDirection` slots were collapsed because the new direction model
+   * uses a single 4-value enum for both attack and block intent.
+   *
+   * Default `Overhead` matches the v1 `_blockDirection = BlockDirection.Top`
+   * default (Top mapped to Overhead in #139's enum unification).
+   */
+  private _direction: Direction = Direction.Overhead;
   private _weaponConfig: WeaponConfig;
 
-  /** Buffered attack input during Recovery for combo chaining */
-  private _comboBuffered = false;
-  private _comboDirection: AttackDirection = AttackDirection.Stab;
-
-  /** Pending stamina events produced this tick, consumed by CombatSystem */
+  /** Pending stamina events produced this tick, consumed by CombatSystem. */
   private _pendingStaminaEvents: FSMStaminaEvent[] = [];
 
-  /** Whether the current recovery is a combo recovery (shorter timing) */
+  /** Buffered Attack input received during Recovery; fires on Recovery end. */
+  private _comboBuffered = false;
+  /** Direction the buffered combo will swing in. Overwritten on every buffer. */
+  private _comboDirection: Direction = Direction.Overhead;
+
+  /**
+   * Set true when an Attack is buffered during Recovery; the resulting
+   * combo swing's Recovery uses `comboRecovery` ticks instead of the
+   * full `recovery` ticks. Reset to false on Idle entry.
+   *
+   * Public via the `isComboRecovery` getter so external consumers (e.g. a
+   * future server-authoritative replay) can read it without poking at the
+   * FSM internals.
+   */
   private _isComboRecovery = false;
+
+  /**
+   * Tracks whether the most recent `Blocking` entry was triggered by an
+   * RMB just-press (Idle→Blocking or Recovery→Blocking). Set to false when
+   * Blocking is re-entered from a Parry phase-end — that's the held-RMB
+   * case where the defender doesn't get a fresh parry window.
+   *
+   * `parryActive` reads this together with `phaseElapsed` and
+   * `weapon.parryWindow` to decide whether incoming hits can be parried.
+   */
+  private _blockingEntryWasJustPress = false;
+
+  /**
+   * Tracks whether RMB was still held when Parry was entered. Set true on
+   * Parry entry; flipped to false if `ReleaseBlock` fires while in Parry.
+   * On Parry phase-end: held → re-enter Blocking; released → return to Idle.
+   */
+  private _rmbHeldDuringParry = false;
 
   constructor(weaponConfig: WeaponConfig) {
     this._weaponConfig = weaponConfig;
@@ -69,51 +148,168 @@ export class CombatFSM {
     return this._state;
   }
 
+  /**
+   * Ticks since entering the current state. Increments every `tick()`.
+   *
+   * - In states with `phaseTotal > 0` (Windup/Release/Recovery/Parry/HitStun)
+   *   the FSM auto-transitions when `phaseElapsed >= phaseTotal`.
+   * - In Idle/Blocking (`phaseTotal == 0`) phaseElapsed still increments —
+   *   Blocking uses it for the parry-window check.
+   */
+  get phaseElapsed(): number {
+    return this._phaseElapsed;
+  }
+
+  /**
+   * Total ticks for the current state's phase. 0 in states with no fixed
+   * duration (Idle, Blocking) — those exit on input only.
+   */
+  get phaseTotal(): number {
+    return this._phaseTotal;
+  }
+
+  /**
+   * Backward-compat shim. v1 callers (CombatSystem, HUD) read
+   * `ticksRemaining` to mirror onto `CombatStateComponent.ticksRemaining`.
+   * v2 stores the elapsed counter forward; expose the remaining ticks as
+   * `max(0, total - elapsed)` so callers don't have to migrate.
+   */
   get ticksRemaining(): number {
-    return this._ticksRemaining;
+    if (this._phaseTotal <= 0) return 0;
+    const remaining = this._phaseTotal - this._phaseElapsed;
+    return remaining > 0 ? remaining : 0;
   }
 
-  get attackDirection(): AttackDirection {
-    return this._attackDirection;
+  /**
+   * Current direction — single field after FSM v2's direction unification
+   * (#139). The semantic interpretation depends on `state`: in Blocking /
+   * Parry it's the block direction, otherwise it's the attack direction
+   * (or the most recent attack direction in Idle).
+   */
+  get direction(): Direction {
+    return this._direction;
   }
 
-  get blockDirection(): BlockDirection {
-    return this._blockDirection;
+  /**
+   * Backward-compat alias of `direction`. Kept so existing CombatSystem
+   * mirroring (which writes the old `attackDirection`/`blockDirection` ECS
+   * slots) doesn't have to fork on state. With the unified enum, both ECS
+   * slots receive the same numeric value.
+   */
+  get attackDirection(): Direction {
+    return this._direction;
+  }
+
+  /** Backward-compat alias of `direction`. Same value as `attackDirection`. */
+  get blockDirection(): Direction {
+    return this._direction;
   }
 
   get weaponConfig(): WeaponConfig {
     return this._weaponConfig;
   }
 
-  /** Drain pending stamina events (caller is responsible for applying them) */
+  /**
+   * True iff the entity is in `Blocking` and within the parry window AND
+   * the Blocking entry was an RMB just-press (not held-from-Parry).
+   * DamageSystem reads this to decide between Parry vs BlockedHit for an
+   * incoming attack.
+   */
+  get parryActive(): boolean {
+    if (this._state !== CombatState.Blocking) return false;
+    if (!this._blockingEntryWasJustPress) return false;
+    return this._phaseElapsed <= this._weaponConfig.parryWindow;
+  }
+
+  /**
+   * True iff the next Recovery entry will use `weapon.comboRecovery` instead
+   * of `weapon.recovery`. Set when an Attack is buffered during Recovery,
+   * reset on Idle entry.
+   */
+  get isComboRecovery(): boolean {
+    return this._isComboRecovery;
+  }
+
+  /**
+   * True iff the most recent Blocking entry was triggered by an RMB
+   * just-press. Used by `parryActive`; exposed for tests + future
+   * networking authority that needs to replay the parry-window decision.
+   */
+  get blockingEntryWasJustPress(): boolean {
+    return this._blockingEntryWasJustPress;
+  }
+
+  /** Drain pending stamina events (caller is responsible for applying them). */
   drainStaminaEvents(): FSMStaminaEvent[] {
     const events = this._pendingStaminaEvents;
     this._pendingStaminaEvents = [];
     return events;
   }
 
-  /** Set a new weapon config (e.g., on weapon switch) */
+  /** Set a new weapon config (e.g. on weapon swap). */
   setWeaponConfig(config: WeaponConfig): void {
     this._weaponConfig = config;
+  }
+
+  /**
+   * Set the direction without changing state. Used by the training dummy
+   * debug tool (J key) to cycle which direction it's blocking mid-block,
+   * without re-entering Blocking and re-opening the parry window.
+   *
+   * Named `setBlockDirection` for backward-compat with the dummy code; with
+   * FSM v2's unified direction enum (#139) this writes the same `_direction`
+   * field as Attack/Block transitions.
+   */
+  setBlockDirection(direction: Direction): void {
+    this._direction = direction;
+  }
+
+  // ── Phase math (kept as methods for backward-compat) ─
+
+  /**
+   * Total ticks for the current phase. Same as the `phaseTotal` getter —
+   * kept as a method because some external callers (CombatSystem, HUD)
+   * still use this name.
+   */
+  getPhaseTotal(): number {
+    return this._phaseTotal;
+  }
+
+  /**
+   * Normalized progress through the current phase, in [0, 1]. Returns 0
+   * when the current phase has no fixed duration (Idle, Blocking).
+   *
+   * `t = phaseElapsed / phaseTotal`
+   */
+  getPhaseT(): number {
+    if (this._phaseTotal <= 0) return 0;
+    if (this._phaseElapsed <= 0) return 0;
+    if (this._phaseElapsed >= this._phaseTotal) return 1;
+    return this._phaseElapsed / this._phaseTotal;
   }
 
   // ── Turncap ──────────────────────────────────────────
 
   /**
-   * Get the current maximum turn rate in radians/tick.
-   * Returns Infinity when there is no cap (Idle, Block, etc.).
+   * Maximum turn rate in radians/tick for the current state.
+   * Returns `Infinity` when no cap applies (Idle / Blocking / Parry).
+   *
+   * Per `docs/combat-fsm-v2.md` §6: Parry is intentionally uncapped —
+   * the parrier is rewarded with free aim while the attacker is staggered.
+   * HitStun uses `weapon.turncap.hitStun` (NEW in FSM v2 schema, #131).
    */
   getCurrentTurncap(): number {
     switch (this._state) {
       case CombatState.Windup:
         return this._weaponConfig.turncap.windup;
       case CombatState.Release:
-      case CombatState.Riposte:
         return this._weaponConfig.turncap.release;
       case CombatState.Recovery:
-      case CombatState.Feint:
         return this._weaponConfig.turncap.recovery;
+      case CombatState.HitStun:
+        return this._weaponConfig.turncap.hitStun;
       default:
+        // Idle, Blocking, Parry — no cap (Parry is intentionally uncapped).
         return Infinity;
     }
   }
@@ -121,95 +317,68 @@ export class CombatFSM {
   // ── Transition logic ─────────────────────────────────
 
   /**
-   * Check whether a given input can produce a transition from the current state.
+   * Whether a given input can produce a transition from the current state.
+   * This is informational — `transition()` does the same gating before
+   * mutating, so callers don't strictly need to check first.
    */
   canTransition(input: CombatInput): boolean {
+    const s = this._state;
     switch (input) {
       case CombatInput.Attack:
         return (
-          this._state === CombatState.Idle ||
-          this._state === CombatState.Recovery || // combo buffer
-          this._state === CombatState.Windup // morph (different direction)
+          s === CombatState.Idle ||
+          s === CombatState.Recovery || // combo buffer
+          s === CombatState.Windup // morph (different direction)
         );
-
       case CombatInput.Block:
-        return this._state === CombatState.Idle;
-
+        return s === CombatState.Idle || s === CombatState.Recovery;
       case CombatInput.ReleaseBlock:
-        return (
-          this._state === CombatState.Block ||
-          this._state === CombatState.ParryWindow
-        );
-
-      case CombatInput.Feint:
-        return this._state === CombatState.Windup;
-
+        return s === CombatState.Blocking || s === CombatState.Parry;
       case CombatInput.HitReceived:
-        return (
-          this._state !== CombatState.HitStun &&
-          this._state !== CombatState.Stunned
-        );
-
+        return s !== CombatState.HitStun;
       case CombatInput.BlockedHit:
-        return (
-          this._state === CombatState.Block ||
-          this._state === CombatState.ParryWindow
-        );
-
-      case CombatInput.WasParried:
-        return this._state === CombatState.Release;
-
+        return s === CombatState.Blocking || s === CombatState.Release;
       case CombatInput.ParryTriggered:
-        return this._state === CombatState.ParryWindow;
-
-      case CombatInput.HitLanded:
-        return this._state === CombatState.Release;
-
+        return s === CombatState.Blocking;
+      case CombatInput.WasParried:
+        return s === CombatState.Release;
+      case CombatInput.BlockBreak:
+        return s === CombatState.Blocking;
       default:
         return false;
     }
   }
 
   /**
-   * Attempt a state transition based on the given input and direction.
-   * Returns true if a transition occurred.
+   * Single entry point for state changes. Returns true iff a transition
+   * (or in-state side-effect like a buffered combo) actually occurred.
+   *
+   * - `Attack`: payload = `Direction`
+   * - `Block`: payload = `Direction`
+   * - others: payload ignored
    */
-  transition(
-    input: CombatInput,
-    attackDir?: AttackDirection,
-    blockDir?: BlockDirection,
-  ): boolean {
+  transition(input: CombatInput, payload?: number): boolean {
     if (!this.canTransition(input)) return false;
 
     switch (input) {
       case CombatInput.Attack:
-        return this._handleAttack(attackDir ?? AttackDirection.Stab);
-
+        return this._handleAttack((payload ?? Direction.Stab) as Direction);
       case CombatInput.Block:
-        return this._handleBlock(blockDir ?? BlockDirection.Top);
-
+        // Default to Overhead (formerly BlockDirection.Top) when no payload
+        // is supplied — matches the v1 default-to-Top fallback semantics.
+        return this._handleBlock((payload ?? Direction.Overhead) as Direction);
       case CombatInput.ReleaseBlock:
         return this._handleReleaseBlock();
-
-      case CombatInput.Feint:
-        return this._handleFeint();
-
       case CombatInput.HitReceived:
         return this._handleHitReceived();
-
       case CombatInput.BlockedHit:
         return this._handleBlockedHit();
-
-      case CombatInput.WasParried:
-        return this._handleWasParried();
-
       case CombatInput.ParryTriggered:
         return this._handleParryTriggered();
-
-      case CombatInput.HitLanded:
-        // Hit landed — no state change for attacker, they continue through Release
-        return true;
-
+      case CombatInput.WasParried:
+        return this._handleWasParried();
+      case CombatInput.BlockBreak:
+        return this._handleBlockBreak();
       default:
         return false;
     }
@@ -218,231 +387,271 @@ export class CombatFSM {
   // ── Tick (called once per fixed update) ──────────────
 
   /**
-   * Advance the FSM by one tick. Decrements timers and auto-transitions
-   * when timers expire.
+   * Advance the FSM by one tick. Increments `phaseElapsed` and triggers an
+   * auto-transition when the current phase finishes.
+   *
+   * `phaseElapsed` increments in every state EXCEPT `Idle` — in Idle there's
+   * no animation-relevant clock to track. Blocking has no fixed duration
+   * (`phaseTotal == 0`) but still increments because the parry-window check
+   * compares `phaseElapsed` against `weapon.parryWindow`.
    */
   tick(): void {
-    if (this._ticksRemaining > 0) {
-      this._ticksRemaining--;
-
-      if (this._ticksRemaining === 0) {
-        this._onTimerExpired();
-      }
+    if (this._state === CombatState.Idle) return;
+    this._phaseElapsed++;
+    if (this._phaseTotal > 0 && this._phaseElapsed >= this._phaseTotal) {
+      this._onPhaseEnd();
     }
+  }
+
+  /** Force-reset to Idle (e.g. on death/respawn). */
+  reset(): void {
+    this._transitionTo(CombatState.Idle);
+    this._phaseElapsed = 0;
+    this._phaseTotal = 0;
+    this._pendingStaminaEvents = [];
+    this._comboBuffered = false;
+    this._isComboRecovery = false;
+    this._blockingEntryWasJustPress = false;
+    this._rmbHeldDuringParry = false;
+  }
+
+  // ── Private: the ONLY state-mutator ─────────────────
+
+  /**
+   * **The single place `_state` is written.** All entry/exit side effects
+   * (timer reset, stamina emission, direction recording) happen in the
+   * `_enterX` helpers around this call.
+   */
+  private _transitionTo(newState: CombatState): void {
+    this._state = newState;
   }
 
   // ── Private: input handlers ──────────────────────────
 
-  private _handleAttack(direction: AttackDirection): boolean {
+  private _handleAttack(direction: Direction): boolean {
     if (this._state === CombatState.Recovery) {
-      // Buffer combo input — will fire when Recovery timer expires
+      // Buffer combo — fires when Recovery ends. The resulting next Recovery
+      // will use `comboRecovery` ticks (set `_isComboRecovery = true` here so
+      // the flag survives the Windup/Release/Recovery chain).
       this._comboBuffered = true;
       this._comboDirection = direction;
+      this._isComboRecovery = true;
       return true;
     }
-
     if (this._state === CombatState.Windup) {
-      // Morph: change attack direction, restart windup
-      if (direction === this._attackDirection) return false; // same direction = no morph
-      this._attackDirection = direction;
-      this._ticksRemaining = this._weaponConfig.windup[direction];
-      // No extra stamina cost for morph
+      // Morph — same FSM, swap direction, restart windup, no extra stamina.
+      // Same direction = no-op (avoid burning the morph chance).
+      if (direction === this._direction) return false;
+      this._enterWindup(direction, /* isMorph */ true);
       return true;
     }
-
     // Idle → Windup
-    this._enterWindup(direction);
+    this._enterWindup(direction, /* isMorph */ false);
     return true;
   }
 
-  private _handleBlock(direction: BlockDirection): boolean {
-    this._blockDirection = direction;
-    this._state = CombatState.ParryWindow;
-    this._ticksRemaining = this._weaponConfig.parryWindow;
+  private _handleBlock(blockDir: Direction): boolean {
+    // Block from Idle or Recovery → Blocking with fresh parry window.
+    // Cancel any buffered combo so RMB cleanly aborts a chain.
+    this._comboBuffered = false;
+    this._isComboRecovery = false;
+    this._direction = blockDir;
+    this._enterBlocking(/* wasJustPress */ true);
     return true;
   }
 
   private _handleReleaseBlock(): boolean {
-    this._state = CombatState.Idle;
-    this._ticksRemaining = 0;
-    return true;
-  }
-
-  private _handleFeint(): boolean {
-    // Windup → Feint → Recovery
-    this._state = CombatState.Feint;
-    // Feint has a brief duration then auto-transitions to Recovery
-    this._ticksRemaining = 3; // brief feint animation (~50ms)
-    this._pendingStaminaEvents.push({ type: 'feint' });
-    return true;
+    if (this._state === CombatState.Blocking) {
+      this._enterIdle();
+      return true;
+    }
+    if (this._state === CombatState.Parry) {
+      // Stay in Parry; phase-end will route to Idle instead of Blocking.
+      this._rmbHeldDuringParry = false;
+      return true;
+    }
+    return false;
   }
 
   private _handleHitReceived(): boolean {
-    this._state = CombatState.HitStun;
-    this._ticksRemaining = this._weaponConfig.hitStunTicks;
-    this._comboBuffered = false;
+    this._enterHitStun(HitStunMode.Normal);
     return true;
   }
 
   private _handleBlockedHit(): boolean {
-    // Stay in Block state, stamina drain handled externally
-    this._pendingStaminaEvents.push({ type: 'block' });
+    if (this._state === CombatState.Blocking) {
+      // Defender successfully blocks. Stays in Blocking; emit block stamina.
+      // Re-enter is NOT triggered — phaseElapsed continues so a chained
+      // hit during the same parry window still resolves correctly.
+      this._pendingStaminaEvents.push({ type: 'block' });
+      return true;
+    }
+    if (this._state === CombatState.Release) {
+      // Attacker's swing was blocked. Drop into Recovery (no extra stamina).
+      this._enterRecovery();
+      return true;
+    }
+    return false;
+  }
+
+  private _handleParryTriggered(): boolean {
+    if (this._state !== CombatState.Blocking) return false;
+    this._enterParry();
     return true;
   }
 
   private _handleWasParried(): boolean {
-    // Attacker gets stunned from parry
-    this._state = CombatState.Stunned;
-    this._ticksRemaining = this._weaponConfig.parryStunTicks;
-    this._comboBuffered = false;
+    if (this._state !== CombatState.Release) return false;
+    this._enterHitStun(HitStunMode.Parried);
     return true;
   }
 
-  private _handleParryTriggered(): boolean {
-    // Successful parry — transition to Riposte-ready state
-    // The parry window entity enters Riposte, which acts like Windup
-    // but with Release-level turncap for the counter-attack
-    this._state = CombatState.Riposte;
-    // Riposte windup is shorter than normal — use the stab windup as baseline
-    this._ticksRemaining = Math.max(
-      3,
-      Math.floor(this._weaponConfig.windup[this._attackDirection] * 0.5),
-    );
-    this._pendingStaminaEvents.push({ type: 'parry' });
+  private _handleBlockBreak(): boolean {
+    if (this._state !== CombatState.Blocking) return false;
+    this._enterHitStun(HitStunMode.BlockBreak);
     return true;
   }
 
   // ── Private: state entry helpers ─────────────────────
 
-  private _enterWindup(direction: AttackDirection): void {
-    this._state = CombatState.Windup;
-    this._attackDirection = direction;
-    this._ticksRemaining = this._weaponConfig.windup[direction];
-    this._pendingStaminaEvents.push({ type: 'attack' });
+  private _enterIdle(): void {
+    this._transitionTo(CombatState.Idle);
+    this._phaseElapsed = 0;
+    this._phaseTotal = 0;
+    this._comboBuffered = false;
+    this._isComboRecovery = false;
+    this._blockingEntryWasJustPress = false;
+    this._rmbHeldDuringParry = false;
+  }
+
+  private _enterWindup(direction: Direction, isMorph: boolean): void {
+    this._transitionTo(CombatState.Windup);
+    this._direction = direction;
+    this._phaseElapsed = 0;
+    this._phaseTotal = this._weaponConfig.windup[direction];
+    if (!isMorph) {
+      // Morph reuses the original swing's stamina charge — only fresh
+      // entries from Idle or combo-buffered Windup spend stamina.
+      this._pendingStaminaEvents.push({ type: 'attack' });
+    }
   }
 
   private _enterRelease(): void {
-    this._state = CombatState.Release;
-    this._ticksRemaining = this._weaponConfig.release[this._attackDirection];
+    this._transitionTo(CombatState.Release);
+    this._phaseElapsed = 0;
+    this._phaseTotal = this._weaponConfig.release[this._direction];
   }
 
-  private _enterRecovery(isCombo: boolean): void {
-    this._state = CombatState.Recovery;
-    this._isComboRecovery = isCombo;
-    const timings = isCombo
+  private _enterRecovery(): void {
+    this._transitionTo(CombatState.Recovery);
+    this._phaseElapsed = 0;
+    const timings = this._isComboRecovery
       ? this._weaponConfig.comboRecovery
       : this._weaponConfig.recovery;
-    this._ticksRemaining = timings[this._attackDirection];
+    this._phaseTotal = timings[this._direction];
   }
 
-  // ── Private: timer expiry auto-transitions ───────────
+  private _enterBlocking(wasJustPress: boolean): void {
+    this._transitionTo(CombatState.Blocking);
+    this._phaseElapsed = 0;
+    this._phaseTotal = 0; // no fixed duration; exits on input
+    this._blockingEntryWasJustPress = wasJustPress;
+  }
 
-  private _onTimerExpired(): void {
+  private _enterParry(): void {
+    this._transitionTo(CombatState.Parry);
+    this._phaseElapsed = 0;
+    this._phaseTotal = this._weaponConfig.parryRecovery;
+    // Default: assume RMB still held — phase-end returns to Blocking.
+    // ReleaseBlock during Parry flips this to false → phase-end → Idle.
+    this._rmbHeldDuringParry = true;
+    this._pendingStaminaEvents.push({ type: 'parry' });
+  }
+
+  private _enterHitStun(mode: HitStunMode): void {
+    this._transitionTo(CombatState.HitStun);
+    this._phaseElapsed = 0;
+    switch (mode) {
+      case HitStunMode.Parried:
+        this._phaseTotal = this._weaponConfig.parryStunTicks;
+        break;
+      case HitStunMode.BlockBreak:
+        this._phaseTotal = this._weaponConfig.blockBreakStunTicks;
+        break;
+      case HitStunMode.Normal:
+      default:
+        this._phaseTotal = this._weaponConfig.hitStunTicks;
+        break;
+    }
+    // HitStun cancels any pending swing chain — combo buffer / combo flag
+    // both clear so the post-stun Recovery → Idle path is clean.
+    this._comboBuffered = false;
+    this._isComboRecovery = false;
+  }
+
+  // ── Private: phase-end auto-transitions ──────────────
+
+  private _onPhaseEnd(): void {
     switch (this._state) {
       case CombatState.Windup:
-        // Windup → Release
         this._enterRelease();
         break;
 
       case CombatState.Release:
-        // Release → Recovery
-        this._enterRecovery(false);
+        this._enterRecovery();
         break;
 
       case CombatState.Recovery:
         if (this._comboBuffered) {
-          // Combo chain: Recovery → Windup with combo recovery
+          // Chain into the next swing. `_isComboRecovery` stays true so the
+          // *next* Recovery uses `comboRecovery` ticks. Dir consumed here.
           const dir = this._comboDirection;
           this._comboBuffered = false;
-          this._enterWindup(dir);
+          this._enterWindup(dir, /* isMorph */ false);
         } else {
-          this._state = CombatState.Idle;
+          this._enterIdle();
         }
         break;
 
-      case CombatState.ParryWindow:
-        // Parry window expired → transition to regular Block
-        this._state = CombatState.Block;
-        this._ticksRemaining = 0; // Block has no timer (held state)
-        break;
-
-      case CombatState.Riposte:
-        // Riposte windup complete → Release
-        this._enterRelease();
-        break;
-
-      case CombatState.Feint:
-        // Feint → Recovery (full recovery, not combo)
-        this._enterRecovery(false);
+      case CombatState.Parry:
+        if (this._rmbHeldDuringParry) {
+          // Common case — RMB still held. Re-enter Blocking, but WITHOUT a
+          // fresh parry window (that would let a defender cheese parry
+          // forever by parry-then-block-again).
+          this._enterBlocking(/* wasJustPress */ false);
+        } else {
+          // RMB was released during Parry — return to Idle.
+          this._enterIdle();
+        }
         break;
 
       case CombatState.HitStun:
-        // HitStun → Recovery
-        this._enterRecovery(false);
+        // HitStun → Recovery so the post-stun animation lands cleanly,
+        // then Recovery → Idle on its own phase-end.
+        this._enterRecovery();
         break;
 
-      case CombatState.Stunned:
-        // Stunned (from parry) → Recovery
-        this._enterRecovery(false);
-        break;
-
-      case CombatState.Clash:
-        // Clash → Recovery
-        this._enterRecovery(false);
-        break;
-
+      // Idle and Blocking have no fixed duration — `tick()` won't fire
+      // _onPhaseEnd for them because `phaseTotal == 0`.
       default:
-        // Idle, Block — no auto-transition
         break;
     }
-  }
-
-  // ── Utility ──────────────────────────────────────────
-
-  /**
-   * Get the stamina cost for the current transition/state.
-   * Returns the cost type string or null if no cost applies.
-   */
-  getStaminaCostType(): 'attack' | 'block' | 'parry' | 'feint' | null {
-    switch (this._state) {
-      case CombatState.Windup:
-      case CombatState.Release:
-        return 'attack';
-      case CombatState.Block:
-      case CombatState.ParryWindow:
-        return 'block';
-      case CombatState.Riposte:
-        return 'parry';
-      case CombatState.Feint:
-        return 'feint';
-      default:
-        return null;
-    }
-  }
-
-  /** Force-reset to Idle (e.g., on death/respawn) */
-  reset(): void {
-    this._state = CombatState.Idle;
-    this._ticksRemaining = 0;
-    this._comboBuffered = false;
-    this._pendingStaminaEvents = [];
-    this._isComboRecovery = false;
   }
 }
 
 // ── FSM Registry (side-table for per-entity instances) ───
 
-/** Map<entityId, CombatFSM> — bitECS can't store objects in components */
+/** `Map<entityId, CombatFSM>` — bitECS can't store objects in components. */
 export const fsmRegistry = new Map<number, CombatFSM>();
 
-/** Create and register an FSM for an entity */
+/** Create and register an FSM for an entity. */
 export function createFSM(entityId: number, weaponConfig: WeaponConfig): CombatFSM {
   const fsm = new CombatFSM(weaponConfig);
   fsmRegistry.set(entityId, fsm);
   return fsm;
 }
 
-/** Remove an entity's FSM */
+/** Remove an entity's FSM. */
 export function removeFSM(entityId: number): void {
   fsmRegistry.delete(entityId);
 }

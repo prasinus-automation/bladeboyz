@@ -1,5 +1,5 @@
 import RAPIER from '@dimforge/rapier3d-compat';
-import { defineQuery } from 'bitecs';
+import { defineQuery, hasComponent } from 'bitecs';
 import {
   Position,
   PreviousPosition,
@@ -9,8 +9,9 @@ import {
   Player,
   PhysicsBody,
   MovementState,
+  MovementIntent,
+  DeadTag,
 } from '../components';
-import { InputManager } from '../../input/InputManager';
 import { CameraController } from '../../rendering/CameraController';
 import type { GameWorld } from '../../core/types';
 import {
@@ -19,13 +20,23 @@ import {
   CROUCH_MULTIPLIER,
   GRAVITY,
   JUMP_VELOCITY,
-  GROUND_CAST_DISTANCE,
   CHARACTER_CONTROLLER_OFFSET,
   ACCELERATION_TIME,
   FIXED_TIMESTEP,
+  MAX_SLOPE_CLIMB_ANGLE,
+  MIN_SLOPE_SLIDE_ANGLE,
+  AUTOSTEP_MAX_HEIGHT,
+  AUTOSTEP_MIN_WIDTH,
+  SNAP_TO_GROUND_DISTANCE,
 } from '../../core/types';
 
-const playerQuery = defineQuery([Player, Position, Velocity, PhysicsBody, MovementState]);
+const playerQuery = defineQuery([
+  Player,
+  Position,
+  MovementIntent,
+  MovementState,
+  PhysicsBody,
+]);
 
 // Rapier character controller (created once)
 let characterController: RAPIER.KinematicCharacterController | null = null;
@@ -35,6 +46,9 @@ const bodyByEid = new Map<number, RAPIER.RigidBody>();
 /** Lookup: entity ID -> Rapier Collider */
 const colliderByEid = new Map<number, RAPIER.Collider>();
 
+/** Tick counter (used for MovementState.lastJumpTick). */
+let movementTick = 0;
+
 /**
  * Reset module-level state. Used by tests to ensure clean isolation.
  */
@@ -42,6 +56,7 @@ export function resetMovementState(): void {
   characterController = null;
   bodyByEid.clear();
   colliderByEid.clear();
+  movementTick = 0;
 }
 
 /**
@@ -61,38 +76,73 @@ export function registerPhysicsBody(
 }
 
 /**
- * MovementSystem — WASD movement with Rapier kinematic character controller.
+ * Look up the Rapier RigidBody registered for an entity, or undefined if
+ * the entity has no physics body (or hasn't been registered yet).
  *
- * - Reads input for movement direction (relative to camera yaw)
- * - Sprint (Shift), crouch (Ctrl), jump (Space)
- * - Applies gravity when airborne
- * - Uses Rapier character controller for collision resolution
- * - Short acceleration ramp for snappy feel
+ * Use this rather than `world.physicsWorld.getRigidBody(PhysicsBody.bodyHandle[eid])`:
+ * Rapier handles are composite floats that get truncated into the ui32
+ * `PhysicsBody.bodyHandle` slot, so that lookup path is lossy. Our eid →
+ * body Map is the source of truth (set by `registerPhysicsBody` at entity
+ * creation).
+ *
+ * Added for #134 so `processRespawns` can call `setNextKinematicTranslation`
+ * on a respawning entity's body. Future systems that need to teleport or
+ * impulse an entity should use this same accessor.
  */
-export function createMovementSystem(
-  world: GameWorld,
-  input: InputManager,
-  cameraController: CameraController,
-) {
+export function getPhysicsBody(eid: number): RAPIER.RigidBody | undefined {
+  return bodyByEid.get(eid);
+}
+
+/**
+ * MovementSystem — applies `MovementIntent` to kinematic character bodies.
+ *
+ * Reads:
+ *  - `MovementIntent` (world-space normalized direction + sprint/crouch/jump flags)
+ *  - `MovementState.verticalVelocity` (gravity/jump bookkeeping)
+ *  - `MovementState.grounded` (set last tick by the controller)
+ *
+ * Writes:
+ *  - `Position` (post-physics, read back from `body.translation()` to avoid
+ *    divergence if Rapier clamps the kinematic step)
+ *  - `MovementState.{grounded, sprinting, crouching, speedFactor, verticalVelocity}`
+ *  - `Rotation.{x, y}` from camera yaw/pitch (so other systems get a stable yaw)
+ *  - Clears `MovementIntent.jumpRequested` after consumption.
+ *
+ * Tick contract: runs AFTER `inputSystem()` and BEFORE `physicsWorld.step()`.
+ * Mesh sync is NOT in this system — it runs in `loop.render(alpha)` with
+ * interpolation between PreviousPosition and Position so the visual model
+ * doesn't snap at 60Hz.
+ */
+export function createMovementSystem(world: GameWorld, cameraController: CameraController) {
   // Create kinematic character controller
   characterController = world.physicsWorld.createCharacterController(CHARACTER_CONTROLLER_OFFSET);
-  characterController.enableAutostep(0.3, 0.2, true);
-  characterController.enableSnapToGround(0.3);
+  characterController.enableAutostep(AUTOSTEP_MAX_HEIGHT, AUTOSTEP_MIN_WIDTH, true);
+  characterController.enableSnapToGround(SNAP_TO_GROUND_DISTANCE);
   characterController.setApplyImpulsesToDynamicBodies(true);
+  characterController.setMaxSlopeClimbAngle(MAX_SLOPE_CLIMB_ANGLE);
+  characterController.setMinSlopeSlideAngle(MIN_SLOPE_SLIDE_ANGLE);
 
   const accelRate = 1.0 / Math.max(ACCELERATION_TIME / FIXED_TIMESTEP, 1); // per tick
 
   return function movementSystem(_dt: number): void {
+    movementTick++;
     const entities = playerQuery(world.ecs);
 
     for (let i = 0; i < entities.length; i++) {
       const eid = entities[i];
+
+      // Dead entities (player or bot) don't read intent and don't move.
+      // processDeaths zeroed Velocity; Position stays put. The kinematic
+      // body stays at its last live translation until processRespawns
+      // teleports it to a fresh spawn point.
+      if (hasComponent(world.ecs, DeadTag, eid)) continue;
+
       const body = bodyByEid.get(eid);
       const collider = colliderByEid.get(eid);
 
       if (!body || !collider || !characterController) continue;
 
-      // Save previous position for interpolation
+      // Save previous position for render-time interpolation
       PreviousPosition.x[eid] = Position.x[eid];
       PreviousPosition.y[eid] = Position.y[eid];
       PreviousPosition.z[eid] = Position.z[eid];
@@ -100,16 +150,17 @@ export function createMovementSystem(
       PreviousRotation.y[eid] = Rotation.y[eid];
       PreviousRotation.z[eid] = Rotation.z[eid];
 
-      // Read input
-      const forward = (input.isKeyDown('KeyW') ? 1 : 0) - (input.isKeyDown('KeyS') ? 1 : 0);
-      const strafe = (input.isKeyDown('KeyD') ? 1 : 0) - (input.isKeyDown('KeyA') ? 1 : 0);
-      const wantSprint = input.isKeyDown('ShiftLeft') || input.isKeyDown('ShiftRight');
-      const wantCrouch = input.isKeyDown('ControlLeft') || input.isKeyDown('ControlRight');
-      const wantJump = input.isKeyDown('Space');
+      // Read intent (world-space direction, already normalized + yaw-rotated by InputSystem)
+      const moveX = MovementIntent.moveX[eid];
+      const moveZ = MovementIntent.moveZ[eid];
+      const sprintIntent = MovementIntent.sprint[eid] === 1;
+      const crouchIntent = MovementIntent.crouch[eid] === 1;
+      const jumpIntent = MovementIntent.jumpRequested[eid] === 1;
 
-      // Update movement state
-      MovementState.sprinting[eid] = (wantSprint && !wantCrouch && forward > 0) ? 1 : 0;
-      MovementState.crouching[eid] = wantCrouch ? 1 : 0;
+      // Mirror sprint/crouch flags onto MovementState so HUD/animation can
+      // read a single source of truth without poking MovementIntent.
+      MovementState.sprinting[eid] = sprintIntent ? 1 : 0;
+      MovementState.crouching[eid] = crouchIntent ? 1 : 0;
 
       // Determine speed multiplier
       let speedMult = 1.0;
@@ -119,60 +170,53 @@ export function createMovementSystem(
         speedMult = CROUCH_MULTIPLIER;
       }
 
-      // Calculate movement direction relative to camera yaw
-      const yaw = cameraController.getYaw();
-      const sinYaw = Math.sin(yaw);
-      const cosYaw = Math.cos(yaw);
-
-      let moveX = 0;
-      let moveZ = 0;
-
-      if (forward !== 0 || strafe !== 0) {
-        // Forward is -Z in Three.js convention
-        moveX = strafe * cosYaw - forward * sinYaw;
-        moveZ = -strafe * sinYaw - forward * cosYaw;
-
-        // Normalize diagonal movement
-        const len = Math.sqrt(moveX * moveX + moveZ * moveZ);
-        if (len > 0) {
-          moveX /= len;
-          moveZ /= len;
-        }
-      }
-
-      // Acceleration ramp
-      const hasInput = forward !== 0 || strafe !== 0;
+      // Acceleration ramp — has horizontal input?
+      const hasInput = moveX !== 0 || moveZ !== 0;
       if (hasInput) {
         MovementState.speedFactor[eid] = Math.min(1.0, MovementState.speedFactor[eid] + accelRate);
       } else {
         // Decelerate faster for snappy stop
-        MovementState.speedFactor[eid] = Math.max(0.0, MovementState.speedFactor[eid] - accelRate * 2);
+        MovementState.speedFactor[eid] = Math.max(
+          0.0,
+          MovementState.speedFactor[eid] - accelRate * 2,
+        );
       }
 
       const speed = WALK_SPEED * speedMult * MovementState.speedFactor[eid];
 
-      // Ground detection via character controller grounding
+      // Ground detection from previous tick
       const wasGrounded = MovementState.grounded[eid] === 1;
 
-      // Apply gravity
+      // Vertical velocity: gravity + jump
       if (!wasGrounded) {
-        Velocity.y[eid] += GRAVITY * FIXED_TIMESTEP;
+        MovementState.verticalVelocity[eid] += GRAVITY * FIXED_TIMESTEP;
       } else {
-        // On ground, reset downward velocity
-        if (Velocity.y[eid] < 0) {
-          Velocity.y[eid] = 0;
+        // On ground, clamp downward velocity
+        if (MovementState.verticalVelocity[eid] < 0) {
+          MovementState.verticalVelocity[eid] = 0;
         }
-
-        // Jump
-        if (wantJump) {
-          Velocity.y[eid] = JUMP_VELOCITY;
+        // Edge-triggered jump
+        if (jumpIntent) {
+          MovementState.verticalVelocity[eid] = JUMP_VELOCITY;
           MovementState.grounded[eid] = 0;
+          MovementState.lastJumpTick[eid] = movementTick;
         }
       }
+      // Consume the jump intent regardless of grounded — InputSystem will
+      // re-set it next tick if Space is still on the rising edge (it won't be
+      // unless the user lets go and presses again).
+      MovementIntent.jumpRequested[eid] = 0;
 
-      // Compute desired movement
+      // Transitional bridge: mirror verticalVelocity to legacy Velocity.y
+      // so AnimationSystem's airborne pose detection keeps working until
+      // it migrates to read MovementState.verticalVelocity directly.
+      // See AGENTS.md "Out of scope" note in #104 — animation locomotion
+      // is a separate issue.
+      Velocity.y[eid] = MovementState.verticalVelocity[eid];
+
+      // Compute desired movement (world space, scaled to one fixed-tick worth)
       const desiredX = moveX * speed * FIXED_TIMESTEP;
-      const desiredY = Velocity.y[eid] * FIXED_TIMESTEP;
+      const desiredY = MovementState.verticalVelocity[eid] * FIXED_TIMESTEP;
       const desiredZ = moveZ * speed * FIXED_TIMESTEP;
 
       const desiredMovement = new world.rapier.Vector3(desiredX, desiredY, desiredZ);
@@ -181,7 +225,7 @@ export function createMovementSystem(
       characterController.computeColliderMovement(collider, desiredMovement);
       const correctedMovement = characterController.computedMovement();
 
-      // Apply movement to body
+      // Apply movement to body (advance one fixed-tick worth)
       const currentPos = body.translation();
       const newPos = new world.rapier.Vector3(
         currentPos.x + correctedMovement.x,
@@ -193,12 +237,17 @@ export function createMovementSystem(
       // Update grounded state from character controller
       MovementState.grounded[eid] = characterController.computedGrounded() ? 1 : 0;
 
-      // Sync ECS position from physics
-      Position.x[eid] = newPos.x;
-      Position.y[eid] = newPos.y;
-      Position.z[eid] = newPos.z;
+      // Sync ECS Position from the body's *post-write* translation. Rapier
+      // exposes the kinematic next-translation immediately via .translation()
+      // on bodies created with `kinematicPositionBased`, so this avoids any
+      // chance of ECS Position diverging from Rapier when the controller
+      // clamps the step (e.g. wall-slide).
+      const finalPos = body.translation();
+      Position.x[eid] = finalPos.x;
+      Position.y[eid] = finalPos.y;
+      Position.z[eid] = finalPos.z;
 
-      // Store camera yaw in entity rotation for other systems
+      // Store camera yaw/pitch in entity rotation for animation/HUD
       Rotation.y[eid] = cameraController.getYaw();
       Rotation.x[eid] = cameraController.getPitch();
     }

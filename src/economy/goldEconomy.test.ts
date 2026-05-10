@@ -9,6 +9,7 @@ import {
   resetGoldEconomyListeners,
   type GoldAwardedEvent,
 } from './goldEconomy';
+import { getGold, resetWallet, setGold } from './Wallet';
 
 function createPlayerEntity(world: any, initialGold = 0): number {
   const eid = addEntity(world);
@@ -29,6 +30,9 @@ describe('goldEconomy', () => {
   beforeEach(() => {
     world = createWorld();
     resetGoldEconomyListeners();
+    // Reset Wallet to its default-200 starting state so each test sees a
+    // clean balance for the bridge double-write checks.
+    resetWallet();
   });
 
   describe('GOLD_PER_KILL', () => {
@@ -83,6 +87,34 @@ describe('goldEconomy', () => {
       awardGold(eid, -5, 'admin');
 
       expect(events).toHaveLength(0);
+    });
+
+    it('bridges to Wallet — Wallet.getGold() increments alongside Gold.amount', () => {
+      const eid = createPlayerEntity(world, 0);
+      // resetWallet leaves Wallet at the default DEFAULT_GOLD (200).
+      const before = getGold();
+
+      awardGold(eid, 25, 'kill');
+
+      expect(Gold.amount[eid]).toBe(25);
+      expect(getGold()).toBe(before + 25);
+    });
+
+    it('bridges to Wallet — Wallet.getGold() is not bumped on no-op awards', () => {
+      const eid = createPlayerEntity(world, 50);
+      const before = getGold();
+
+      awardGold(eid, 0, 'admin');
+      awardGold(eid, -10, 'admin');
+
+      expect(getGold()).toBe(before);
+    });
+
+    it('bridge starts from arbitrary Wallet balance and adds amount', () => {
+      const eid = createPlayerEntity(world, 0);
+      setGold(57); // not the default — covers HUD-edited paths
+      awardGold(eid, 25, 'kill');
+      expect(getGold()).toBe(57 + 25);
     });
   });
 
@@ -166,6 +198,29 @@ describe('goldEconomy', () => {
       awardGoldOnKill(world, player, dummy);
 
       expect(events).toHaveLength(0);
+    });
+
+    it('bridges a successful kill to Wallet — HUD and shop balance updates', () => {
+      const player = createPlayerEntity(world, 0);
+      const dummy = createDummyEntity(world);
+      const before = getGold();
+
+      awardGoldOnKill(world, dummy, player);
+
+      expect(Gold.amount[player]).toBe(GOLD_PER_KILL);
+      expect(getGold()).toBe(before + GOLD_PER_KILL);
+    });
+
+    it('does NOT bridge to Wallet when a kill is rejected by a rule', () => {
+      const player = createPlayerEntity(world, 100);
+      const dummy = createDummyEntity(world);
+      const before = getGold();
+
+      awardGoldOnKill(world, player, player); // self-kill
+      awardGoldOnKill(world, player, undefined); // env death
+      awardGoldOnKill(world, player, dummy); // non-player attacker
+
+      expect(getGold()).toBe(before);
     });
   });
 });

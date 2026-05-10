@@ -1,14 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { weaponConfigs } from './WeaponConfig';
-import { AttackDirection } from '../combat/directions';
+import { Direction } from '../combat/directions';
 import './dagger';
 
+// FSM v2 (#88, #131): 4 attack directions — Underhand removed.
 const ALL_DIRS = [
-  AttackDirection.Left,
-  AttackDirection.Right,
-  AttackDirection.Overhead,
-  AttackDirection.Underhand,
-  AttackDirection.Stab,
+  Direction.Left,
+  Direction.Right,
+  Direction.Overhead,
+  Direction.Stab,
 ] as const;
 
 describe('Dagger weapon config', () => {
@@ -20,7 +20,7 @@ describe('Dagger weapon config', () => {
     expect(weaponConfigs['Dagger'].name).toBe('Dagger');
   });
 
-  it('has damage for all 5 attack directions', () => {
+  it('has damage for all 4 attack directions', () => {
     const dmg = weaponConfigs['Dagger'].damage;
     for (const dir of ALL_DIRS) {
       expect(dmg[dir]).toBeDefined();
@@ -30,7 +30,7 @@ describe('Dagger weapon config', () => {
     }
   });
 
-  it('has windup, release, recovery, comboRecovery for all 5 directions', () => {
+  it('has windup, release, recovery, comboRecovery for all 4 directions', () => {
     const cfg = weaponConfigs['Dagger'];
     for (const dir of ALL_DIRS) {
       expect(cfg.windup[dir]).toBeGreaterThan(0);
@@ -73,13 +73,23 @@ describe('Dagger weapon config', () => {
   it('has all required fields', () => {
     const cfg = weaponConfigs['Dagger'];
     expect(cfg.parryWindow).toBeGreaterThan(0);
+    expect(cfg.parryRecovery).toBeGreaterThan(0);          // FSM v2 (#131)
+    expect(cfg.blockBreakStunTicks).toBeGreaterThan(0);    // FSM v2 (#131)
     expect(cfg.staminaCost.block).toBeGreaterThan(0);
     expect(cfg.staminaCost.parry).toBeGreaterThan(0);
-    expect(cfg.staminaCost.feint).toBeGreaterThan(0);
+    // staminaCost.feint is optional in FSM v2 (no Feint state)
     expect(cfg.turncap.windup).toBeGreaterThan(0);
     expect(cfg.turncap.release).toBeGreaterThan(0);
     expect(cfg.turncap.recovery).toBeGreaterThan(0);
+    expect(cfg.turncap.hitStun).toBeGreaterThan(0);        // FSM v2 (#131)
     expect(cfg.parryStunTicks).toBeGreaterThan(0);
     expect(cfg.hitStunTicks).toBeGreaterThan(0);
+  });
+
+  it('has FSM v2 schema values', () => {
+    const cfg = weaponConfigs['Dagger'];
+    expect(cfg.parryRecovery).toBe(8);
+    expect(cfg.blockBreakStunTicks).toBe(24);
+    expect(cfg.turncap.hitStun).toBe(0.005);
   });
 });

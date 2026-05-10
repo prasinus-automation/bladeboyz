@@ -335,6 +335,21 @@ export interface WeaponModelResult {
   group: THREE.Group;
   /** Tracer points in local space along the blade (base → tip) */
   tracerPoints: THREE.Vector3[];
+  /**
+   * Per-weapon grip translation applied to `vm_weapon_attach.position` when
+   * this weapon is mounted on the viewmodel (see #125, doc §4).
+   * In `vm_hand_R` local space. When omitted, the renderer falls back to
+   * `(0, 0, 0)`.
+   */
+  gripOffset?: THREE.Vector3;
+  /**
+   * Per-weapon grip rotation applied to `vm_weapon_attach.rotation` when
+   * this weapon is mounted on the viewmodel (see #125, doc §4).
+   * In `vm_hand_R` local space. When omitted, the renderer falls back to
+   * `(Math.PI * 0.85, 0, 0)` — the legacy hardcoded value tuned for the
+   * longsword.
+   */
+  gripRotation?: THREE.Euler;
 }
 
 /**
@@ -397,5 +412,12 @@ export function createLongswordModel(): WeaponModelResult {
     tracerPoints.push(new THREE.Vector3(0, bladeBase + t * BLADE_H, 0));
   }
 
-  return { group, tracerPoints };
+  // Viewmodel grip data (#125, doc §4.3). Tip points forward — preserves
+  // the legacy `Math.PI * 0.85` behavior the longsword was originally tuned
+  // around. Other weapons override these; iterate visually with #122's
+  // `--debug-viewmodel` overlay if values feel off.
+  const gripOffset = new THREE.Vector3(0, 0, 0);
+  const gripRotation = new THREE.Euler(Math.PI * 0.85, 0, 0);
+
+  return { group, tracerPoints, gripOffset, gripRotation };
 }

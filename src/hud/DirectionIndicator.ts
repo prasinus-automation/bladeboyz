@@ -1,36 +1,55 @@
 /**
  * DirectionIndicator — Mordhau-style compass-rose overlay around the crosshair.
  *
- * Shows 4 cardinal direction wedges (Left, Right, Overhead, Underhand) plus a
- * center ring for Stab. Highlights the active direction based on combat state:
+ * FSM v2 (#139): single unified `Direction` enum (4 values: Overhead=0,
+ * Left=1, Right=2, Stab=3). The HUD draws 3 active arrow wedges (Overhead /
+ * Left / Right) plus a center ring for Stab. The old `Bottom` wedge is
+ * gone — it was reachable in v1 only via `BlockDirection.Bottom`, which
+ * was deleted along with `Underhand` when the direction enum was unified.
+ *
+ * Highlights the active direction based on combat state:
  *   - Idle: dim white preview of current mouse-detected direction
  *   - Windup/Release: red/orange highlight on committed attack direction
- *   - Block/ParryWindow: blue/cyan highlight on committed block direction
+ *   - Blocking/Parry: blue/cyan highlight on committed block direction
  *
  * Hidden when pointer lock is released (inventory/menus open).
  * All elements are HTML/CSS with pointer-events: none.
  */
 
-import { CombatStateComponent } from '../ecs/components';
+import { CombatStateComp } from '../ecs/components';
 
 // Direction enums are const enum so we duplicate the numeric values here
 // to avoid import issues (const enums are erased at compile time).
-// AttackDirection: Left=0, Right=1, Overhead=2, Underhand=3, Stab=4
-// BlockDirection: Left=0, Right=1, Top=2, Bottom=3
-// CombatState: Idle=0, Windup=1, Release=2, Recovery=3, Block=4, ParryWindow=5,
-//              Riposte=6, Feint=7, Clash=8, Stunned=9, HitStun=10
+// Direction (FSM v2 #139): Overhead=0, Left=1, Right=2, Stab=3
+// CombatState (FSM v2 #135): Idle=0, Windup=1, Release=2, Recovery=3,
+//                            Blocking=4, Parry=5, HitStun=6
 
-const enum DirIndex {
-  Left = 0,
-  Right = 1,
-  Top = 2,    // Overhead (attack) / Top (block)
-  Bottom = 3, // Underhand (attack) / Bottom (block)
+const DIR_OVERHEAD = 0;
+const DIR_LEFT = 1;
+const DIR_RIGHT = 2;
+const DIR_STAB = 3;
+
+/**
+ * Map a `Direction` enum value to its arrow index in the `arrows` array.
+ * Returns -1 for `Stab` (which uses the center ring instead).
+ *
+ * Arrow array layout (preserved from v1 for HTML/CSS stability): index 0
+ * = left, 1 = right, 2 = top (Overhead). The unified enum's numeric values
+ * don't line up with arrow indices anymore, so this lookup is required.
+ */
+function arrowIndexForDirection(dir: number): number {
+  switch (dir) {
+    case DIR_LEFT: return 0;
+    case DIR_RIGHT: return 1;
+    case DIR_OVERHEAD: return 2;
+    default: return -1; // Stab (or unknown) → no arrow
+  }
 }
 
 /** Combat states where attack direction is shown actively */
 const ATTACK_ACTIVE_STATES = new Set([1, 2]); // Windup, Release
 /** Combat states where block direction is shown actively */
-const BLOCK_ACTIVE_STATES = new Set([4, 5]); // Block, ParryWindow
+const BLOCK_ACTIVE_STATES = new Set([4, 5]); // Blocking, Parry
 
 /** Color constants */
 const COLOR_IDLE = 'rgba(255, 255, 255, 0.35)';
@@ -39,6 +58,7 @@ const COLOR_BLOCK = '#44aaff';
 const COLOR_DIM = 'rgba(255, 255, 255, 0.12)';
 const COLOR_STAB_IDLE = 'rgba(255, 255, 255, 0.25)';
 const COLOR_STAB_ACTIVE = '#ff4444';
+const COLOR_STAB_BLOCK = '#44aaff';
 
 /** Arrow size/offset config */
 const ARROW_SIZE = 8;
@@ -46,7 +66,8 @@ const ARROW_OFFSET = 18;
 
 export class DirectionIndicator {
   private container: HTMLElement;
-  private arrows: HTMLElement[] = []; // [left, right, top, bottom]
+  /** [left, right, top] — Bottom wedge is gone in FSM v2 (#139). */
+  private arrows: HTMLElement[] = [];
   private stabRing: HTMLElement;
 
   constructor() {
@@ -64,12 +85,12 @@ export class DirectionIndicator {
       height: 0;
     `;
 
-    // Create 4 directional arrows as CSS triangles
+    // Three directional arrows as CSS triangles (Overhead/Left/Right).
+    // Bottom wedge dropped in FSM v2 (#139).
     const configs: { dir: string; dx: number; dy: number; rotation: number }[] = [
-      { dir: 'left',   dx: -ARROW_OFFSET, dy: 0,             rotation: 90  },
-      { dir: 'right',  dx:  ARROW_OFFSET, dy: 0,             rotation: 270 },
-      { dir: 'top',    dx: 0,             dy: -ARROW_OFFSET,  rotation: 180 },
-      { dir: 'bottom', dx: 0,             dy:  ARROW_OFFSET,  rotation: 0   },
+      { dir: 'left',  dx: -ARROW_OFFSET, dy: 0,             rotation: 90  },
+      { dir: 'right', dx:  ARROW_OFFSET, dy: 0,             rotation: 270 },
+      { dir: 'top',   dx: 0,             dy: -ARROW_OFFSET, rotation: 180 },
     ];
 
     for (const cfg of configs) {
@@ -120,55 +141,38 @@ export class DirectionIndicator {
     this.container.style.display = locked ? 'block' : 'none';
     if (!locked) return;
 
-    const state = CombatStateComponent.state[playerEid] ?? 0;
-    const atkDir = CombatStateComponent.attackDirection[playerEid] ?? 0;
-    const blkDir = CombatStateComponent.blockDirection[playerEid] ?? 0;
+    // FSM v2 (#139): single unified `direction` field on CombatStateComp.
+    // The semantic interpretation depends on `state` (block in defensive
+    // states, attack otherwise), but the numeric value is already correct
+    // for either — same enum, same numbers.
+    const state = CombatStateComp.state[playerEid] ?? 0;
+    const direction = CombatStateComp.direction[playerEid] ?? 0;
 
     const isAttackActive = ATTACK_ACTIVE_STATES.has(state);
     const isBlockActive = BLOCK_ACTIVE_STATES.has(state);
     const isIdle = state === 0; // CombatState.Idle
 
-    // Determine which direction index is active and what color to use
-    let activeDir = -1;
+    // Pick highlight color for the active direction.
     let activeColor = COLOR_IDLE;
-    let isStab = false;
+    if (isAttackActive) activeColor = COLOR_ATTACK;
+    else if (isBlockActive) activeColor = COLOR_BLOCK;
 
-    if (isAttackActive) {
-      // Attack: map AttackDirection to arrow index or stab
-      if (atkDir === 4) {
-        // Stab
-        isStab = true;
-      } else {
-        activeDir = atkDir; // Left=0, Right=1, Overhead=2, Underhand=3 maps directly
-      }
-      activeColor = COLOR_ATTACK;
-    } else if (isBlockActive) {
-      // Block: map BlockDirection to arrow index
-      activeDir = blkDir; // Left=0, Right=1, Top=2, Bottom=3 maps directly
-      activeColor = COLOR_BLOCK;
-    } else if (isIdle) {
-      // Idle preview from current attack direction
-      if (atkDir === 4) {
-        isStab = true;
-      } else {
-        activeDir = atkDir;
-      }
-      activeColor = COLOR_IDLE;
+    const showActive = isAttackActive || isBlockActive || isIdle;
+    const isStab = direction === DIR_STAB;
+    const arrowIdx = isStab ? -1 : arrowIndexForDirection(direction);
+
+    // Update arrow colors. arrows[0]=left, arrows[1]=right, arrows[2]=top.
+    for (let i = 0; i < this.arrows.length; i++) {
+      this.arrows[i].style.borderBottomColor =
+        showActive && i === arrowIdx ? activeColor : COLOR_DIM;
     }
 
-    // Update arrow colors
-    for (let i = 0; i < 4; i++) {
-      const arrow = this.arrows[i];
-      if (i === activeDir) {
-        arrow.style.borderBottomColor = activeColor;
-      } else {
-        arrow.style.borderBottomColor = COLOR_DIM;
-      }
-    }
-
-    // Update stab ring
-    if (isStab) {
-      const stabColor = isAttackActive ? COLOR_STAB_ACTIVE : COLOR_STAB_IDLE;
+    // Update stab ring. Three states: dim (not stab), idle (stab in Idle),
+    // attack (stab in Windup/Release), block (stab in Blocking/Parry).
+    if (showActive && isStab) {
+      let stabColor = COLOR_STAB_IDLE;
+      if (isAttackActive) stabColor = COLOR_STAB_ACTIVE;
+      else if (isBlockActive) stabColor = COLOR_STAB_BLOCK;
       this.stabRing.style.borderColor = stabColor;
     } else {
       this.stabRing.style.borderColor = COLOR_DIM;
