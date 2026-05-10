@@ -39,12 +39,9 @@ export async function createGameWorld(canvas?: HTMLCanvasElement): Promise<GameW
   const gravity = new RAPIER.Vector3(0, GRAVITY, 0);
   const physicsWorld = new RAPIER.World(gravity);
 
-  // Ambient + directional light
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-  scene.add(ambientLight);
-  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-  dirLight.position.set(10, 20, 10);
-  scene.add(dirLight);
+  // Lights are owned by `createArena()` (Arena v1, #117) — they're map data,
+  // not engine data. Background stays here because it's a fallback / engine
+  // default; the arena light rig assumes `scene.background = 0x87ceeb`.
 
   // Handle resize
   window.addEventListener('resize', () => {

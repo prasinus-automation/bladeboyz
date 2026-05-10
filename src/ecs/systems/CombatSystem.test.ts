@@ -4,11 +4,16 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createWorld, addEntity, addComponent, type IWorld } from 'bitecs';
-import { CombatStateComponent, CombatStateComp, Player } from '../components';
+import {
+  CombatStateComponent,
+  CombatStateComp,
+  Player,
+  DeadTag,
+} from '../components';
 import { CombatState } from '../../combat/states';
-import { AttackDirection, BlockDirection } from '../../combat/directions';
-import { CombatFSM, CombatInput, fsmRegistry, createFSM } from '../../combat/CombatFSM';
-import { createCombatSystem, resetCombatInputState, computePhaseTotal } from './CombatSystem';
+import { Direction } from '../../combat/directions';
+import { CombatInput, fsmRegistry, createFSM } from '../../combat/CombatFSM';
+import { createCombatSystem, resetCombatInputState } from './CombatSystem';
 import type { WeaponConfig } from '../../weapons/WeaponConfig';
 
 // ── Mock InputManager ────────────────────────────────────
@@ -55,47 +60,44 @@ class MockInputManager {
 
 function createTestWeapon(): WeaponConfig {
   const ticks = {
-    [AttackDirection.Left]: 6,
-    [AttackDirection.Right]: 6,
-    [AttackDirection.Overhead]: 8,
-    [AttackDirection.Underhand]: 7,
-    [AttackDirection.Stab]: 5,
+    [Direction.Left]: 6,
+    [Direction.Right]: 6,
+    [Direction.Overhead]: 8,
+    [Direction.Stab]: 5,
   };
 
   return {
     name: 'TestSword',
     damage: {
-      [AttackDirection.Left]: { head: 50, torso: 35, limb: 25 },
-      [AttackDirection.Right]: { head: 50, torso: 35, limb: 25 },
-      [AttackDirection.Overhead]: { head: 55, torso: 40, limb: 25 },
-      [AttackDirection.Underhand]: { head: 45, torso: 35, limb: 25 },
-      [AttackDirection.Stab]: { head: 45, torso: 40, limb: 20 },
+      [Direction.Left]: { head: 50, torso: 35, limb: 25 },
+      [Direction.Right]: { head: 50, torso: 35, limb: 25 },
+      [Direction.Overhead]: { head: 55, torso: 40, limb: 25 },
+      [Direction.Stab]: { head: 45, torso: 40, limb: 20 },
     },
     windup: { ...ticks },
     release: {
-      [AttackDirection.Left]: 4,
-      [AttackDirection.Right]: 4,
-      [AttackDirection.Overhead]: 5,
-      [AttackDirection.Underhand]: 4,
-      [AttackDirection.Stab]: 3,
+      [Direction.Left]: 4,
+      [Direction.Right]: 4,
+      [Direction.Overhead]: 5,
+      [Direction.Stab]: 3,
     },
     recovery: {
-      [AttackDirection.Left]: 12,
-      [AttackDirection.Right]: 12,
-      [AttackDirection.Overhead]: 15,
-      [AttackDirection.Underhand]: 13,
-      [AttackDirection.Stab]: 10,
+      [Direction.Left]: 12,
+      [Direction.Right]: 12,
+      [Direction.Overhead]: 15,
+      [Direction.Stab]: 10,
     },
     comboRecovery: {
-      [AttackDirection.Left]: 8,
-      [AttackDirection.Right]: 8,
-      [AttackDirection.Overhead]: 10,
-      [AttackDirection.Underhand]: 9,
-      [AttackDirection.Stab]: 6,
+      [Direction.Left]: 8,
+      [Direction.Right]: 8,
+      [Direction.Overhead]: 10,
+      [Direction.Stab]: 6,
     },
     parryWindow: 6,
-    staminaCost: { attack: 15, block: 10, parry: 5, feint: 20 },
-    turncap: { windup: 0.08, release: 0.03, recovery: 0.05 },
+    parryRecovery: 10,
+    blockBreakStunTicks: 28,
+    staminaCost: { attack: 15, block: 10, parry: 5 },
+    turncap: { windup: 0.08, release: 0.03, recovery: 0.05, hitStun: 0.005 },
     tracerPoints: [[0, 0.5, 0]],
     range: 1.4,
     blockStaminaDrain: 10,
@@ -157,30 +159,39 @@ describe('CombatSystem', () => {
     expect(CombatStateComponent.ticksRemaining[playerEid]).toBe(ticksBefore - 1);
   });
 
-  it('right click triggers block from Idle', () => {
+  it('right click triggers block from Idle (Blocking with parry window active)', () => {
+    // FSM v2 (#135): a Block input goes directly to `Blocking`. The parry
+    // window is a *time slice* inside Blocking — read via `parryActive`
+    // on the FSM, not a separate state.
     input.pressMouseButton(2);
     tick();
-    expect(CombatStateComponent.state[playerEid]).toBe(CombatState.ParryWindow);
+    expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Blocking);
+    const fsm = fsmRegistry.get(playerEid);
+    expect(fsm?.parryActive).toBe(true);
   });
 
-  it('right click during Windup triggers feint', () => {
+  it('right click during Windup is a no-op (Feint removed in FSM v2)', () => {
+    // Acceptance: Feint state is gone (#135). RMB during Windup is rejected
+    // by `canTransition(Block)` and the FSM stays in Windup.
     input.pressMouseButton(0);
     tick(); // → Windup
     input.releaseMouseButton(0);
     tick(); // edge detection reset
 
     input.pressMouseButton(2);
-    tick(); // right-click during windup → Feint
-    expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Feint);
+    tick(); // right-click during windup → ignored
+    expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Windup);
   });
 
   it('release right mouse button releases block', () => {
     input.pressMouseButton(2);
-    tick(); // → ParryWindow
+    tick(); // → Blocking
+    expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Blocking);
 
-    // Tick through parry window to get to Block
+    // Tick past the parry window (Blocking has no fixed duration so this
+    // just exercises that Blocking is stable while RMB is held).
     for (let i = 0; i < weapon.parryWindow; i++) tick();
-    expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Block);
+    expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Blocking);
 
     input.releaseMouseButton(2);
     tick(); // → Idle
@@ -192,7 +203,7 @@ describe('CombatSystem', () => {
     tick(); // → Windup
 
     // After one tick, ticksRemaining should be windup - 1 (tick() decremented it)
-    const expected = weapon.windup[AttackDirection.Stab] - 1; // Stab due to no mouse movement
+    const expected = weapon.windup[Direction.Stab] - 1; // Stab due to no mouse movement
     expect(CombatStateComponent.ticksRemaining[playerEid]).toBe(expected);
   });
 
@@ -212,6 +223,27 @@ describe('CombatSystem', () => {
     expect(CombatStateComponent.ticksRemaining[dummyEid]).toBe(weapon.hitStunTicks - 1);
   });
 
+  it('populates CombatStateComp.phaseTotal/phaseT for non-player FSM entities (dummies)', () => {
+    // Regression for issue #120: dummies that have a CombatFSM in fsmRegistry
+    // should get their phase fields populated by CombatSystem each tick,
+    // not just the player.
+    const dummyEid = addEntity(ecsWorld);
+    addComponent(ecsWorld, CombatStateComponent, dummyEid);
+    addComponent(ecsWorld, CombatStateComp, dummyEid);
+    CombatStateComponent.state[dummyEid] = CombatState.Idle;
+
+    const dummyFsm = createFSM(dummyEid, weapon);
+    // Drive it into HitStun so phaseTotal is non-zero (HitStun has a fixed duration).
+    dummyFsm.transition(CombatInput.HitReceived);
+
+    tick();
+    expect(CombatStateComp.state[dummyEid]).toBe(CombatState.HitStun);
+    expect(CombatStateComp.phaseTotal[dummyEid]).toBe(weapon.hitStunTicks);
+    // After 1 tick, phaseElapsed = 1 and phaseT ≈ 1/total.
+    expect(CombatStateComp.phaseElapsed[dummyEid]).toBe(1);
+    expect(CombatStateComp.phaseT[dummyEid]).toBeCloseTo(1 / weapon.hitStunTicks, 5);
+  });
+
   it('complete attack chain syncs all states through ECS', () => {
     // Attack
     input.pressMouseButton(0);
@@ -219,18 +251,18 @@ describe('CombatSystem', () => {
 
     // Tick through windup
     input.releaseMouseButton(0);
-    const windup = weapon.windup[AttackDirection.Stab]; // no mouse movement = Stab
+    const windup = weapon.windup[Direction.Stab]; // no mouse movement = Stab
     for (let i = 1; i < windup; i++) tick();
     tick(); // → Release
     expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Release);
 
     // Tick through release
-    const release = weapon.release[AttackDirection.Stab];
+    const release = weapon.release[Direction.Stab];
     for (let i = 0; i < release; i++) tick();
     expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Recovery);
 
     // Tick through recovery
-    const recovery = weapon.recovery[AttackDirection.Stab];
+    const recovery = weapon.recovery[Direction.Stab];
     for (let i = 0; i < recovery; i++) tick();
     expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Idle);
   });
@@ -248,20 +280,20 @@ describe('CombatSystem', () => {
       input.pressMouseButton(0);
       tick();
       // No mouse movement → Stab direction
-      expect(CombatStateComp.direction[playerEid]).toBe(AttackDirection.Stab);
+      expect(CombatStateComp.direction[playerEid]).toBe(Direction.Stab);
     });
 
     it('syncs phaseTotal for windup state', () => {
       input.pressMouseButton(0);
       tick();
-      expect(CombatStateComp.phaseTotal[playerEid]).toBe(weapon.windup[AttackDirection.Stab]);
+      expect(CombatStateComp.phaseTotal[playerEid]).toBe(weapon.windup[Direction.Stab]);
     });
 
     it('syncs phaseElapsed correctly during windup', () => {
       input.pressMouseButton(0);
       tick(); // 1st tick in Windup
       // After tick: phaseElapsed = phaseTotal - ticksRemaining
-      const phaseTotal = weapon.windup[AttackDirection.Stab];
+      const phaseTotal = weapon.windup[Direction.Stab];
       const ticksRemaining = CombatStateComponent.ticksRemaining[playerEid];
       expect(CombatStateComp.phaseElapsed[playerEid]).toBe(phaseTotal - ticksRemaining);
     });
@@ -271,19 +303,22 @@ describe('CombatSystem', () => {
       tick(); // → Windup
       input.releaseMouseButton(0);
       // Tick through windup
-      const windup = weapon.windup[AttackDirection.Stab];
+      const windup = weapon.windup[Direction.Stab];
       for (let i = 1; i < windup; i++) tick();
       tick(); // → Release (timer expired, auto-transition)
       expect(CombatStateComp.state[playerEid]).toBe(CombatState.Release);
-      expect(CombatStateComp.phaseTotal[playerEid]).toBe(weapon.release[AttackDirection.Stab]);
+      expect(CombatStateComp.phaseTotal[playerEid]).toBe(weapon.release[Direction.Stab]);
     });
 
-    it('syncs block direction for ParryWindow state', () => {
+    it('syncs block direction for Blocking state', () => {
+      // FSM v2 (#135): single Blocking state replaces Block + ParryWindow.
+      // FSM v2 (#139): no mouse movement → `detectDirection` returns Stab
+      // (the magnitude-below-threshold fallback). v1's split detect kept
+      // a Top fallback for blocks; that's gone in the unified algorithm.
       input.pressMouseButton(2);
-      tick(); // → ParryWindow
-      expect(CombatStateComp.state[playerEid]).toBe(CombatState.ParryWindow);
-      // Block direction defaults to Top when no mouse movement
-      expect(CombatStateComp.direction[playerEid]).toBe(BlockDirection.Top);
+      tick(); // → Blocking
+      expect(CombatStateComp.state[playerEid]).toBe(CombatState.Blocking);
+      expect(CombatStateComp.direction[playerEid]).toBe(Direction.Stab);
     });
 
     it('phaseElapsed progresses each tick', () => {
@@ -351,7 +386,7 @@ describe('CombatSystem', () => {
       input.pressMouseButton(0);
       turncapTick(); // → Windup
       input.releaseMouseButton(0);
-      const windup = weapon.windup[AttackDirection.Stab];
+      const windup = weapon.windup[Direction.Stab];
       for (let i = 1; i < windup; i++) turncapTick();
       turncapTick(); // → Release
       expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Release);
@@ -362,10 +397,10 @@ describe('CombatSystem', () => {
       input.pressMouseButton(0);
       turncapTick(); // → Windup
       input.releaseMouseButton(0);
-      const windup = weapon.windup[AttackDirection.Stab];
+      const windup = weapon.windup[Direction.Stab];
       for (let i = 1; i < windup; i++) turncapTick();
       turncapTick(); // → Release
-      const release = weapon.release[AttackDirection.Stab];
+      const release = weapon.release[Direction.Stab];
       for (let i = 0; i < release; i++) turncapTick();
       expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Recovery);
       expect(mockCamera.maxTurnRate).toBe(weapon.turncap.recovery);
@@ -375,48 +410,41 @@ describe('CombatSystem', () => {
       input.pressMouseButton(0);
       turncapTick(); // → Windup
       input.releaseMouseButton(0);
-      const windup = weapon.windup[AttackDirection.Stab];
+      const windup = weapon.windup[Direction.Stab];
       for (let i = 1; i < windup; i++) turncapTick();
       turncapTick(); // → Release
-      const release = weapon.release[AttackDirection.Stab];
+      const release = weapon.release[Direction.Stab];
       for (let i = 0; i < release; i++) turncapTick();
-      const recovery = weapon.recovery[AttackDirection.Stab];
+      const recovery = weapon.recovery[Direction.Stab];
       for (let i = 0; i < recovery; i++) turncapTick();
       expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Idle);
       expect(mockCamera.maxTurnRate).toBe(Infinity);
     });
 
-    it('maxTurnRate stays Infinity during Block', () => {
+    it('maxTurnRate stays Infinity during Blocking', () => {
+      // FSM v2 (#135): single Blocking state — uncapped, full agility.
       input.pressMouseButton(2);
-      turncapTick(); // → ParryWindow
-      // Tick through parry window to Block
+      turncapTick(); // → Blocking
+      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Blocking);
+      expect(mockCamera.maxTurnRate).toBe(Infinity);
+      // Tick through what would have been the parry window — still uncapped.
       for (let i = 0; i < weapon.parryWindow; i++) turncapTick();
-      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Block);
       expect(mockCamera.maxTurnRate).toBe(Infinity);
     });
 
-    it('maxTurnRate stays Infinity during ParryWindow', () => {
-      input.pressMouseButton(2);
-      turncapTick(); // → ParryWindow
-      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.ParryWindow);
-      expect(mockCamera.maxTurnRate).toBe(Infinity);
-    });
-
-    it('maxTurnRate uses recovery turncap during Feint', () => {
-      input.pressMouseButton(0);
-      turncapTick(); // → Windup
-      input.releaseMouseButton(0);
+    it('maxTurnRate uses hitStun turncap during HitStun', () => {
+      // Acceptance #27: new HitStun cap from issue A.
+      const fsm = fsmRegistry.get(playerEid)!;
+      fsm.transition(CombatInput.HitReceived);
       turncapTick();
-      input.pressMouseButton(2);
-      turncapTick(); // → Feint
-      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Feint);
-      expect(mockCamera.maxTurnRate).toBe(weapon.turncap.recovery);
+      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.HitStun);
+      expect(mockCamera.maxTurnRate).toBe(weapon.turncap.hitStun);
     });
 
     it('turncap updates correctly after weapon swap', () => {
       // Create a different weapon config with different turncap
       const heavyWeapon = createTestWeapon();
-      heavyWeapon.turncap = { windup: 0.04, release: 0.015, recovery: 0.025 };
+      heavyWeapon.turncap = { windup: 0.04, release: 0.015, recovery: 0.025, hitStun: 0.005 };
 
       // Swap weapon on the FSM
       const fsm = fsmRegistry.get(playerEid)!;
@@ -436,65 +464,78 @@ describe('CombatSystem', () => {
     });
   });
 
-  // ── computePhaseTotal unit tests ──────────────────────
+  // ── DeadTag early-out (issue #130) ────────────────────
 
-  describe('computePhaseTotal', () => {
-    it('returns windup ticks for Windup state', () => {
-      const fsm = new CombatFSM(weapon);
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
-      fsm.tick();
-      expect(computePhaseTotal(CombatState.Windup, fsm)).toBe(weapon.windup[AttackDirection.Left]);
+  describe('DeadTag early-out', () => {
+    it('does not transition to Windup on left-click when player has DeadTag', () => {
+      addComponent(ecsWorld, DeadTag, playerEid);
+      // Left-click while dead — should be ignored
+      input.pressMouseButton(0);
+      tick();
+      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Idle);
     });
 
-    it('returns release ticks for Release state', () => {
-      const fsm = new CombatFSM(weapon);
-      fsm.transition(CombatInput.Attack, AttackDirection.Stab);
-      // Tick through windup
-      for (let i = 0; i < weapon.windup[AttackDirection.Stab]; i++) fsm.tick();
-      expect(fsm.state).toBe(CombatState.Release);
-      expect(computePhaseTotal(CombatState.Release, fsm)).toBe(weapon.release[AttackDirection.Stab]);
+    it('does not advance the FSM timer for a dead entity', () => {
+      // Drive FSM into Windup, THEN flag dead. Without the early-out the
+      // timer would keep counting down on the next tick.
+      input.pressMouseButton(0);
+      tick();
+      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Windup);
+      const remainingBefore = CombatStateComponent.ticksRemaining[playerEid];
+
+      addComponent(ecsWorld, DeadTag, playerEid);
+      input.releaseMouseButton(0);
+      tick();
+      // ticksRemaining should NOT have decremented because the FSM didn't
+      // tick. (processDeaths normally also calls fsm.reset(), but here we
+      // skip that and only assert the early-out behavior of CombatSystem.)
+      expect(CombatStateComponent.ticksRemaining[playerEid]).toBe(remainingBefore);
     });
 
-    it('returns recovery ticks for Recovery state', () => {
-      const fsm = new CombatFSM(weapon);
-      fsm.transition(CombatInput.Attack, AttackDirection.Stab);
-      // Through windup
-      for (let i = 0; i < weapon.windup[AttackDirection.Stab]; i++) fsm.tick();
-      // Through release
-      for (let i = 0; i < weapon.release[AttackDirection.Stab]; i++) fsm.tick();
-      expect(fsm.state).toBe(CombatState.Recovery);
-      expect(computePhaseTotal(CombatState.Recovery, fsm)).toBe(weapon.recovery[AttackDirection.Stab]);
+    it('still ticks live entities even when one is dead', () => {
+      // Add a live dummy with an FSM
+      const dummyEid = addEntity(ecsWorld);
+      addComponent(ecsWorld, CombatStateComponent, dummyEid);
+      addComponent(ecsWorld, CombatStateComp, dummyEid);
+      CombatStateComponent.state[dummyEid] = CombatState.Idle;
+      const dummyFsm = createFSM(dummyEid, weapon);
+      dummyFsm.transition(CombatInput.HitReceived);
+
+      // Kill the player
+      addComponent(ecsWorld, DeadTag, playerEid);
+
+      tick();
+      // Player FSM untouched
+      expect(CombatStateComponent.state[playerEid]).toBe(CombatState.Idle);
+      // Dummy FSM ticked and counted down
+      expect(CombatStateComponent.state[dummyEid]).toBe(CombatState.HitStun);
+      expect(CombatStateComponent.ticksRemaining[dummyEid]).toBe(weapon.hitStunTicks - 1);
+    });
+  });
+
+  // ── fsm.getPhaseTotal sanity (system-level coverage) ───
+  // Detailed phase math is tested in CombatFSM.test.ts; the smoke
+  // tests below confirm that the value reaches CombatStateComp
+  // through the system's per-tick sync.
+
+  describe('phase math sync via CombatStateComp', () => {
+    it('CombatStateComp.phaseTotal mirrors fsm.getPhaseTotal during Windup', () => {
+      input.pressMouseButton(0);
+      tick(); // → Windup
+      const fsm = fsmRegistry.get(playerEid)!;
+      expect(CombatStateComp.phaseTotal[playerEid]).toBe(fsm.getPhaseTotal());
     });
 
-    it('returns 3 for Feint state', () => {
-      const fsm = new CombatFSM(weapon);
-      fsm.transition(CombatInput.Attack, AttackDirection.Left);
-      fsm.tick();
-      fsm.transition(CombatInput.Feint);
-      fsm.tick();
-      expect(fsm.state).toBe(CombatState.Feint);
-      expect(computePhaseTotal(CombatState.Feint, fsm)).toBe(3);
+    it('CombatStateComp.phaseT mirrors fsm.getPhaseT during Windup', () => {
+      input.pressMouseButton(0);
+      tick(); // → Windup, 1 tick consumed
+      const fsm = fsmRegistry.get(playerEid)!;
+      expect(CombatStateComp.phaseT[playerEid]).toBeCloseTo(fsm.getPhaseT(), 5);
     });
 
-    it('returns 0 for Idle state', () => {
-      const fsm = new CombatFSM(weapon);
-      expect(computePhaseTotal(CombatState.Idle, fsm)).toBe(0);
-    });
-
-    it('returns parryWindow for ParryWindow state', () => {
-      const fsm = new CombatFSM(weapon);
-      fsm.transition(CombatInput.Block, undefined, BlockDirection.Top);
-      fsm.tick();
-      expect(fsm.state).toBe(CombatState.ParryWindow);
-      expect(computePhaseTotal(CombatState.ParryWindow, fsm)).toBe(weapon.parryWindow);
-    });
-
-    it('returns hitStunTicks for HitStun state', () => {
-      const fsm = new CombatFSM(weapon);
-      fsm.transition(CombatInput.HitReceived);
-      fsm.tick();
-      expect(fsm.state).toBe(CombatState.HitStun);
-      expect(computePhaseTotal(CombatState.HitStun, fsm)).toBe(weapon.hitStunTicks);
+    it('phaseT is 0 in Idle (no fixed phase duration)', () => {
+      tick();
+      expect(CombatStateComp.phaseT[playerEid]).toBe(0);
     });
   });
 });

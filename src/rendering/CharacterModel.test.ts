@@ -105,4 +105,25 @@ describe('createLongswordModel', () => {
     const { group } = createLongswordModel();
     expect(group.children.length).toBe(3);
   });
+
+  // ── #125: per-weapon viewmodel grip data ────────────────────
+  it('supplies viewmodel gripOffset and gripRotation', () => {
+    const result = createLongswordModel();
+    expect(result.gripOffset).toBeDefined();
+    expect(result.gripRotation).toBeDefined();
+  });
+
+  it('grip values preserve the legacy Math.PI * 0.85 longsword angle', () => {
+    // Doc §4.3 starting values for Longsword: gripOffset (0,0,0),
+    // gripRotation (Math.PI*0.85, 0, 0). Pinning here as a regression guard
+    // — the longsword is the visual-fidelity baseline because it preserves
+    // pre-#125 behavior 1:1.
+    const result = createLongswordModel();
+    expect(result.gripOffset!.x).toBeCloseTo(0);
+    expect(result.gripOffset!.y).toBeCloseTo(0);
+    expect(result.gripOffset!.z).toBeCloseTo(0);
+    expect(result.gripRotation!.x).toBeCloseTo(Math.PI * 0.85);
+    expect(result.gripRotation!.y).toBeCloseTo(0);
+    expect(result.gripRotation!.z).toBeCloseTo(0);
+  });
 });

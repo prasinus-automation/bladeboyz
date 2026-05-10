@@ -47,7 +47,12 @@ export function createMaceModel(): WeaponModelResult {
     new THREE.Vector3(0, HANDLE_LEN + HEAD_RADIUS * 2, 0),      // top of head
   ];
 
-  return { group, tracerPoints };
+  // Viewmodel grip data (#125, doc §4.3). Head angled up-forward to
+  // emphasize the heavy mace head; small Z-axis lean reads as off-axis grip.
+  const gripOffset = new THREE.Vector3(0, 0, 0);
+  const gripRotation = new THREE.Euler(Math.PI * 0.75, 0, -0.15);
+
+  return { group, tracerPoints, gripOffset, gripRotation };
 }
 
 // ── Dagger Model ────────────────────────────────────────────
@@ -95,7 +100,13 @@ export function createDaggerModel(): WeaponModelResult {
     new THREE.Vector3(0, GRIP_LEN + BLADE_H - 0.02, 0), // blade tip
   ];
 
-  return { group, tracerPoints };
+  // Viewmodel grip data (#125, doc §4.3). Tighter grip pulled slightly
+  // toward the camera (Z negative), blade tilted further forward — sells
+  // the small/quick feel. A reverse-grip variant could rotate ~π on Z.
+  const gripOffset = new THREE.Vector3(0, 0, -0.02);
+  const gripRotation = new THREE.Euler(Math.PI * 0.9, 0, 0);
+
+  return { group, tracerPoints, gripOffset, gripRotation };
 }
 
 // ── Battleaxe Model ─────────────────────────────────────────
@@ -145,7 +156,13 @@ export function createBattleaxeModel(): WeaponModelResult {
     tracerPoints.push(new THREE.Vector3(0, headBase + t * HEAD_H, 0));
   }
 
-  return { group, tracerPoints };
+  // Viewmodel grip data (#125, doc §4.3). Head heavy + angled
+  // down-sideways — Y-offset pulls the model down toward the hand bottom
+  // (long handle), small +Z rotation tilts the head. Sells the weight.
+  const gripOffset = new THREE.Vector3(0, -0.05, 0);
+  const gripRotation = new THREE.Euler(Math.PI * 0.8, 0, 0.1);
+
+  return { group, tracerPoints, gripOffset, gripRotation };
 }
 
 // ── Weapon Model Factory Registry ───────────────────────────
@@ -160,3 +177,89 @@ export const weaponModelFactories: Record<string, () => WeaponModelResult> = {
   'Dagger': createDaggerModel,
   'Battleaxe': createBattleaxeModel,
 };
+
+// ── Ground Pickup Model ─────────────────────────────────────
+
+/**
+ * Per-weapon "lying flat" orientation tweaks used by `createGroundPickupModel`.
+ *
+ * Default rotation is `x = -π/2` — rotates the upright weapon (long axis = +Y)
+ * onto its side so the long axis points along world +Z and the flat side
+ * faces the ground. Some weapons add an extra roll for visual readability:
+ *
+ * - **Longsword / Dagger / Mace**: blade/handle lies naturally on `-π/2 X`.
+ *   (Mace _could_ take a small Z roll to keep the head from sitting awkwardly,
+ *   but the spherical head is rotation-symmetric enough that the simple
+ *   default reads fine — see architect note in PR #127.)
+ * - **Battleaxe**: asymmetric (axe head offset to one side of the haft) —
+ *   add `z = π/4` so the head rolls down and the axe lies on its broad
+ *   face rather than balancing on the haft edge.
+ */
+const PICKUP_ORIENTATIONS: Record<string, { x: number; y: number; z: number }> = {
+  'Longsword': { x: -Math.PI / 2, y: 0, z: 0 },
+  'Mace':      { x: -Math.PI / 2, y: 0, z: 0 },
+  'Dagger':    { x: -Math.PI / 2, y: 0, z: 0 },
+  'Battleaxe': { x: -Math.PI / 2, y: 0, z: Math.PI / 4 },
+};
+
+const DEFAULT_PICKUP_ORIENTATION = { x: -Math.PI / 2, y: 0, z: 0 };
+
+/**
+ * Build the ground-pickup mesh for a weapon.
+ *
+ * Calls `weaponModelFactories[weaponName]()`, applies a per-weapon "lying flat"
+ * rotation, and walks the group to collect a unique `THREE.Material[]` for
+ * the rendering layer to use during blink/fade in the last 5s of life
+ * (see `PickupRenderer`).
+ *
+ * **Material handling**: each factory in this module allocates fresh
+ * `MeshStandardMaterial` instances per call, so opacity changes on one
+ * pickup never leak across pickups. We also flip `material.transparent = true`
+ * on every collected material here at creation time (idempotent — sticky for
+ * the pickup's whole life). `PickupRenderer` only mutates `material.opacity`
+ * thereafter, never `transparent`, per the renderer-state guidance in #127.
+ *
+ * Throws on unknown weapon name (no factory in `weaponModelFactories`).
+ */
+export function createGroundPickupModel(weaponName: string): {
+  group: THREE.Group;
+  materials: THREE.Material[];
+} {
+  const factory = weaponModelFactories[weaponName];
+  if (!factory) {
+    throw new Error(
+      `createGroundPickupModel: unknown weapon "${weaponName}" — not in weaponModelFactories`,
+    );
+  }
+  const { group } = factory();
+
+  const orientation = PICKUP_ORIENTATIONS[weaponName] ?? DEFAULT_PICKUP_ORIENTATION;
+  group.rotation.set(orientation.x, orientation.y, orientation.z);
+
+  // Collect unique materials. Cache for blink/fade — avoids re-traversing
+  // the group every frame in the hot path.
+  const materials: THREE.Material[] = [];
+  group.traverse((obj) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mat = (obj as any).material as
+      | THREE.Material
+      | THREE.Material[]
+      | undefined;
+    if (!mat) return;
+    if (Array.isArray(mat)) {
+      for (const m of mat) {
+        if (m && !materials.includes(m)) materials.push(m);
+      }
+    } else if (!materials.includes(mat)) {
+      materials.push(mat);
+    }
+  });
+
+  // Flip `transparent = true` once at spawn so the renderer only ever has
+  // to touch `opacity` — see PickupRenderer header for the rationale.
+  for (const m of materials) {
+    m.transparent = true;
+  }
+
+  return { group, materials };
+}

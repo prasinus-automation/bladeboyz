@@ -17,20 +17,41 @@ import { fsmRegistry } from '../combat/CombatFSM';
 import { HealthBar } from './HealthBar';
 import { StaminaBar } from './StaminaBar';
 import { DirectionIndicator } from './DirectionIndicator';
+import { GoldCounter } from './GoldCounter';
+import { DeathScreen } from './DeathScreen';
+import { Killfeed } from './Killfeed';
+import { Scoreboard } from './Scoreboard';
 import { theme } from './theme';
+import type { GameWorld } from '../core/types';
 
-/** Direction names for debug display */
-const ATTACK_DIR_NAMES: Record<number, string> = {
-  0: 'Left', 1: 'Right', 2: 'Overhead', 3: 'Underhand', 4: 'Stab',
-};
-const BLOCK_DIR_NAMES: Record<number, string> = {
-  0: 'Left', 1: 'Right', 2: 'Top', 3: 'Bottom',
+/**
+ * Direction names for debug display.
+ *
+ * FSM v2 #139: unified `Direction` enum (Overhead=0, Left=1, Right=2,
+ * Stab=3) — attack and block share one table now. Pre-#139 this was
+ * split into two tables (`AttackDirection`: Left=0/Right=1/Overhead=2/Stab=3,
+ * `BlockDirection`: Left=0/Right=1/Top=2/Bottom=3).
+ */
+const DIR_NAMES: Record<number, string> = {
+  0: 'Overhead', 1: 'Left', 2: 'Right', 3: 'Stab',
 };
 
 export class HUD {
   private healthBar: HealthBar;
   private staminaBar: StaminaBar;
   private dirIndicator: DirectionIndicator;
+  private goldCounter: GoldCounter;
+
+  /**
+   * Spawn/death/respawn HUD modules (issue #137). Instantiated only when a
+   * `GameWorld` is supplied at construction time — they need world.ecs +
+   * world.playerEntity for ECS reads and EventBus subscription. Older HUD
+   * tests (and any other caller that omits `world`) get a HUD without these
+   * three overlays.
+   */
+  private deathScreen: DeathScreen | null = null;
+  private killfeed: Killfeed | null = null;
+  private scoreboard: Scoreboard | null = null;
 
   // FSM state label
   private fsmLabel: HTMLElement;
@@ -43,10 +64,22 @@ export class HUD {
   /** Exponential moving average smoothing factor (higher = more responsive) */
   private readonly fpsSmoothAlpha = 0.1;
 
-  constructor() {
+  /**
+   * @param world - Optional GameWorld. When provided, HUD instantiates
+   *   `DeathScreen`, `Killfeed`, and `Scoreboard` (issue #137). When omitted
+   *   (legacy callers / unit tests that don't need them), those overlays
+   *   are skipped — the rest of the HUD continues to work.
+   */
+  constructor(world?: GameWorld) {
     this.healthBar = new HealthBar();
     this.staminaBar = new StaminaBar();
     this.dirIndicator = new DirectionIndicator();
+    this.goldCounter = new GoldCounter();
+    if (world) {
+      this.deathScreen = new DeathScreen(world);
+      this.killfeed = new Killfeed(world);
+      this.scoreboard = new Scoreboard(world);
+    }
 
     // FSM state label (toggled with F4)
     this.fsmLabel = document.createElement('div');
@@ -117,20 +150,30 @@ export class HUD {
     // Update directional crosshair indicator
     this.dirIndicator.update(playerEntity);
 
+    // Spawn/death/respawn overlays (issue #137). Each call is a no-op when
+    // its respective state is unchanged — DeathScreen only writes the DOM
+    // when DeadTag toggles or the integer-second countdown ticks; Killfeed
+    // only walks live entries; Scoreboard caches its last K/D/Gold tuple.
+    if (this.deathScreen) this.deathScreen.update();
+    if (this.killfeed) this.killfeed.update();
+    if (this.scoreboard) this.scoreboard.update();
+
     // Update FSM state label (enhanced with turncap + direction)
     if (this.fsmVisible) {
       const stateNum = CombatStateComponent.state[playerEntity] ?? 0;
       const stateName = COMBAT_STATE_NAMES[stateNum] ?? 'Unknown';
       const ticksLeft = CombatStateComponent.ticksRemaining[playerEntity] ?? 0;
-      const atkDir = CombatStateComponent.attackDirection[playerEntity] ?? 0;
-      const blkDir = CombatStateComponent.blockDirection[playerEntity] ?? 0;
+      // FSM v2 #139: unified Direction — `attackDirection` and
+      // `blockDirection` ECS slots both hold the same value, so pick one.
+      const dir = CombatStateComponent.attackDirection[playerEntity] ?? 0;
 
       const fsm = fsmRegistry.get(playerEntity);
       const turncap = fsm ? fsm.getCurrentTurncap() : Infinity;
       const turncapStr = turncap === Infinity ? 'none' : `${(turncap * 60).toFixed(1)} rad/s`;
+      // FSM v2 (#135): Blocking=4, Parry=5 are the defensive states.
       const dirStr = stateNum >= 4 && stateNum <= 5
-        ? `Block: ${BLOCK_DIR_NAMES[blkDir] ?? blkDir}`
-        : `Atk: ${ATTACK_DIR_NAMES[atkDir] ?? atkDir}`;
+        ? `Block: ${DIR_NAMES[dir] ?? dir}`
+        : `Atk: ${DIR_NAMES[dir] ?? dir}`;
 
       this.fsmLabel.textContent =
         `${stateName} [${ticksLeft}] | ${dirStr} | Cap: ${turncapStr}`;
@@ -159,6 +202,10 @@ export class HUD {
     this.healthBar.dispose();
     this.staminaBar.dispose();
     this.dirIndicator.dispose();
+    this.goldCounter.dispose();
+    if (this.deathScreen) this.deathScreen.dispose();
+    if (this.killfeed) this.killfeed.dispose();
+    if (this.scoreboard) this.scoreboard.dispose();
     this.fsmLabel.remove();
     this.fpsEl.remove();
   }

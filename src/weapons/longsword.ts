@@ -1,4 +1,4 @@
-import { AttackDirection } from '../combat/directions';
+import { Direction } from '../combat/directions';
 import { registerWeapon, type WeaponConfig } from './WeaponConfig';
 
 /**
@@ -21,11 +21,10 @@ export const longsword: WeaponConfig = {
   // ── Damage per direction per body zone ────────────────
 
   damage: {
-    [AttackDirection.Left]: { head: 50, torso: 35, limb: 25 },
-    [AttackDirection.Right]: { head: 50, torso: 35, limb: 25 },
-    [AttackDirection.Overhead]: { head: 55, torso: 40, limb: 25 },
-    [AttackDirection.Underhand]: { head: 45, torso: 35, limb: 25 },
-    [AttackDirection.Stab]: { head: 45, torso: 40, limb: 20 },
+    [Direction.Left]: { head: 50, torso: 35, limb: 25 },
+    [Direction.Right]: { head: 50, torso: 35, limb: 25 },
+    [Direction.Overhead]: { head: 55, torso: 40, limb: 25 },
+    [Direction.Stab]: { head: 45, torso: 40, limb: 20 },
   },
 
   // ── Windup durations (ticks) ──────────────────────────
@@ -33,11 +32,10 @@ export const longsword: WeaponConfig = {
   // Overhead is slowest (25), horizontal swings are moderate (18).
 
   windup: {
-    [AttackDirection.Left]: 18,      // ~300ms
-    [AttackDirection.Right]: 18,     // ~300ms
-    [AttackDirection.Overhead]: 25,  // ~417ms — slowest but highest damage
-    [AttackDirection.Underhand]: 20, // ~333ms
-    [AttackDirection.Stab]: 15,      // ~250ms — fastest windup
+    [Direction.Left]: 18,      // ~300ms
+    [Direction.Right]: 18,     // ~300ms
+    [Direction.Overhead]: 25,  // ~417ms — slowest but highest damage
+    [Direction.Stab]: 15,      // ~250ms — fastest windup
   },
 
   // ── Release / active swing durations (ticks) ─────────
@@ -45,11 +43,10 @@ export const longsword: WeaponConfig = {
   // Stab is shortest (tight timing), overhead is longest.
 
   release: {
-    [AttackDirection.Left]: 12,      // ~200ms
-    [AttackDirection.Right]: 12,     // ~200ms
-    [AttackDirection.Overhead]: 15,  // ~250ms
-    [AttackDirection.Underhand]: 12, // ~200ms
-    [AttackDirection.Stab]: 10,      // ~167ms — narrow hit window
+    [Direction.Left]: 12,      // ~200ms
+    [Direction.Right]: 12,     // ~200ms
+    [Direction.Overhead]: 15,  // ~250ms
+    [Direction.Stab]: 10,      // ~167ms — narrow hit window
   },
 
   // ── Full recovery durations (ticks) ───────────────────
@@ -57,11 +54,10 @@ export const longsword: WeaponConfig = {
   // Overhead has longest recovery to balance its high damage.
 
   recovery: {
-    [AttackDirection.Left]: 30,      // ~500ms
-    [AttackDirection.Right]: 30,     // ~500ms
-    [AttackDirection.Overhead]: 40,  // ~667ms — punished if you miss
-    [AttackDirection.Underhand]: 35, // ~583ms
-    [AttackDirection.Stab]: 28,      // ~467ms — quickest recovery
+    [Direction.Left]: 30,      // ~500ms
+    [Direction.Right]: 30,     // ~500ms
+    [Direction.Overhead]: 40,  // ~667ms — punished if you miss
+    [Direction.Stab]: 28,      // ~467ms — quickest recovery
   },
 
   // ── Combo recovery durations (ticks) ──────────────────
@@ -69,11 +65,10 @@ export const longsword: WeaponConfig = {
   // Encourages aggressive play with mix-up potential.
 
   comboRecovery: {
-    [AttackDirection.Left]: 20,      // ~333ms
-    [AttackDirection.Right]: 20,     // ~333ms
-    [AttackDirection.Overhead]: 28,  // ~467ms
-    [AttackDirection.Underhand]: 23, // ~383ms
-    [AttackDirection.Stab]: 18,      // ~300ms
+    [Direction.Left]: 20,      // ~333ms
+    [Direction.Right]: 20,     // ~333ms
+    [Direction.Overhead]: 28,  // ~467ms
+    [Direction.Stab]: 18,      // ~300ms
   },
 
   // ── Parry window (ticks) ──────────────────────────────
@@ -82,13 +77,22 @@ export const longsword: WeaponConfig = {
 
   parryWindow: 12,
 
+  // ── Parry recovery (ticks) ────────────────────────────
+  // Time the Parry pose locks before returning to Blocking (FSM v2).
+
+  parryRecovery: 12,
+
+  // ── Block-break stagger (ticks) ───────────────────────
+  // Stagger applied when the blocker's stamina hits ≤ 0 mid-block (FSM v2).
+
+  blockBreakStunTicks: 30,
+
   // ── Stamina costs ─────────────────────────────────────
 
   staminaCost: {
     attack: 15,   // moderate cost per swing
     block: 10,    // holding block drains stamina on impact
     parry: 5,     // successful parry costs very little
-    feint: 20,    // feinting is expensive to prevent spam
   },
 
   // ── Turncaps (radians per tick) ───────────────────────
@@ -99,11 +103,13 @@ export const longsword: WeaponConfig = {
   //   0.08 rad/tick ≈ 4.8 rad/s ≈ 275°/s (windup: fairly free)
   //   0.03 rad/tick ≈ 1.8 rad/s ≈ 103°/s (release: restrictive)
   //   0.05 rad/tick ≈ 3.0 rad/s ≈ 172°/s (recovery: moderate)
+  //   0.005 rad/tick ≈ 0.3 rad/s ≈ 17°/s (hitStun: nearly locked — staggered)
 
   turncap: {
     windup: 0.08,
     release: 0.03,
     recovery: 0.05,
+    hitStun: 0.005,
   },
 
   // ── Tracer points (local space) ───────────────────────

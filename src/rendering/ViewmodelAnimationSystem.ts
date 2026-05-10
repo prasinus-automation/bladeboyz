@@ -15,6 +15,7 @@ import { CombatStateComp } from '../ecs/components';
 import { CombatState } from '../combat/states';
 import { getViewmodelPose } from '../animation/ViewmodelAnimationData';
 import { FIXED_TIMESTEP } from '../core/types';
+import { IDLE_SWAY_CHANNELS } from './ViewmodelTuning';
 import type { ViewmodelRenderer } from './ViewmodelRenderer';
 import type { BoneRotation } from '../animation/AnimationData';
 
@@ -22,12 +23,6 @@ import type { BoneRotation } from '../animation/AnimationData';
 
 /** Crossfade duration on state transitions (seconds) — matches AnimationSystem */
 const BLEND_DURATION = 0.08;
-
-/** Idle sway amplitude (radians) — gentle FPS weapon bob */
-const IDLE_SWAY_AMPLITUDE = 0.005;
-
-/** Idle sway frequency (Hz) */
-const IDLE_SWAY_FREQUENCY = 0.6;
 
 // ── Pre-allocated temp objects (avoid GC pressure) ───────
 
@@ -131,23 +126,35 @@ export function viewmodelAnimationSystem(
     bone.quaternion.slerp(_targetQuat, effectiveBlend);
   }
 
-  // ── Idle sway — subtle weapon bob when in Idle state ──
+  // ── Idle sway / breathing (doc §5) ──
+  //
+  // Multi-bone, mutually-prime sinusoids LAYERED ON TOP of the slerp via
+  // post-multiply. Channel definitions live in `ViewmodelTuning.ts` so QA can
+  // tune the feel without spelunking through render code. Frequencies (0.27,
+  // 0.31, 0.35, 0.40 Hz) are mutually prime in the sub-Hz range — composite
+  // motion never visibly repeats. Amplitudes are <0.015 rad (≈ <1°).
+  //
+  // Gated to Idle ONLY: combat poses already animate the arm and stacking
+  // sway on top would fight them (see doc §5.2 — "applies only when
+  // combatState === Idle"). Channels for non-existent bones are silently
+  // skipped so the system stays robust if the bone hierarchy gains/loses
+  // bones in a future PR.
   if (combatState === CombatState.Idle) {
-    const handBone = bones['hand_R'];
-    if (handBone) {
-      const sway = Math.sin(elapsedTime * Math.PI * 2 * IDLE_SWAY_FREQUENCY) * IDLE_SWAY_AMPLITUDE;
-      _euler.set(sway, 0, 0, 'XYZ');
+    for (let i = 0; i < IDLE_SWAY_CHANNELS.length; i++) {
+      const ch = IDLE_SWAY_CHANNELS[i];
+      const bone = bones[ch.bone];
+      if (!bone) continue;
+      const angle =
+        Math.sin(elapsedTime * 2 * Math.PI * ch.freq + ch.phase) * ch.amplitude;
+      // Single-axis Euler — set the matching axis and zero the others. This
+      // avoids overwriting the bone's existing rotation: post-multiply layers
+      // onto whatever the slerp produced.
+      const x = ch.axis === 'x' ? angle : 0;
+      const y = ch.axis === 'y' ? angle : 0;
+      const z = ch.axis === 'z' ? angle : 0;
+      _euler.set(x, y, z, 'XYZ');
       _swayQuat.setFromEuler(_euler);
-      handBone.quaternion.multiply(_swayQuat);
-    }
-
-    // Tiny forearm z-axis sway for subtle life
-    const forearmBone = bones['forearm_R'];
-    if (forearmBone) {
-      const forearmSway = Math.sin(elapsedTime * Math.PI * 2 * IDLE_SWAY_FREQUENCY + 0.5) * IDLE_SWAY_AMPLITUDE * 0.5;
-      _euler.set(0, 0, forearmSway, 'XYZ');
-      _swayQuat.setFromEuler(_euler);
-      forearmBone.quaternion.multiply(_swayQuat);
+      bone.quaternion.multiply(_swayQuat);
     }
   }
 }

@@ -9,7 +9,7 @@
  */
 
 import { CombatState } from '../combat/states';
-import { AttackDirection, BlockDirection } from '../combat/directions';
+import { Direction } from '../combat/directions';
 
 // ── Types ────────────────────────────────────────────────
 
@@ -75,11 +75,17 @@ export const IDLE_POSE: Pose = {
   spine: { x: 2 * DEG },
 };
 
-// ── Combat Animations (5 directions × 3 phases) ─────────
+// ── Combat Animations (4 directions × 3 phases) ─────────
+//
+// FSM v2 (#88, #131, #139): trimmed from 5 directions to 4 — `Underhand`
+// was removed because it animated similarly to `Overhead` and added
+// detection noise. After #139 the keys are unified `Direction` enum
+// values (Overhead=0, Left=1, Right=2, Stab=3) instead of the old
+// `AttackDirection` (Left=0, Right=1, Overhead=2, Stab=3).
 
 const ATTACK_ANIMATIONS: Record<number, CombatAnimation> = {
   // ── Left Swing ──
-  [AttackDirection.Left as number]: {
+  [Direction.Left as number]: {
     windup: {
       // Sword pulled to the right, torso rotated right
       chest: { y: 40 * DEG },
@@ -102,7 +108,7 @@ const ATTACK_ANIMATIONS: Record<number, CombatAnimation> = {
   },
 
   // ── Right Swing ──
-  [AttackDirection.Right as number]: {
+  [Direction.Right as number]: {
     windup: {
       // Sword pulled to the left, torso rotated left
       chest: { y: -40 * DEG },
@@ -125,7 +131,7 @@ const ATTACK_ANIMATIONS: Record<number, CombatAnimation> = {
   },
 
   // ── Overhead ──
-  [AttackDirection.Overhead as number]: {
+  [Direction.Overhead as number]: {
     windup: {
       // Sword raised high above head
       chest: { x: -10 * DEG },
@@ -149,31 +155,8 @@ const ATTACK_ANIMATIONS: Record<number, CombatAnimation> = {
     recovery: IDLE_POSE,
   },
 
-  // ── Underhand ──
-  [AttackDirection.Underhand as number]: {
-    windup: {
-      // Sword low, behind/below
-      chest: { x: 10 * DEG },
-      shoulder_R: { x: 20 * DEG, z: -30 * DEG },
-      upper_arm_R: { x: 30 * DEG },
-      forearm_R: { x: -10 * DEG },
-      shoulder_L: { x: 10 * DEG, z: 20 * DEG },
-      upper_arm_L: { x: 10 * DEG },
-    },
-    release: {
-      // Sweep upward
-      chest: { x: -10 * DEG },
-      shoulder_R: { x: -120 * DEG, z: -15 * DEG },
-      upper_arm_R: { x: -20 * DEG },
-      forearm_R: { x: -20 * DEG },
-      shoulder_L: { x: -80 * DEG, z: 10 * DEG },
-      upper_arm_L: { x: -10 * DEG },
-    },
-    recovery: IDLE_POSE,
-  },
-
   // ── Stab ──
-  [AttackDirection.Stab as number]: {
+  [Direction.Stab as number]: {
     windup: {
       // Sword pulled back, arm chambered
       chest: { y: 20 * DEG },
@@ -199,9 +182,14 @@ const ATTACK_ANIMATIONS: Record<number, CombatAnimation> = {
 };
 
 // ── Block Poses (4 directions) ───────────────────────────
+//
+// FSM v2 (#139): keys are the unified `Direction` enum. The old `Bottom`
+// block direction (catch underhand attacks) is gone — Underhand attacks
+// fold into Stab now. The `Stab` block pose reuses the low/forward guard
+// (formerly Bottom) — visually it reads as a forward-thrust parry stance.
 
 const BLOCK_POSES: Record<number, BlockPose> = {
-  [BlockDirection.Left as number]: {
+  [Direction.Left as number]: {
     // Sword angled to the left to catch incoming swings
     chest: { y: -20 * DEG },
     shoulder_R: { x: -60 * DEG, z: 30 * DEG, y: -20 * DEG },
@@ -211,7 +199,7 @@ const BLOCK_POSES: Record<number, BlockPose> = {
     upper_arm_L: { x: -30 * DEG },
     forearm_L: { x: -40 * DEG },
   },
-  [BlockDirection.Right as number]: {
+  [Direction.Right as number]: {
     // Sword angled to the right
     chest: { y: 20 * DEG },
     shoulder_R: { x: -60 * DEG, z: -40 * DEG, y: 20 * DEG },
@@ -221,8 +209,8 @@ const BLOCK_POSES: Record<number, BlockPose> = {
     upper_arm_L: { x: -20 * DEG },
     forearm_L: { x: -30 * DEG },
   },
-  [BlockDirection.Top as number]: {
-    // Sword held high horizontally above head
+  [Direction.Overhead as number]: {
+    // Sword held high horizontally above head (formerly BlockDirection.Top).
     shoulder_R: { x: -150 * DEG, z: -10 * DEG },
     upper_arm_R: { x: -10 * DEG },
     forearm_R: { x: -20 * DEG },
@@ -230,8 +218,8 @@ const BLOCK_POSES: Record<number, BlockPose> = {
     upper_arm_L: { x: -10 * DEG },
     forearm_L: { x: -30 * DEG },
   },
-  [BlockDirection.Bottom as number]: {
-    // Sword held low to catch underhand attacks
+  [Direction.Stab as number]: {
+    // Sword held low/forward to catch a thrust (reuses the v1 `Bottom` pose).
     chest: { x: 10 * DEG },
     shoulder_R: { x: 10 * DEG, z: -20 * DEG },
     upper_arm_R: { x: 10 * DEG },
@@ -336,15 +324,16 @@ export const HITSTUN_POSE: Pose = {
  * Get the combat animation data for a given attack direction.
  * Returns the full animation with windup/release/recovery poses.
  */
-export function getAttackAnimation(direction: AttackDirection): CombatAnimation {
-  return ATTACK_ANIMATIONS[direction as number] ?? ATTACK_ANIMATIONS[AttackDirection.Stab as number];
+export function getAttackAnimation(direction: Direction): CombatAnimation {
+  return ATTACK_ANIMATIONS[direction as number] ?? ATTACK_ANIMATIONS[Direction.Stab as number];
 }
 
 /**
- * Get the block pose for a given block direction.
+ * Get the block pose for a given block direction (FSM v2 unified `Direction`).
+ * Falls back to the Overhead block pose for unknown values.
  */
-export function getBlockPose(direction: BlockDirection): BlockPose {
-  return BLOCK_POSES[direction as number] ?? BLOCK_POSES[BlockDirection.Top as number];
+export function getBlockPose(direction: Direction): BlockPose {
+  return BLOCK_POSES[direction as number] ?? BLOCK_POSES[Direction.Overhead as number];
 }
 
 /**
@@ -360,26 +349,25 @@ export function getCombatPose(
       return IDLE_POSE;
 
     case CombatState.Windup:
-    case CombatState.Riposte: // riposte uses windup pose of the attack
-      return getAttackAnimation(direction as AttackDirection).windup;
+      return getAttackAnimation(direction as Direction).windup;
 
     case CombatState.Release:
-      return getAttackAnimation(direction as AttackDirection).release;
+      return getAttackAnimation(direction as Direction).release;
 
     case CombatState.Recovery:
-    case CombatState.Feint: // feint snaps to recovery
-      return getAttackAnimation(direction as AttackDirection).recovery;
+      return getAttackAnimation(direction as Direction).recovery;
 
-    case CombatState.Block:
-      return getBlockPose(direction as BlockDirection);
+    case CombatState.Blocking:
+      return getBlockPose(direction as Direction);
 
-    case CombatState.ParryWindow:
+    // FSM v2 (#135): `Parry` is a brief locked pose after a successful
+    // parry (formerly `ParryWindow`). The standalone parry-window state
+    // is gone — incoming-parry detection now reads `parryActive` off the
+    // FSM, not a separate state.
+    case CombatState.Parry:
       return PARRY_POSE;
 
-    case CombatState.Clash:
-    case CombatState.Stunned:
-      return STUNNED_POSE;
-
+    // FSM v2: `Stunned` and `Clash` were absorbed into `HitStun`.
     case CombatState.HitStun:
       return HITSTUN_POSE;
 
@@ -404,13 +392,36 @@ export const UPPER_BODY_BONES: ReadonlySet<string> = new Set([
   'shoulder_R', 'upper_arm_R', 'forearm_R', 'hand_R',
 ]);
 
+/**
+ * Upper-body bones MINUS spine. Used by the rebuilt AnimationSystem
+ * (issue #128) so the combat layer can claim arms + chest + head + neck
+ * while leaving spine ownership to the §5 precedence rule (combat owns
+ * spine iff the combat pose has a spine entry, else movement owns it).
+ *
+ * This replaces the old fixed `60/40` blend (`AnimationSystem.ts:294-303`
+ * pre-rebuild) where both layers wrote spine and the result drifted.
+ */
+export const UPPER_BODY_BONES_EXCEPT_SPINE: ReadonlySet<string> = new Set([
+  'chest', 'neck', 'head',
+  'shoulder_L', 'upper_arm_L', 'forearm_L', 'hand_L',
+  'shoulder_R', 'upper_arm_R', 'forearm_R', 'hand_R',
+]);
+
 /** Bones controlled by movement (lower body) animations */
 export const LOWER_BODY_BONES: ReadonlySet<string> = new Set([
   'thigh_L', 'shin_L', 'foot_L',
   'thigh_R', 'shin_R', 'foot_R',
 ]);
 
-/** Bones shared between upper and lower — blended from both */
+/**
+ * @deprecated The fixed-ratio shared-bone blend was replaced by the
+ * §5 layer-ownership precedence rule (issue #128). Spine is now owned
+ * by exactly one layer per tick — combat if the pose specifies it, else
+ * movement, else rest. New code SHOULD NOT use this set.
+ *
+ * Kept exported for backward compat with consumers that haven't migrated;
+ * remove in a follow-up cleanup once those land.
+ */
 export const SHARED_BONES: ReadonlySet<string> = new Set([
   'spine',
 ]);
