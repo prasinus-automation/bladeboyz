@@ -20,9 +20,40 @@
  * - DamageSystem dispatching FSM events instead of direct writes (issue E)
  */
 
-import { CombatState } from './states';
-import { Direction } from './directions';
+import { CombatState, COMBAT_STATE_NAMES } from './states';
+import { Direction, DIRECTION_NAMES } from './directions';
 import type { WeaponConfig } from '../weapons/WeaponConfig';
+import { getCurrentFixedTick } from '../core/tickCounter';
+
+// ── Dev-mode tracing (#174) ──────────────────────────────
+
+/**
+ * Master switch for dev-only FSM transition logging + phaseTotal=0 watchdog
+ * warnings. Defaults to `import.meta.env.DEV` so the entire log/warn block
+ * tree-shakes out of production builds (Vite drops `import.meta.env.DEV`-
+ * guarded code when `DEV === false`).
+ *
+ * Exported so tests can flip it off when verifying the silent-prod contract.
+ * Production code should never read this directly.
+ */
+export let FSM_TRACE_ENABLED = import.meta.env.DEV;
+
+/** Test-only — set the trace flag. Production code must not call this. */
+export function setFsmTraceEnabled(enabled: boolean): void {
+  FSM_TRACE_ENABLED = enabled;
+}
+
+/** Human-readable labels for `CombatInput`. Const enum → no reverse lookup. */
+const INPUT_NAMES: Record<number, string> = {
+  0: 'Attack',
+  1: 'Block',
+  2: 'ReleaseBlock',
+  3: 'HitReceived',
+  4: 'BlockedHit',
+  5: 'ParryTriggered',
+  6: 'WasParried',
+  7: 'BlockBreak',
+};
 
 // ── Input types ──────────────────────────────────────────
 
@@ -138,8 +169,26 @@ export class CombatFSM {
    */
   private _rmbHeldDuringParry = false;
 
-  constructor(weaponConfig: WeaponConfig) {
+  /**
+   * Entity id this FSM belongs to. Used only for dev-mode transition
+   * logging (#174). Defaults to 0 when constructed without an id (tests
+   * that drive the FSM directly) — `createFSM(eid, …)` threads the real
+   * eid through.
+   */
+  private _eid: number;
+
+  /**
+   * Most recent `CombatInput` that triggered a transition. Set at the top
+   * of `transition()` before any state-mutating code runs; cleared back to
+   * `undefined` at the bottom of `transition()` so auto-transitions fired
+   * by `_onPhaseEnd()` log as `auto` instead of inheriting the previous
+   * external input. Dev-mode only — read by `_transitionTo` when logging.
+   */
+  private _lastInput: CombatInput | undefined = undefined;
+
+  constructor(weaponConfig: WeaponConfig, eid = 0) {
     this._weaponConfig = weaponConfig;
+    this._eid = eid;
   }
 
   // ── Getters ──────────────────────────────────────────
@@ -360,27 +409,36 @@ export class CombatFSM {
   transition(input: CombatInput, payload?: number): boolean {
     if (!this.canTransition(input)) return false;
 
-    switch (input) {
-      case CombatInput.Attack:
-        return this._handleAttack((payload ?? Direction.Stab) as Direction);
-      case CombatInput.Block:
-        // Default to Overhead (formerly BlockDirection.Top) when no payload
-        // is supplied — matches the v1 default-to-Top fallback semantics.
-        return this._handleBlock((payload ?? Direction.Overhead) as Direction);
-      case CombatInput.ReleaseBlock:
-        return this._handleReleaseBlock();
-      case CombatInput.HitReceived:
-        return this._handleHitReceived();
-      case CombatInput.BlockedHit:
-        return this._handleBlockedHit();
-      case CombatInput.ParryTriggered:
-        return this._handleParryTriggered();
-      case CombatInput.WasParried:
-        return this._handleWasParried();
-      case CombatInput.BlockBreak:
-        return this._handleBlockBreak();
-      default:
-        return false;
+    // Stamp the input so `_transitionTo` can include it in the dev log line.
+    // Cleared in the `finally` so any phase-end auto-transitions that fire
+    // *outside* `transition()` (i.e. from `tick()` → `_onPhaseEnd()`) log
+    // as `auto` rather than inheriting the previous external input.
+    this._lastInput = input;
+    try {
+      switch (input) {
+        case CombatInput.Attack:
+          return this._handleAttack((payload ?? Direction.Stab) as Direction);
+        case CombatInput.Block:
+          // Default to Overhead (formerly BlockDirection.Top) when no payload
+          // is supplied — matches the v1 default-to-Top fallback semantics.
+          return this._handleBlock((payload ?? Direction.Overhead) as Direction);
+        case CombatInput.ReleaseBlock:
+          return this._handleReleaseBlock();
+        case CombatInput.HitReceived:
+          return this._handleHitReceived();
+        case CombatInput.BlockedHit:
+          return this._handleBlockedHit();
+        case CombatInput.ParryTriggered:
+          return this._handleParryTriggered();
+        case CombatInput.WasParried:
+          return this._handleWasParried();
+        case CombatInput.BlockBreak:
+          return this._handleBlockBreak();
+        default:
+          return false;
+      }
+    } finally {
+      this._lastInput = undefined;
     }
   }
 
@@ -421,9 +479,82 @@ export class CombatFSM {
    * **The single place `_state` is written.** All entry/exit side effects
    * (timer reset, stamina emission, direction recording) happen in the
    * `_enterX` helpers around this call.
+   *
+   * Emits a `[FSM]` console.log in dev mode (#174) so swing transitions
+   * are traceable without a debugger. The entire log block is gated on
+   * `import.meta.env.DEV` AND the runtime `FSM_TRACE_ENABLED` flag — Vite
+   * tree-shakes the block out of production builds (any string referenced
+   * only inside the dropped block, including `'[FSM]'`, won't appear in
+   * the prod bundle).
    */
   private _transitionTo(newState: CombatState): void {
+    if (import.meta.env.DEV && FSM_TRACE_ENABLED) {
+      const oldState = this._state;
+      // Use the lookup tables — `CombatState`, `Direction`, and `CombatInput`
+      // are all const enums, so `Enum[value]` reverse lookup is erased at
+      // compile time and unavailable at runtime.
+      const oldName = COMBAT_STATE_NAMES[oldState] ?? oldState;
+      const newName = COMBAT_STATE_NAMES[newState] ?? newState;
+      const inputName =
+        this._lastInput === undefined
+          ? 'auto'
+          : (INPUT_NAMES[this._lastInput] ?? this._lastInput);
+      const dirName = DIRECTION_NAMES[this._direction] ?? this._direction;
+      // Single console.log to keep the dev console readable. Formatting:
+      //   [FSM] <eid> <Old> → <New> (input: X, dir: Y, tick: Z)
+      // eslint-disable-next-line no-console
+      console.log(
+        '[FSM]',
+        this._eid,
+        oldName,
+        '→',
+        newName,
+        '(input:',
+        inputName,
+        ', dir:',
+        dirName,
+        ', tick:',
+        getCurrentFixedTick(),
+        ')',
+      );
+    }
     this._state = newState;
+  }
+
+  /**
+   * **`phaseTotal === 0` watchdog (#174).** Called from `_enterWindup`,
+   * `_enterRelease`, and `_enterRecovery` immediately after `_phaseTotal`
+   * is read from the weapon config.
+   *
+   * If a weapon ships with `windup[dir] = 0` (or release/recovery), the FSM
+   * would auto-transition on the same tick it entered the state because
+   * `tick()` checks `phaseElapsed >= phaseTotal` — except `phaseElapsed` is
+   * 0 too, so the FSM would stall at `phaseElapsed = phaseTotal = 0` and
+   * never advance. The watchdog forces `_phaseTotal = 1` so the state
+   * survives at least one full tick before progressing — visually a frame
+   * flash, but the FSM never freezes.
+   *
+   * The fallback runs in BOTH dev and prod (defensive — production should
+   * not freeze). The console.warn fires only in dev so production builds
+   * stay silent.
+   */
+  private _assertPhaseTotal(state: CombatState): void {
+    if (this._phaseTotal !== 0) return;
+    if (import.meta.env.DEV && FSM_TRACE_ENABLED) {
+      const stateName = COMBAT_STATE_NAMES[state] ?? state;
+      const dirName = DIRECTION_NAMES[this._direction] ?? this._direction;
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[FSM] phaseTotal=0 in',
+        stateName,
+        '— weapon:',
+        this._weaponConfig.name,
+        'dir:',
+        dirName,
+        '(falling back to phaseTotal=1 so FSM auto-progresses)',
+      );
+    }
+    this._phaseTotal = 1;
   }
 
   // ── Private: input handlers ──────────────────────────
@@ -525,10 +656,15 @@ export class CombatFSM {
   }
 
   private _enterWindup(direction: Direction, isMorph: boolean): void {
-    this._transitionTo(CombatState.Windup);
+    // Write direction BEFORE `_transitionTo` so the dev-mode transition
+    // log emits the NEW direction (the value we're swinging in), not the
+    // stale prior direction. `_transitionTo` only mutates `_state`, so
+    // reordering is functionally a no-op for everything else.
     this._direction = direction;
+    this._transitionTo(CombatState.Windup);
     this._phaseElapsed = 0;
     this._phaseTotal = this._weaponConfig.windup[direction];
+    this._assertPhaseTotal(CombatState.Windup);
     if (!isMorph) {
       // Morph reuses the original swing's stamina charge — only fresh
       // entries from Idle or combo-buffered Windup spend stamina.
@@ -540,6 +676,7 @@ export class CombatFSM {
     this._transitionTo(CombatState.Release);
     this._phaseElapsed = 0;
     this._phaseTotal = this._weaponConfig.release[this._direction];
+    this._assertPhaseTotal(CombatState.Release);
   }
 
   private _enterRecovery(): void {
@@ -549,6 +686,7 @@ export class CombatFSM {
       ? this._weaponConfig.comboRecovery
       : this._weaponConfig.recovery;
     this._phaseTotal = timings[this._direction];
+    this._assertPhaseTotal(CombatState.Recovery);
   }
 
   private _enterBlocking(wasJustPress: boolean): void {
@@ -646,7 +784,7 @@ export const fsmRegistry = new Map<number, CombatFSM>();
 
 /** Create and register an FSM for an entity. */
 export function createFSM(entityId: number, weaponConfig: WeaponConfig): CombatFSM {
-  const fsm = new CombatFSM(weaponConfig);
+  const fsm = new CombatFSM(weaponConfig, entityId);
   fsmRegistry.set(entityId, fsm);
   return fsm;
 }

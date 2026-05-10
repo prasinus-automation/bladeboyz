@@ -9,10 +9,11 @@
  * tracer/DamageSystem cases are owned by issue E.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { CombatFSM, CombatInput } from './CombatFSM';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { CombatFSM, CombatInput, setFsmTraceEnabled, FSM_TRACE_ENABLED } from './CombatFSM';
 import { CombatState } from './states';
 import { Direction } from './directions';
+import { resetFixedTick, advanceFixedTick } from '../core/tickCounter';
 import type { WeaponConfig } from '../weapons/WeaponConfig';
 
 // ── Test weapon config ───────────────────────────────────
@@ -81,8 +82,18 @@ describe('CombatFSM (v2)', () => {
   let fsm: CombatFSM;
 
   beforeEach(() => {
+    // Silence dev-mode FSM trace logs by default — they're noisy in CI
+    // output and irrelevant to most pre-#174 tests. The dev-mode logging
+    // suite below explicitly opts back in via setFsmTraceEnabled(true).
+    setFsmTraceEnabled(false);
     weapon = createTestWeapon();
     fsm = new CombatFSM(weapon);
+  });
+
+  afterEach(() => {
+    // Restore the documented default for any test that re-imports this
+    // module's binding (vitest runs files in isolation, but be explicit).
+    setFsmTraceEnabled(true);
   });
 
   // ── Initial state ──────────────────────────────────
@@ -719,6 +730,286 @@ describe('CombatFSM (v2)', () => {
         }
       }
       expect(offenders).toEqual([]);
+    });
+  });
+
+  // ── Dev-mode transition logging (#174) ──────────────────
+
+  // Acceptance criteria:
+  //   - npm run dev shows `[FSM] N Idle → Windup (input: Attack, dir: Left, tick: T)`
+  //     on every swing transition.
+  //   - npm run build produces output with zero references to the [FSM] log
+  //     string (tree-shaken in prod). Verified via static analysis below.
+  describe('dev-mode transition logging (#174)', () => {
+    let logSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      // vitest runs with `import.meta.env.DEV === true` by default. We assert
+      // the precondition explicitly so this suite fails loudly if some future
+      // vitest config flips DEV off.
+      expect(import.meta.env.DEV).toBe(true);
+      // Make sure prior tests didn't leave the toggle off.
+      setFsmTraceEnabled(true);
+      resetFixedTick();
+      logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      logSpy.mockRestore();
+      // Restore default for the rest of the suite.
+      setFsmTraceEnabled(true);
+    });
+
+    it('emits a [FSM] log line on Idle → Windup', () => {
+      // Use createFSM so the eid (123) is threaded through.
+      const eid = 123;
+      const f = new CombatFSM(weapon, eid);
+      f.transition(CombatInput.Attack, Direction.Left);
+
+      // Find the [FSM] entry. console.log may be called by other code,
+      // so search the call list.
+      const fsmCalls = logSpy.mock.calls.filter((args) => args[0] === '[FSM]');
+      expect(fsmCalls.length).toBeGreaterThanOrEqual(1);
+      // First Idle → Windup transition for this entity.
+      const firstCall = fsmCalls[0];
+      expect(firstCall).toContain(eid);
+      expect(firstCall).toContain('Idle');
+      expect(firstCall).toContain('→');
+      expect(firstCall).toContain('Windup');
+      expect(firstCall).toContain('Attack');
+      expect(firstCall).toContain('Left');
+      // Tick value comes from getCurrentFixedTick(); we reset it so it is 0.
+      expect(firstCall).toContain(0);
+    });
+
+    it('logs `auto` for phase-end auto-transitions (Windup → Release)', () => {
+      const f = new CombatFSM(weapon, 7);
+      f.transition(CombatInput.Attack, Direction.Left);
+      logSpy.mockClear();
+
+      // Tick out the Windup phase so it auto-transitions to Release.
+      tickN(f, weapon.windup[Direction.Left]);
+
+      const fsmCalls = logSpy.mock.calls.filter((args) => args[0] === '[FSM]');
+      expect(fsmCalls.length).toBeGreaterThanOrEqual(1);
+      const lastCall = fsmCalls[fsmCalls.length - 1];
+      expect(lastCall).toContain('Windup');
+      expect(lastCall).toContain('Release');
+      // No external input → label is 'auto', NOT a CombatInput name.
+      expect(lastCall).toContain('auto');
+    });
+
+    it('includes the current fixed tick from the shared counter', () => {
+      const f = new CombatFSM(weapon, 1);
+      // Advance the tick counter so it is non-zero — simulates a real game
+      // session where some ticks have already elapsed before this swing.
+      advanceFixedTick();
+      advanceFixedTick();
+      advanceFixedTick();
+      f.transition(CombatInput.Attack, Direction.Left);
+
+      const fsmCalls = logSpy.mock.calls.filter((args) => args[0] === '[FSM]');
+      expect(fsmCalls.length).toBeGreaterThanOrEqual(1);
+      // Tick value should appear in the call args (3 after three advances).
+      expect(fsmCalls[0]).toContain(3);
+    });
+
+    it('FSM_TRACE_ENABLED toggle silences logs', () => {
+      setFsmTraceEnabled(false);
+      const f = new CombatFSM(weapon, 1);
+      f.transition(CombatInput.Attack, Direction.Left);
+      const fsmCalls = logSpy.mock.calls.filter((args) => args[0] === '[FSM]');
+      expect(fsmCalls.length).toBe(0);
+    });
+
+    it('uses the eid threaded through createFSM(eid, …)', () => {
+      // Construct without the eid arg → defaults to 0.
+      const f0 = new CombatFSM(weapon);
+      f0.transition(CombatInput.Attack, Direction.Left);
+      const calls0 = logSpy.mock.calls.filter((args) => args[0] === '[FSM]');
+      expect(calls0[0]).toContain(0); // eid default
+      logSpy.mockClear();
+
+      const f99 = new CombatFSM(weapon, 99);
+      f99.transition(CombatInput.Attack, Direction.Left);
+      const calls99 = logSpy.mock.calls.filter((args) => args[0] === '[FSM]');
+      expect(calls99[0]).toContain(99);
+    });
+
+    it('source: every [FSM] reference sits inside an `import.meta.env.DEV` guard', async () => {
+      // Tree-shake contract — Vite drops `import.meta.env.DEV`-guarded blocks
+      // when DEV === false, so as long as every `[FSM]` literal lives inside
+      // such a guard, the prod bundle will not contain the string. This is a
+      // cheaper and more reliable check than running `npm run build` here.
+      const mod = (await import(/* @vite-ignore */ './CombatFSM.ts?raw')) as {
+        default: string;
+      };
+      const source: string = mod.default;
+      const lines = source.split('\n');
+
+      // Track guard depth: increments on `if (import.meta.env.DEV …)`/ifs that
+      // open in the same line, decrements when the matching close-brace is seen.
+      // Simple brace counting is enough for the small number of guarded blocks
+      // we have today.
+      type Block = { startLine: number; endBraceDepth: number };
+      const openGuards: Block[] = [];
+      let braceDepth = 0;
+      const offenders: { line: number; text: string }[] = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const text = lines[i];
+        const opens = (text.match(/\{/g)?.length ?? 0);
+        const closes = (text.match(/\}/g)?.length ?? 0);
+
+        // Detect a new guard opening on this line. The pattern accepts both
+        //   `if (import.meta.env.DEV)`
+        // and the longer
+        //   `if (import.meta.env.DEV && FSM_TRACE_ENABLED)`.
+        if (/if\s*\(\s*import\.meta\.env\.DEV/.test(text)) {
+          // The brace immediately following the condition opens the guard
+          // body. We anchor the guard's lifetime to the brace depth AFTER
+          // this line: the guard closes when depth returns to that value.
+          openGuards.push({ startLine: i + 1, endBraceDepth: braceDepth });
+        }
+        braceDepth += opens - closes;
+        // Pop any guards whose body has closed.
+        while (openGuards.length > 0 && braceDepth <= openGuards[openGuards.length - 1].endBraceDepth) {
+          openGuards.pop();
+        }
+
+        // Skip block-comment continuation lines (`*` indented) and any line
+        // that DECLARES the dev guard itself or its tree-shake docs.
+        if (/^\s*\*/.test(text)) continue;
+        if (!text.includes('[FSM]')) continue;
+        if (openGuards.length === 0) {
+          offenders.push({ line: i + 1, text: text.trim() });
+        }
+      }
+      expect(offenders).toEqual([]);
+    });
+  });
+
+  // ── phaseTotal=0 watchdog (#174) ────────────────────────
+
+  describe('phaseTotal=0 watchdog (#174)', () => {
+    let warnSpy: ReturnType<typeof vi.spyOn>;
+    let logSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      setFsmTraceEnabled(true);
+      // Silence transition logs — the watchdog tests assert on warn output.
+      logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+      setFsmTraceEnabled(true);
+    });
+
+    it('falls back to phaseTotal=1 when weapon.windup[dir] is 0', () => {
+      const broken = createTestWeapon({
+        windup: { ...weapon.windup, [Direction.Overhead]: 0 },
+      });
+      const f = new CombatFSM(broken, 1);
+      f.transition(CombatInput.Attack, Direction.Overhead);
+      // phaseTotal must NOT be 0 — that would freeze the FSM.
+      expect(f.phaseTotal).toBe(1);
+      expect(f.state).toBe(CombatState.Windup);
+    });
+
+    it('emits a console.warn naming the weapon and direction', () => {
+      const broken = createTestWeapon({
+        name: 'BrokenSword',
+        windup: { ...weapon.windup, [Direction.Overhead]: 0 },
+      });
+      const f = new CombatFSM(broken, 1);
+      f.transition(CombatInput.Attack, Direction.Overhead);
+      const warnings = warnSpy.mock.calls.filter((args) => args[0] === '[FSM] phaseTotal=0 in');
+      expect(warnings.length).toBe(1);
+      expect(warnings[0]).toContain('Windup');
+      expect(warnings[0]).toContain('BrokenSword');
+      expect(warnings[0]).toContain('Overhead');
+    });
+
+    it('FSM auto-progresses (does NOT freeze) past the broken phase', () => {
+      const broken = createTestWeapon({
+        windup: { ...weapon.windup, [Direction.Left]: 0 },
+      });
+      const f = new CombatFSM(broken, 1);
+      f.transition(CombatInput.Attack, Direction.Left);
+      // After the watchdog: phaseTotal=1, so one tick advances out of Windup.
+      f.tick();
+      expect(f.state).toBe(CombatState.Release);
+    });
+
+    it('also fires for release[dir]=0 and recovery[dir]=0', () => {
+      const broken = createTestWeapon({
+        release: { ...weapon.release, [Direction.Right]: 0 },
+        recovery: { ...weapon.recovery, [Direction.Right]: 0 },
+      });
+      const f = new CombatFSM(broken, 1);
+      f.transition(CombatInput.Attack, Direction.Right);
+      // Tick out Windup → enter Release (phaseTotal would be 0 → bumped to 1).
+      tickN(f, weapon.windup[Direction.Right]);
+      expect(f.state).toBe(CombatState.Release);
+      expect(f.phaseTotal).toBe(1);
+      // Tick out Release → enter Recovery (also bumped to 1).
+      f.tick();
+      expect(f.state).toBe(CombatState.Recovery);
+      expect(f.phaseTotal).toBe(1);
+      // Each broken phase entry produced one warning.
+      const warnings = warnSpy.mock.calls.filter((args) => args[0] === '[FSM] phaseTotal=0 in');
+      expect(warnings.length).toBe(2);
+    });
+
+    it('does NOT warn when weapon timings are healthy', () => {
+      const f = new CombatFSM(weapon, 1);
+      f.transition(CombatInput.Attack, Direction.Left);
+      tickN(f, weapon.windup[Direction.Left]);
+      tickN(f, weapon.release[Direction.Left]);
+      tickN(f, weapon.recovery[Direction.Left]);
+      const warnings = warnSpy.mock.calls.filter((args) => args[0] === '[FSM] phaseTotal=0 in');
+      expect(warnings.length).toBe(0);
+    });
+
+    it('safety fallback runs even with FSM_TRACE_ENABLED=false (silent fallback)', () => {
+      setFsmTraceEnabled(false);
+      const broken = createTestWeapon({
+        windup: { ...weapon.windup, [Direction.Overhead]: 0 },
+      });
+      const f = new CombatFSM(broken, 1);
+      f.transition(CombatInput.Attack, Direction.Overhead);
+      // Fallback still runs (safety is unconditional); warn is suppressed.
+      expect(f.phaseTotal).toBe(1);
+      const warnings = warnSpy.mock.calls.filter((args) => args[0] === '[FSM] phaseTotal=0 in');
+      expect(warnings.length).toBe(0);
+    });
+  });
+
+  // ── Test-only API surface (#174) ────────────────────────
+
+  describe('FSM_TRACE_ENABLED export (#174)', () => {
+    afterEach(() => {
+      setFsmTraceEnabled(true);
+    });
+
+    it('reads true under vitest (which runs with import.meta.env.DEV=true)', () => {
+      // Reset to the documented default before reading — earlier suites'
+      // afterEach hooks already do this, but be explicit.
+      setFsmTraceEnabled(true);
+      expect(FSM_TRACE_ENABLED).toBe(true);
+    });
+
+    it('setFsmTraceEnabled(false) flips the runtime flag and silences logs', () => {
+      setFsmTraceEnabled(false);
+      const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const f = new CombatFSM(weapon, 1);
+      f.transition(CombatInput.Attack, Direction.Left);
+      const fsmCalls = spy.mock.calls.filter((args) => args[0] === '[FSM]');
+      expect(fsmCalls.length).toBe(0);
+      spy.mockRestore();
     });
   });
 });
