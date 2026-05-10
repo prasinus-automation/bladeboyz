@@ -74,8 +74,9 @@ bladeboyz/
 │   │   ├── dagger.ts            # Dagger weapon data (auto-registers on import)
 │   │   └── battleaxe.ts         # Battleaxe weapon data (auto-registers on import)
 │   ├── input/
-│   │   ├── InputManager.ts      # Raw input capture, pointer lock, mouse delta tracking
+│   │   ├── InputManager.ts      # Raw input capture, pointer lock, mouse delta tracking; pointer-lock-loss / blur cleanup (#172); listener tracking + working dispose() (#172)
 │   │   ├── InputManager.types.ts # Target interface contract (issue #102 spec — see docs/input-pipeline.md)
+│   │   ├── debugKeyGate.ts      # `shouldDispatchDebugKey` predicate gating T/Y/J/K behind paused + pointer-lock checks (#172)
 │   │   └── keybinds.ts          # DUAL surface: (a) `DEFAULT_KEYBINDS` `Record<InputAction, …>` for the InputManager rebuild (#102) and (b) UI-facing `keybinds` array + `Keybind`/`KeybindGroup` types + `getKeybind`/`keybindsByGroup` for the Controls overlay (#3, scaffolded by #101). Tables coexist until #87 unifies; **keep both in sync when adding bindings**.
 │   ├── rendering/
 │   │   ├── CameraController.ts  # FPS + debug third-person camera
@@ -111,11 +112,7 @@ bladeboyz/
 │   │   ├── WorldLabel.ts        # World-anchored HTML overlay — shopkeep nameplate + "Press [E] to shop" prompt (#113)
 │   │   ├── PickupPrompt.ts      # Centred "Press [E] to pick up {Weapon}" overlay; FSM-Idle + pointer-lock gates, closest-of-many (#127)
 │   │   ├── DebugOverlay.ts      # FSM state, FPS counter
-│   │   ├── ViewmodelDebugOverlay.ts # Bottom-left bone/state readout for --debug-viewmodel toggle (#122)
-│   │   └── shop/                # Forward-compat USD payment scaffolding (#100, currently unwired)
-│   │       ├── ShopPanel.ts     # Legacy tab-switcher (orphaned by #123 — see Shop UI section)
-│   │       ├── PremiumShopTab.ts # USD tab — empty-state by default; Buy buttons disabled when provider.isAvailable() === false
-│   │       └── types.ts         # Currency, ShopItem, ShopTab, PurchaseResult, PaymentProvider, MockPaymentProvider (always reports unavailable)
+│   │   └── ViewmodelDebugOverlay.ts # Bottom-left bone/state readout for --debug-viewmodel toggle (#122)
 │   └── utils/
 │       └── math.ts              # Vector utilities, interpolation helpers
 ├── docs/
@@ -174,6 +171,8 @@ No simple raycasts. Weapons have tracer points along the blade. During Release p
 
 ### Input Pipeline
 All keyboard / mouse / pointer-lock signals are owned by `InputManager`; gameplay systems read via a typed action-based API (`isActionDown`, `isActionJustPressed`, `getMouseDelta`). A three-state mode FSM (`Menu` / `Playing` / `OverlayOpen`) gates whether gameplay polls return live state — outside `Playing` they return false / 0. No system attaches its own raw `addEventListener('keydown')` (target state — current code still has scattered listeners that downstream tickets will migrate). Default keymap lives in `src/input/keybinds.ts`. Full spec: [`docs/input-pipeline.md`](docs/input-pipeline.md).
+
+**Pointer-lock loss invariant (#172)**: when pointer lock transitions locked → unlocked (user pressed ESC, browser revoked, alt-tab fired blur, lock request errored), `InputManager` MUST clear `keysDown` + `mouseButtons` and set `paused = true`. The user-facing bug it prevents: hold W → ESC out of lock → browser stops sending keyup → next pointer-lock acquire walks the player forward involuntarily because the keysDown Set still has `KeyW`. Three handlers enforce the invariant: `pointerlockchange` (transition watcher), `pointerlockerror` (failed lock request), and `window.blur` (defense-in-depth — some browsers don't fire pointerlockchange on alt-tab). Lock acquired flips `paused` back off and auto-focuses the canvas. Debug-only keys (T/Y/J/K) MUST consult `shouldDispatchDebugKey` (`src/input/debugKeyGate.ts`) at the call site so they stay inert while paused or while pointer lock is held by something other than the canvas. `InputManager.dispose()` reverses every (target, type, fn) tuple it attached — required for Vite HMR teardown and test isolation; listener bodies short-circuit on `_disposed` so any in-flight queued events post-dispose are no-ops.
 
 ### Character Controller (SHIPPED — #104 / PR #150)
 Movement is a Rapier `KinematicCharacterController` driven by `MovementSystem` in `fixedUpdate` at 60Hz. Player uses a `kinematicPositionBased` rigid body with a capsule collider; dummies use a `fixed` body with a capsule collider (static obstacle the player collides with). The controller provides slope handling (≤45° climb / ≥30° slide), autostep (max height 0.3m), and snap-to-ground (0.3m). Tuning constants live in `src/core/types.ts` (`MAX_SLOPE_CLIMB_ANGLE`, `MIN_SLOPE_SLIDE_ANGLE`, `AUTOSTEP_MAX_HEIGHT`, `AUTOSTEP_MIN_WIDTH`, `SNAP_TO_GROUND_DISTANCE`). Gravity is applied manually in MovementSystem (`MovementState.verticalVelocity`) because Rapier's solver does not apply forces to kinematic/fixed bodies.
@@ -284,8 +283,8 @@ A small `addStaticBox(center, size, color)` helper inside `createArena` enforces
 
 See `docs/arena-v1.md` for the full layout / coordinate / lighting tables.
 
-### Shop Panel Scaffold (#100 — PR #140) — superseded by #123
-The original `src/hud/shop/ShopPanel.ts` was a tab-switcher overlay (default tabs: stub `Weapons (Gold)` + `PremiumShopTab`/USD). #123 replaces the wired panel with a flat overlay at `src/hud/ShopPanel.ts` — see "Shop UI + Purchase Flow" below. The `src/hud/shop/` directory is **left intact** as forward-compat scaffolding for real-money cosmetics: `PremiumShopTab.ts`, `types.ts`, and the legacy `ShopPanel.ts` remain in the tree but are no longer imported by `main.ts`. When Stripe (or another provider) lands, the `PaymentProvider` interface + `PremiumShopTab` can be revived as a sub-overlay or re-introduced as a tab.
+### Shop Panel Scaffold (#100 — PR #140) — superseded by #123, directory DELETED by #172
+The original `src/hud/shop/ShopPanel.ts` was a tab-switcher overlay (default tabs: stub `Weapons (Gold)` + `PremiumShopTab`/USD). #123 replaced the wired panel with a flat overlay at `src/hud/ShopPanel.ts` — see "Shop UI + Purchase Flow" below. **The `src/hud/shop/` directory was deleted entirely by #172** (it had been orphaned for two cycles, and the legacy `ShopPanel.ts` inside it had its own ESC document listener that risked waking a parallel ESC handler if anything ever stray-imported it). When real-money cosmetics land post-#92, scaffold a fresh `PaymentProvider` interface under whatever feature directory is appropriate at the time — don't resurrect the deleted skeleton from git history.
 
 ### Shop UI + Purchase Flow (#123)
 Two pieces ship the shippable shop UX:

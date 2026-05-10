@@ -4,16 +4,16 @@
  * Coordinates updates for:
  * - Health bar
  * - Stamina bar
- * - FSM state label (togglable with F4)
  * - FPS counter (togglable, top-right)
  * - Crosshair (CSS-only, always visible)
+ *
+ * Note: F4 / FSM debug overlay is owned by `src/rendering/DebugRenderer.ts`
+ * (issue #172 deleted the duplicate F4 handler that lived here).
  *
  * All HUD elements are HTML overlays with pointer-events: none.
  */
 
-import { Health, Stamina, CombatStateComponent } from '../ecs/components';
-import { COMBAT_STATE_NAMES } from '../combat/states';
-import { fsmRegistry } from '../combat/CombatFSM';
+import { Health, Stamina } from '../ecs/components';
 import { HealthBar } from './HealthBar';
 import { StaminaBar } from './StaminaBar';
 import { DirectionIndicator } from './DirectionIndicator';
@@ -23,18 +23,6 @@ import { Killfeed } from './Killfeed';
 import { Scoreboard } from './Scoreboard';
 import { theme } from './theme';
 import type { GameWorld } from '../core/types';
-
-/**
- * Direction names for debug display.
- *
- * FSM v2 #139: unified `Direction` enum (Overhead=0, Left=1, Right=2,
- * Stab=3) — attack and block share one table now. Pre-#139 this was
- * split into two tables (`AttackDirection`: Left=0/Right=1/Overhead=2/Stab=3,
- * `BlockDirection`: Left=0/Right=1/Top=2/Bottom=3).
- */
-const DIR_NAMES: Record<number, string> = {
-  0: 'Overhead', 1: 'Left', 2: 'Right', 3: 'Stab',
-};
 
 export class HUD {
   private healthBar: HealthBar;
@@ -52,10 +40,6 @@ export class HUD {
   private deathScreen: DeathScreen | null = null;
   private killfeed: Killfeed | null = null;
   private scoreboard: Scoreboard | null = null;
-
-  // FSM state label
-  private fsmLabel: HTMLElement;
-  private fsmVisible = false;
 
   // FPS counter
   private fpsEl: HTMLElement;
@@ -81,24 +65,6 @@ export class HUD {
       this.scoreboard = new Scoreboard(world);
     }
 
-    // FSM state label (toggled with F4)
-    this.fsmLabel = document.createElement('div');
-    this.fsmLabel.id = 'fsm-state-label';
-    this.fsmLabel.style.cssText = `
-      position: fixed;
-      top: 40px;
-      left: 50%;
-      transform: translateX(-50%);
-      color: ${theme.status.warn};
-      font-family: ${theme.font};
-      font-size: 14px;
-      z-index: ${theme.z.hud};
-      pointer-events: none;
-      text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
-      display: none;
-    `;
-    document.body.appendChild(this.fsmLabel);
-
     // FPS counter (top-right, reuse existing #camera-mode-indicator style area)
     this.fpsEl = document.createElement('div');
     this.fpsEl.id = 'fps-counter';
@@ -113,18 +79,6 @@ export class HUD {
       pointer-events: none;
     `;
     document.body.appendChild(this.fpsEl);
-
-    // Listen for F4 toggle
-    this._onKeyDown = this._onKeyDown.bind(this);
-    document.addEventListener('keydown', this._onKeyDown);
-  }
-
-  private _onKeyDown(e: KeyboardEvent): void {
-    if (e.code === 'F4') {
-      e.preventDefault();
-      this.fsmVisible = !this.fsmVisible;
-      this.fsmLabel.style.display = this.fsmVisible ? 'block' : 'none';
-    }
   }
 
   /**
@@ -158,27 +112,6 @@ export class HUD {
     if (this.killfeed) this.killfeed.update();
     if (this.scoreboard) this.scoreboard.update();
 
-    // Update FSM state label (enhanced with turncap + direction)
-    if (this.fsmVisible) {
-      const stateNum = CombatStateComponent.state[playerEntity] ?? 0;
-      const stateName = COMBAT_STATE_NAMES[stateNum] ?? 'Unknown';
-      const ticksLeft = CombatStateComponent.ticksRemaining[playerEntity] ?? 0;
-      // FSM v2 #139: unified Direction — `attackDirection` and
-      // `blockDirection` ECS slots both hold the same value, so pick one.
-      const dir = CombatStateComponent.attackDirection[playerEntity] ?? 0;
-
-      const fsm = fsmRegistry.get(playerEntity);
-      const turncap = fsm ? fsm.getCurrentTurncap() : Infinity;
-      const turncapStr = turncap === Infinity ? 'none' : `${(turncap * 60).toFixed(1)} rad/s`;
-      // FSM v2 (#135): Blocking=4, Parry=5 are the defensive states.
-      const dirStr = stateNum >= 4 && stateNum <= 5
-        ? `Block: ${DIR_NAMES[dir] ?? dir}`
-        : `Atk: ${DIR_NAMES[dir] ?? dir}`;
-
-      this.fsmLabel.textContent =
-        `${stateName} [${ticksLeft}] | ${dirStr} | Cap: ${turncapStr}`;
-    }
-
     // Update FPS counter (exponential moving average)
     if (dt > 0) {
       const instantFps = 1 / dt;
@@ -198,7 +131,6 @@ export class HUD {
 
   /** Clean up DOM elements and event listeners */
   dispose(): void {
-    document.removeEventListener('keydown', this._onKeyDown);
     this.healthBar.dispose();
     this.staminaBar.dispose();
     this.dirIndicator.dispose();
@@ -206,7 +138,6 @@ export class HUD {
     if (this.deathScreen) this.deathScreen.dispose();
     if (this.killfeed) this.killfeed.dispose();
     if (this.scoreboard) this.scoreboard.dispose();
-    this.fsmLabel.remove();
     this.fpsEl.remove();
   }
 }

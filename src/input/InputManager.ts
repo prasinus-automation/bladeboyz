@@ -13,6 +13,18 @@ export interface MouseDeltaEntry {
 
 const DELTA_BUFFER_WINDOW_MS = 100;
 
+/**
+ * One bound event-listener registration. Tracked at attach time so
+ * `dispose()` can reverse every listener — required for HMR teardown
+ * and isolation in tests.
+ */
+type ListenerTuple = {
+  target: EventTarget;
+  type: string;
+  fn: EventListenerOrEventListenerObject;
+  options?: boolean | AddEventListenerOptions;
+};
+
 export class InputManager {
   // Keyboard state
   private keysDown: Set<string> = new Set();
@@ -33,6 +45,16 @@ export class InputManager {
 
   // Scroll wheel delta (for third-person zoom)
   private frameScrollDelta = 0;
+
+  /** True after `dispose()` has been called. Listener bodies short-circuit. */
+  private _disposed = false;
+
+  /**
+   * Every (target, type, fn) tuple this instance attached. Used by
+   * `dispose()` to reverse every binding so HMR / tests don't accumulate
+   * stale listeners. See issue #172.
+   */
+  private _listeners: ListenerTuple[] = [];
 
   /**
    * When true, input capture is paused (e.g. inventory overlay is open).
@@ -75,6 +97,25 @@ export class InputManager {
   }
 
   /**
+   * Wrap addEventListener so every binding is tracked for dispose().
+   * The listener body is short-circuited if `_disposed` is true so that
+   * any browser-queued events post-dispose are no-ops.
+   */
+  private _track<E extends Event>(
+    target: EventTarget,
+    type: string,
+    fn: (e: E) => void,
+    options?: boolean | AddEventListenerOptions,
+  ): void {
+    const wrapped = ((e: E) => {
+      if (this._disposed) return;
+      fn(e);
+    }) as EventListener;
+    target.addEventListener(type, wrapped, options);
+    this._listeners.push({ target, type, fn: wrapped, options });
+  }
+
+  /**
    * Add a key event to the keysDown set. Centralized so we can hook in
    * runtime debug logging via `window.__debugInput = true`.
    */
@@ -96,6 +137,103 @@ export class InputManager {
     this.keysDown.delete(e.code);
   };
 
+  private _onMouseMove = (e: MouseEvent): void => {
+    if (this.paused || !this._isPointerLocked) return;
+    this.frameDeltaX += e.movementX;
+    this.frameDeltaY += e.movementY;
+
+    this.deltaBuffer.push({
+      dx: e.movementX,
+      dy: e.movementY,
+      timestamp: performance.now(),
+    });
+  };
+
+  private _onMouseDown = (e: MouseEvent): void => {
+    if (this.paused) return;
+    this.mouseButtons.add(e.button);
+  };
+
+  private _onMouseUp = (e: MouseEvent): void => {
+    // Always remove — paused only gates reads, not writes
+    this.mouseButtons.delete(e.button);
+  };
+
+  private _onWheel = (e: WheelEvent): void => {
+    this.frameScrollDelta += e.deltaY;
+  };
+
+  /**
+   * Pointer-lock state has changed. Per the InputManager type contract
+   * (`InputManager.types.ts:106-109`) and issue #172:
+   *  - on lock acquired: ensure paused = false; auto-focus the canvas so
+   *    keyboard events route through it reliably under lock.
+   *  - on lock LOST: clear keysDown + mouseButtons + set paused = true.
+   *    Browsers stop delivering keyup events to the (now-unlocked) canvas
+   *    on some platforms — the user-facing symptom was a permanently-stuck
+   *    "W" causing the player to walk forward involuntarily on re-lock.
+   *    Setting paused = true also ensures debug-key handlers gated on
+   *    `!input.paused` (see main.ts T/Y/J/K) stay quiet until the canvas
+   *    is re-acquired via a real user gesture.
+   */
+  private _onPointerLockChange = (): void => {
+    const wasLocked = this._isPointerLocked;
+    this._isPointerLocked = document.pointerLockElement === this.canvas;
+
+    if (this._isPointerLocked) {
+      // Acquired pointer lock — re-enable input. Note: keysDown /
+      // mouseButtons are already empty (we cleared them on the prior
+      // unlock or never set them at all), so we just flip the flag.
+      this._paused = false;
+      // Auto-focus the canvas so keydown events route through it reliably.
+      // Without this, some browsers can leave focus on a non-canvas element
+      // (e.g. the click-to-play overlay or a button), which can suppress
+      // key events in the canvas's bubble path.
+      if (typeof (this.canvas as HTMLElement).focus === 'function') {
+        (this.canvas as HTMLElement).focus();
+      }
+    } else if (wasLocked) {
+      // Just lost pointer lock (transitioned locked → unlocked). Clear all
+      // accumulated input state so a key the browser stopped sending keyup
+      // for doesn't stay stuck. Use the paused setter so the clear-on-pause
+      // side-effect runs in one place.
+      this.paused = true;
+    }
+    // No-op when wasLocked === false && _isPointerLocked === false — that's
+    // not a transition, just a spurious event, and we shouldn't surprise
+    // consumers by flipping paused.
+
+    const overlay = document.getElementById('click-to-play');
+    if (overlay) {
+      // Suppress click-to-play when an overlay (e.g. inventory) handles its own flow
+      const suppress = this._suppressClickToPlay ? this._suppressClickToPlay() : false;
+      overlay.classList.toggle('hidden', this._isPointerLocked || suppress);
+    }
+  };
+
+  private _onPointerLockError = (): void => {
+    console.warn('Pointer lock error');
+    this._isPointerLocked = false;
+    // Same cleanup as the unlock branch — a failed lock request leaves the
+    // user in an unlocked state with potentially-stale held keys (e.g.
+    // their mouse-click also fired a keydown that the document caught).
+    this.paused = true;
+  };
+
+  /**
+   * Window-blur fires when the user alt-tabs, switches virtual desktops,
+   * or otherwise drops focus from the page. Browsers vary on whether
+   * blur precedes pointerlockchange — covering blur catches the edge
+   * cases pointerlockchange might miss. See issue #172.
+   */
+  private _onWindowBlur = (): void => {
+    // Set paused so debug-key handlers stay quiet until re-focus, AND so
+    // the existing paused-setter clears keysDown / mouseButtons in one
+    // place. We don't flip _isPointerLocked here — pointerlockchange owns
+    // that flag.
+    this.paused = true;
+  };
+
   private bindEvents(): void {
     // Keyboard — listen on BOTH document and the canvas itself.
     //
@@ -107,65 +245,30 @@ export class InputManager {
     // receives keyboard events when it has tabindex, so we defensively
     // listen there too. `Set.add` / `Set.delete` are idempotent, so
     // receiving the same event on multiple targets is safe.
-    document.addEventListener('keydown', this._onKeyDown);
-    document.addEventListener('keyup', this._onKeyUp);
+    this._track<KeyboardEvent>(document, 'keydown', this._onKeyDown);
+    this._track<KeyboardEvent>(document, 'keyup', this._onKeyUp);
     if (this.canvas) {
-      this.canvas.addEventListener('keydown', this._onKeyDown);
-      this.canvas.addEventListener('keyup', this._onKeyUp);
+      this._track<KeyboardEvent>(this.canvas, 'keydown', this._onKeyDown);
+      this._track<KeyboardEvent>(this.canvas, 'keyup', this._onKeyUp);
     }
 
     // Mouse move (only useful when pointer-locked)
-    document.addEventListener('mousemove', (e: MouseEvent) => {
-      if (this.paused || !this._isPointerLocked) return;
-      this.frameDeltaX += e.movementX;
-      this.frameDeltaY += e.movementY;
-
-      this.deltaBuffer.push({
-        dx: e.movementX,
-        dy: e.movementY,
-        timestamp: performance.now(),
-      });
-    });
+    this._track<MouseEvent>(document, 'mousemove', this._onMouseMove);
 
     // Mouse buttons — use document for pointer lock compatibility
-    document.addEventListener('mousedown', (e: MouseEvent) => {
-      if (this.paused) return;
-      this.mouseButtons.add(e.button);
-    });
-    document.addEventListener('mouseup', (e: MouseEvent) => {
-      this.mouseButtons.delete(e.button); // Always remove — paused only gates reads, not writes
-    });
+    this._track<MouseEvent>(document, 'mousedown', this._onMouseDown);
+    this._track<MouseEvent>(document, 'mouseup', this._onMouseUp);
 
     // Scroll wheel
-    window.addEventListener('wheel', (e: WheelEvent) => {
-      this.frameScrollDelta += e.deltaY;
-    }, { passive: true });
+    this._track<WheelEvent>(window, 'wheel', this._onWheel, { passive: true });
 
-    // Pointer lock change
-    document.addEventListener('pointerlockchange', () => {
-      this._isPointerLocked = document.pointerLockElement === this.canvas;
+    // Pointer lock change / error
+    this._track<Event>(document, 'pointerlockchange', this._onPointerLockChange);
+    this._track<Event>(document, 'pointerlockerror', this._onPointerLockError);
 
-      // When pointer lock is acquired, ensure the canvas has keyboard focus
-      // so that keydown events route through it reliably. Without this, some
-      // browsers can leave focus on a non-canvas element (e.g. the click-to-play
-      // overlay or a button), which can suppress key events in the canvas's
-      // bubble path.
-      if (this._isPointerLocked && typeof (this.canvas as HTMLElement).focus === 'function') {
-        (this.canvas as HTMLElement).focus();
-      }
-
-      const overlay = document.getElementById('click-to-play');
-      if (overlay) {
-        // Suppress click-to-play when an overlay (e.g. inventory) handles its own flow
-        const suppress = this._suppressClickToPlay ? this._suppressClickToPlay() : false;
-        overlay.classList.toggle('hidden', this._isPointerLocked || suppress);
-      }
-    });
-
-    document.addEventListener('pointerlockerror', () => {
-      console.warn('Pointer lock error');
-      this._isPointerLocked = false;
-    });
+    // Window blur — defense-in-depth against browsers that don't fire
+    // pointerlockchange on alt-tab. Issue #172.
+    this._track<Event>(window, 'blur', this._onWindowBlur);
   }
 
   /** Request pointer lock (must be called from a user gesture) */
@@ -239,11 +342,29 @@ export class InputManager {
     }
   }
 
-  /** Dispose event listeners */
+  /**
+   * Release pointer lock and remove every event listener that was attached.
+   * After `dispose()`, the manager is unusable — listener bodies short-
+   * circuit on `_disposed`. Required for Vite HMR teardown and test
+   * isolation. Safe to call multiple times.
+   */
   dispose(): void {
-    // In a real app we'd remove listeners; for scaffolding this is fine
+    if (this._disposed) return;
+    this._disposed = true;
+
     if (document.pointerLockElement === this.canvas) {
       document.exitPointerLock();
     }
+
+    // Reverse every (target, type, fn) tuple this instance attached.
+    for (const { target, type, fn, options } of this._listeners) {
+      target.removeEventListener(type, fn, options);
+    }
+    this._listeners.length = 0;
+
+    // Drop accumulated state so a stray reference doesn't keep memory alive.
+    this.keysDown.clear();
+    this.mouseButtons.clear();
+    this.deltaBuffer.length = 0;
   }
 }

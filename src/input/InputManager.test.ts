@@ -490,3 +490,227 @@ describe('InputManager — issue #82 WASD regression', () => {
     });
   });
 });
+
+/**
+ * Regression suite for issue #172 (pointer-lock loss must clear key state
+ * + pause input).
+ *
+ * Verifies the type-contract behavior at `InputManager.types.ts:106-109`:
+ *   "When pointer lock is lost (browser-initiated or user-initiated via
+ *    ESC), the manager demotes mode to Menu and clears all accumulated
+ *    key/mouse-button state."
+ *
+ * The user-facing bug was: hold W → ESC out of pointer lock → browser
+ * stops delivering keyup → keysDown permanently retains 'KeyW' → next
+ * pointer-lock acquire walks the player forward involuntarily.
+ */
+describe('InputManager — issue #172 pointer-lock loss cleanup', () => {
+  let realCanvas: HTMLCanvasElement;
+  let input: InputManager;
+
+  function setLockedTo(target: Element | null): void {
+    Object.defineProperty(document, 'pointerLockElement', {
+      value: target,
+      configurable: true,
+    });
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    realCanvas = document.createElement('canvas');
+    document.body.appendChild(realCanvas);
+    input = new InputManager(realCanvas);
+  });
+
+  afterEach(() => {
+    setLockedTo(null);
+    realCanvas.remove();
+  });
+
+  describe('lock loss clears key + mouse state and pauses input', () => {
+    it('hold W → unlock pointer → isKeyDown(W) === false AND paused === true', () => {
+      // 1. Acquire pointer lock
+      setLockedTo(realCanvas);
+      document.dispatchEvent(new Event('pointerlockchange'));
+      expect(input.isPointerLocked).toBe(true);
+      expect(input.paused).toBe(false);
+
+      // 2. Hold W
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' }));
+      expect(input.isKeyDown('KeyW')).toBe(true);
+
+      // 3. Lose pointer lock (e.g. ESC pressed by user)
+      setLockedTo(null);
+      document.dispatchEvent(new Event('pointerlockchange'));
+
+      // 4. Both invariants from the spec MUST hold
+      expect(input.isKeyDown('KeyW')).toBe(false);
+      expect(input.paused).toBe(true);
+      expect(input.isPointerLocked).toBe(false);
+    });
+
+    it('full lock-loss-and-regain cycle: state stays cleared until next real keydown', () => {
+      // 1. Acquire and hold W
+      setLockedTo(realCanvas);
+      document.dispatchEvent(new Event('pointerlockchange'));
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' }));
+      expect(input.isKeyDown('KeyW')).toBe(true);
+
+      // 2. Lose lock (browser/user-initiated)
+      setLockedTo(null);
+      document.dispatchEvent(new Event('pointerlockchange'));
+      expect(input.isKeyDown('KeyW')).toBe(false);
+      expect(input.paused).toBe(true);
+
+      // 3. Re-acquire lock — paused flips off, but keysDown stays empty
+      setLockedTo(realCanvas);
+      document.dispatchEvent(new Event('pointerlockchange'));
+      expect(input.paused).toBe(false);
+      expect(input.isPointerLocked).toBe(true);
+      // KEY ASSERTION: W did not magically come back
+      expect(input.isKeyDown('KeyW')).toBe(false);
+
+      // 4. A fresh real keydown after re-acquire works as expected
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' }));
+      expect(input.isKeyDown('KeyW')).toBe(true);
+    });
+
+    it('clears mouse buttons on lock loss, not just keys', () => {
+      setLockedTo(realCanvas);
+      document.dispatchEvent(new Event('pointerlockchange'));
+      document.dispatchEvent(new MouseEvent('mousedown', { button: 0 }));
+      expect(input.isMouseButtonDown(0)).toBe(true);
+
+      setLockedTo(null);
+      document.dispatchEvent(new Event('pointerlockchange'));
+      expect(input.isMouseButtonDown(0)).toBe(false);
+    });
+
+    it('lock LOST → CLEAR. Lock ACQUIRED → unpause.', () => {
+      // No prior lock: acquire fresh
+      setLockedTo(realCanvas);
+      document.dispatchEvent(new Event('pointerlockchange'));
+      expect(input.paused).toBe(false);
+    });
+  });
+
+  describe('pointer-lock error path performs the same cleanup', () => {
+    it('pointerlockerror with held keys clears them and pauses', () => {
+      setLockedTo(realCanvas);
+      document.dispatchEvent(new Event('pointerlockchange'));
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' }));
+      document.dispatchEvent(new MouseEvent('mousedown', { button: 0 }));
+      expect(input.isKeyDown('KeyW')).toBe(true);
+      expect(input.isMouseButtonDown(0)).toBe(true);
+
+      // Suppress the warn() in the handler so test output stays clean
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      document.dispatchEvent(new Event('pointerlockerror'));
+      warnSpy.mockRestore();
+
+      expect(input.isKeyDown('KeyW')).toBe(false);
+      expect(input.isMouseButtonDown(0)).toBe(false);
+      expect(input.paused).toBe(true);
+      expect(input.isPointerLocked).toBe(false);
+    });
+  });
+
+  describe('window blur path performs the same cleanup', () => {
+    it('window blur with held keys clears them and pauses', () => {
+      setLockedTo(realCanvas);
+      document.dispatchEvent(new Event('pointerlockchange'));
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' }));
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyA' }));
+      expect(input.isKeyDown('KeyW')).toBe(true);
+      expect(input.isKeyDown('KeyA')).toBe(true);
+
+      // Browsers fire blur on window when alt-tabbing or switching apps.
+      // Some browsers DON'T fire pointerlockchange in that path, so blur
+      // is the defense-in-depth seam.
+      window.dispatchEvent(new Event('blur'));
+
+      expect(input.isKeyDown('KeyW')).toBe(false);
+      expect(input.isKeyDown('KeyA')).toBe(false);
+      expect(input.paused).toBe(true);
+    });
+
+    it('window blur with no held keys is a benign no-op (still paused)', () => {
+      setLockedTo(realCanvas);
+      document.dispatchEvent(new Event('pointerlockchange'));
+      expect(input.paused).toBe(false);
+
+      window.dispatchEvent(new Event('blur'));
+      expect(input.paused).toBe(true);
+    });
+  });
+
+  describe('dispose() actually unbinds listeners', () => {
+    it('disposed instance ignores subsequent keydown events', () => {
+      // Sanity: pre-dispose, key registers
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' }));
+      expect(input.isKeyDown('KeyW')).toBe(true);
+      // Reset
+      document.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW' }));
+      expect(input.isKeyDown('KeyW')).toBe(false);
+
+      input.dispose();
+
+      // After dispose, dispatching keydown must NOT update state.
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' }));
+      expect(input.isKeyDown('KeyW')).toBe(false);
+    });
+
+    it('disposed instance ignores subsequent mousedown events', () => {
+      input.dispose();
+      document.dispatchEvent(new MouseEvent('mousedown', { button: 0 }));
+      expect(input.isMouseButtonDown(0)).toBe(false);
+    });
+
+    it('disposed instance ignores subsequent pointerlockchange events', () => {
+      input.dispose();
+      setLockedTo(realCanvas);
+      document.dispatchEvent(new Event('pointerlockchange'));
+      // The disposed handler should short-circuit; isPointerLocked flag
+      // stays at whatever it was (false at construction).
+      expect(input.isPointerLocked).toBe(false);
+    });
+
+    it('disposed instance ignores window blur', () => {
+      input.dispose();
+      window.dispatchEvent(new Event('blur'));
+      // No accessor for "did the handler run" — but if it did, paused
+      // would be true. Construct paused = false, dispose, blur → still
+      // false because the handler short-circuited.
+      expect(input.paused).toBe(false);
+    });
+
+    it('dispose() is idempotent (calling twice does not throw)', () => {
+      expect(() => {
+        input.dispose();
+        input.dispose();
+      }).not.toThrow();
+    });
+
+    it('dispose() removes listeners from BOTH document and canvas', () => {
+      // Track removals via a real spy so we can verify both targets are
+      // covered (not just one of them).
+      const docRemove = vi.spyOn(document, 'removeEventListener');
+      const winRemove = vi.spyOn(window, 'removeEventListener');
+      const canvasRemove = vi.spyOn(realCanvas, 'removeEventListener');
+      input.dispose();
+      // Document should see at least: keydown, keyup, mousemove, mousedown,
+      // mouseup, pointerlockchange, pointerlockerror.
+      expect(docRemove).toHaveBeenCalledWith('keydown', expect.any(Function), undefined);
+      expect(docRemove).toHaveBeenCalledWith('keyup', expect.any(Function), undefined);
+      expect(docRemove).toHaveBeenCalledWith('mousemove', expect.any(Function), undefined);
+      expect(docRemove).toHaveBeenCalledWith('pointerlockchange', expect.any(Function), undefined);
+      expect(docRemove).toHaveBeenCalledWith('pointerlockerror', expect.any(Function), undefined);
+      // Canvas should see at least keydown + keyup
+      expect(canvasRemove).toHaveBeenCalledWith('keydown', expect.any(Function), undefined);
+      expect(canvasRemove).toHaveBeenCalledWith('keyup', expect.any(Function), undefined);
+      // Window should see wheel + blur
+      expect(winRemove).toHaveBeenCalledWith('wheel', expect.any(Function), { passive: true });
+      expect(winRemove).toHaveBeenCalledWith('blur', expect.any(Function), undefined);
+    });
+  });
+});
