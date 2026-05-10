@@ -3,6 +3,33 @@ import { createLongswordModel, type WeaponModelResult } from './CharacterModel';
 
 export type { WeaponModelResult } from './CharacterModel';
 
+/**
+ * Factory that builds a fresh procedural weapon model.
+ *
+ * **Cache contract (#125, #173)**: the returned `WeaponModelResult.group`
+ * MUST NOT be mutated after the factory returns. `ViewmodelRenderer` calls
+ * each registered factory exactly once at construction time, stashes the
+ * result in a pre-warmed cache, and applies render layer `VIEWMODEL_LAYER`
+ * (Layer 1) recursively to every descendant at that moment. Any `Object3D`
+ * added to the group AFTER the factory returns inherits Layer 0 by default
+ * — the world camera would then draw it as part of the world pass, where
+ * it z-fights with everything and is pierced by walls (the very symptom
+ * #171 was investigating).
+ *
+ * `ViewmodelRenderer.swapWeapon` defensively re-applies the layer on every
+ * swap to close this hazard (see #173 layer-leak guard), but that is a
+ * belt-and-braces measure — factories should still obey the contract.
+ *
+ * If a weapon needs runtime children (FX, status indicators, debug
+ * helpers), build them once inside the factory and toggle `.visible` from
+ * the consumer. Do NOT lazily `group.add(...)` from animation/render code.
+ *
+ * Materials must also be allocated fresh per factory call: `PickupRenderer`
+ * mutates `opacity` on the collected materials, and shared instances would
+ * leak fade state across active pickups. See `createGroundPickupModel`.
+ */
+export type WeaponModelFactory = () => WeaponModelResult;
+
 // ── Mace Model ──────────────────────────────────────────────
 
 /**
@@ -170,8 +197,12 @@ export function createBattleaxeModel(): WeaponModelResult {
 /**
  * Registry mapping weapon names to their procedural model factories.
  * Used by entity creation to attach the correct model for each weapon.
+ *
+ * See `WeaponModelFactory` for the post-cache immutability contract that
+ * every factory in this registry must obey (the layer-leak hazard from
+ * #171 / #173).
  */
-export const weaponModelFactories: Record<string, () => WeaponModelResult> = {
+export const weaponModelFactories: Record<string, WeaponModelFactory> = {
   'Longsword': createLongswordModel,
   'Mace': createMaceModel,
   'Dagger': createDaggerModel,
