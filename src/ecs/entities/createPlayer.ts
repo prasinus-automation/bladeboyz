@@ -24,6 +24,8 @@ import {
   meshRegistry,
 } from '../components';
 import { getGold } from '../../economy/Wallet';
+import { attachPlayerIdentity } from '../../economy/playerIdentity';
+import { hasPersistedGold, loadGold } from '../../economy/goldPersistence';
 import { registerPhysicsBody } from '../systems/MovementSystem';
 import { spawnAtGround } from '../utils/spawnAtGround';
 import { createCharacterModel } from '../../rendering/CharacterModel';
@@ -171,6 +173,20 @@ export function createPlayer(
   // `Wallet.getGold()` keeps the two in sync until #105 (persistence) and
   // #108 (HUD) finish the migration.
   Gold.amount[eid] = getGold();
+
+  // Player identity + persisted gold (#105 / docs/gold-currency.md §3, §6).
+  //
+  // Order matters: attach the `Gold` component FIRST (above), then attach
+  // the browser-scoped player id, then overwrite `Gold.amount` from
+  // localStorage IF a persisted entry actually exists. The Wallet-default
+  // `getGold()` (200) is the fallback for first launch; `loadGold` would
+  // return 0 for "no entry" (and also for "tampered negative"), so we use
+  // `hasPersistedGold` to distinguish "first-time player, keep the
+  // default" from "explicit 0 balance, overwrite".
+  const playerId = attachPlayerIdentity(eid);
+  if (hasPersistedGold(playerId)) {
+    Gold.amount[eid] = loadGold(playerId);
+  }
   Score.kills[eid] = 0;
   Score.deaths[eid] = 0;
   Score.goldThisLife[eid] = 0;

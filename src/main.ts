@@ -10,6 +10,7 @@ import { healthSystemTick } from './ecs/systems/HealthSystem';
 import { processDeaths } from './ecs/systems/processDeaths';
 import { EventBus } from './events/EventBus';
 import { awardGoldOnKill } from './economy/goldEconomy';
+import { flushGoldWrites } from './economy/goldPersistence';
 import { createPlayer } from './ecs/entities/createPlayer';
 import { createArena } from './arena/createArena';
 import { processRespawns } from './ecs/systems/processRespawns';
@@ -633,6 +634,18 @@ async function main(): Promise<void> {
   loop.onFrameEnd = () => {
     input.resetFrameDeltas();
   };
+
+  // Persist any pending gold-balance writes before the page unloads.
+  // `saveGold` is debounced (100ms trailing-edge), so the most recent
+  // award is normally still in-flight when the user closes the tab or
+  // refreshes — without this flush, that last award is lost. Per MDN's
+  // guidance, we use `beforeunload` rather than the deprecated `unload`
+  // (unload is unreliable on mobile). The handler is synchronous, calls
+  // `flushGoldWrites()` which never throws, and does not call
+  // `event.preventDefault()` — so it cannot block the unload.
+  window.addEventListener('beforeunload', () => {
+    flushGoldWrites();
+  });
 
   loop.start();
 }
