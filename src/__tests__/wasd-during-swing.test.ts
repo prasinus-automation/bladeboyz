@@ -152,6 +152,19 @@ function teardownFixture(fx: Fixture): void {
 
 // ── Tests ────────────────────────────────────────────────
 
+// `CombatState` is a `const enum`, so reverse-lookup tables (`CombatState[n]`)
+// don't exist at runtime and TS forbids the syntax. Hoist a local label table
+// for human-readable assertion messages; keep in sync with `combat/states.ts`.
+const COMBAT_STATE_LABELS = [
+  'Idle',
+  'Windup',
+  'Release',
+  'Recovery',
+  'Blocking',
+  'Parry',
+  'HitStun',
+] as const;
+
 describe('G1 — WASD continuity through full swing cycle', () => {
   let fx: Fixture;
 
@@ -198,7 +211,7 @@ describe('G1 — WASD continuity through full swing cycle', () => {
           // Hard invariant: the swing must not zero the movement intent.
           expect(
             MovementIntent.moveZ[fx.eid],
-            `tick ${t} of swing (state=${CombatState[fsm.state]}, ` +
+            `tick ${t} of swing (state=${COMBAT_STATE_LABELS[fsm.state] ?? fsm.state}, ` +
               `phase ${fsm.phaseElapsed}/${fsm.phaseTotal}) — moveZ was ${MovementIntent.moveZ[fx.eid]}`,
           ).toBeLessThan(0);
 

@@ -28,9 +28,15 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { readdirSync, readFileSync, statSync } from 'fs';
-import { join, relative, sep } from 'path';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join, relative, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+// ESM `__dirname` equivalent — the project is `"type": "module"`. Using
+// `import.meta.url` keeps this file portable across vitest's transform and a
+// plain `node --import tsx` invocation.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 const SRC_ROOT = join(__dirname, '..');
 
 // Allowlist: setTimeout is permitted in these files. Any new entry to this
