@@ -1,6 +1,7 @@
 import { createGameWorld } from './core/World';
 import { GameLoop } from './core/GameLoop';
 import { InputManager } from './input/InputManager';
+import { shouldDispatchDebugKey } from './input/debugKeyGate';
 import { CameraController } from './rendering/CameraController';
 import { createMovementSystem } from './ecs/systems/MovementSystem';
 import { createInputSystem } from './ecs/systems/InputSystem';
@@ -351,6 +352,23 @@ async function main(): Promise<void> {
 
   // ─── Keybind handler (T, Y, J, K, number keys) ───
   window.addEventListener('keydown', (e: KeyboardEvent) => {
+    // Issue #172: Debug dummy controls (T/Y/J/K) must be inert when the
+    // game is paused (overlay open, focus lost) or when no pointer lock
+    // is held. Without this gate, pressing K while typing in DevTools or
+    // with the inventory open would reset all dummies, and T/Y/J would
+    // similarly side-effect from outside the play surface. Predicate
+    // lives in `input/debugKeyGate.ts` so it has a unit-test seam.
+    if (
+      !shouldDispatchDebugKey(
+        e.code,
+        input.paused,
+        document.pointerLockElement,
+        world.renderer.domElement,
+      )
+    ) {
+      return;
+    }
+
     switch (e.code) {
       case 'KeyT': {
         const state = toggleDummyBlock();

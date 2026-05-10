@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createWorld, addEntity, addComponent } from 'bitecs';
 import { Health, Stamina, CombatStateComponent } from '../ecs/components';
 import { CombatState } from '../combat/states';
@@ -40,30 +40,30 @@ describe('HUD', () => {
     expect(document.getElementById('stamina-bar')).not.toBeNull();
   });
 
-  it('creates FSM state label element in DOM', () => {
-    expect(document.getElementById('fsm-state-label')).not.toBeNull();
-  });
-
   it('creates FPS counter element in DOM', () => {
     expect(document.getElementById('fps-counter')).not.toBeNull();
   });
 
-  it('FSM label is hidden by default', () => {
-    const el = document.getElementById('fsm-state-label')!;
-    expect(el.style.display).toBe('none');
+  // Issue #172: HUD's F4 / FSM-state-label was a duplicate of the
+  // DebugRenderer's F4 (FSM overlay). Both registered separate keydown
+  // listeners that called preventDefault() and toggled independent state.
+  // The HUD-side handler + label have been removed; F4 is now owned solely
+  // by `src/rendering/DebugRenderer.ts`.
+  it('does not register an F4 keydown listener (HUD side has no fsm-state-label)', () => {
+    // The fsm-state-label is gone entirely.
+    expect(document.getElementById('fsm-state-label')).toBeNull();
   });
 
-  it('toggles FSM label on F4 keydown', () => {
-    const el = document.getElementById('fsm-state-label')!;
-    expect(el.style.display).toBe('none');
-
-    // Press F4
-    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'F4' }));
-    expect(el.style.display).toBe('block');
-
-    // Press F4 again
-    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'F4' }));
-    expect(el.style.display).toBe('none');
+  it('F4 keydown does not preventDefault from HUD (DebugRenderer is the sole owner)', () => {
+    // Construct a fresh keydown event with preventDefault spied. After the
+    // HUD's listener removal, dispatching F4 with no DebugRenderer attached
+    // must NOT call preventDefault — because the HUD no longer registers a
+    // listener at all. This catches a regression where someone re-adds the
+    // duplicate F4 handler in HUD.ts.
+    const evt = new KeyboardEvent('keydown', { code: 'F4', cancelable: true });
+    const preventSpy = vi.spyOn(evt, 'preventDefault');
+    document.dispatchEvent(evt);
+    expect(preventSpy).not.toHaveBeenCalled();
   });
 
   it('updates without throwing', () => {
@@ -82,7 +82,6 @@ describe('HUD', () => {
     hud.dispose();
     expect(document.getElementById('health-bar')).toBeNull();
     expect(document.getElementById('stamina-bar')).toBeNull();
-    expect(document.getElementById('fsm-state-label')).toBeNull();
     expect(document.getElementById('fps-counter')).toBeNull();
   });
 
