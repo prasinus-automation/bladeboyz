@@ -7,8 +7,24 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <title>BladeBoyz</title>
     <style>
+      /*
+       * CSS custom properties mirror src/hud/theme.ts. Keep them in sync —
+       * see issue #101 for the migration policy. HUD.ts also reads from
+       * theme.ts directly; this :root block lets index.html's static styles
+       * pick up the same values without bundling theme.ts into HTML.
+       */
+      :root {
+        --bb-font: monospace;
+        --bb-bg-black: #000;
+        --bb-bg-backdrop: rgba(0, 0, 0, 0.7);
+        --bb-text-inverse: #fff;
+        --bb-status-good: #0f0;
+        --bb-status-warn: #ff0;
+        --bb-z-hud: 10;
+        --bb-z-prompt: 100;
+      }
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+      html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bb-bg-black); }
       canvas { display: block; width: 100%; height: 100%; }
       #click-to-play {
         position: fixed;
@@ -16,12 +32,12 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: rgba(0, 0, 0, 0.7);
-        color: #fff;
-        font-family: monospace;
+        background: var(--bb-bg-backdrop);
+        color: var(--bb-text-inverse);
+        font-family: var(--bb-font);
         font-size: 24px;
         cursor: pointer;
-        z-index: 100;
+        z-index: var(--bb-z-prompt);
         user-select: none;
       }
       #click-to-play.hidden { display: none; }
@@ -30,28 +46,32 @@
         top: 50%; left: 50%;
         transform: translate(-50%, -50%);
         width: 2px; height: 2px;
-        background: #fff;
-        box-shadow: 0 -6px 0 #fff, 0 6px 0 #fff, -6px 0 0 #fff, 6px 0 0 #fff;
-        z-index: 10;
+        background: var(--bb-text-inverse);
+        box-shadow:
+          0 -6px 0 var(--bb-text-inverse),
+          0  6px 0 var(--bb-text-inverse),
+          -6px 0 0 var(--bb-text-inverse),
+          6px  0 0 var(--bb-text-inverse);
+        z-index: var(--bb-z-hud);
         pointer-events: none;
       }
       #debug-overlay {
         position: fixed;
         top: 8px; left: 8px;
-        color: #0f0;
-        font-family: monospace;
+        color: var(--bb-status-good);
+        font-family: var(--bb-font);
         font-size: 12px;
-        z-index: 10;
+        z-index: var(--bb-z-hud);
         pointer-events: none;
         white-space: pre;
       }
       #camera-mode-indicator {
         position: fixed;
         top: 8px; right: 8px;
-        color: #ff0;
-        font-family: monospace;
+        color: var(--bb-status-warn);
+        font-family: var(--bb-font);
         font-size: 12px;
-        z-index: 10;
+        z-index: var(--bb-z-hud);
         pointer-events: none;
       }
     </style>

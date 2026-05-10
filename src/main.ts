@@ -66,6 +66,8 @@ import { CombatStateComp } from './ecs/components';
 import { COMBAT_STATE_NAMES } from './combat/states';
 import type * as THREE from 'three';
 import type { GameWorld } from './core/types';
+import { GameStateManager, GameState } from './core/GameState';
+import { MenuManager } from './hud/MenuManager';
 
 // Import weapon configs so they auto-register
 import './weapons/longsword';
@@ -285,8 +287,23 @@ async function main(): Promise<void> {
   // consumes the pickup is wired by sibling issue #121.
   const pickupPrompt = new PickupPrompt();
 
-  // Inventory panel (I key to toggle)
-  const inventoryPanel = new InventoryPanel(input, playerEid);
+  // ─── Game state + menu manager (#101 foundation) ───
+  // GameStateManager defaults to MAIN_MENU. For now we eagerly transition to
+  // PLAYING since the game still starts directly in the world (issue #2 will
+  // replace this with a real main menu flow).
+  const gameStateManager = new GameStateManager();
+  gameStateManager.state = GameState.PLAYING;
+
+  // MenuManager owns the ESC listener, pointer-lock release, input pause, and
+  // click-to-play suppression for any modal that registers with it. Its ctor
+  // sets `input._suppressClickToPlay = () => menuManager.isAnyOpen()` — we
+  // override that below to also account for ShopPanel (which doesn't yet
+  // register with MenuManager — its modal kind isn't part of #101's contract).
+  const menuManager = new MenuManager(input, gameStateManager);
+
+  // Inventory panel (I key to toggle). Registers itself with menuManager so
+  // ESC routes to it and pointer-lock / input.paused are managed centrally.
+  const inventoryPanel = new InventoryPanel(input, playerEid, menuManager);
 
   // Shop panel — opens via the KeyE handler when standing near the
   // shopkeep NPC. Purchases go through `purchaseWeapon()` (#123), which is
@@ -298,8 +315,10 @@ async function main(): Promise<void> {
   (window as any).openShop = () => shopPanel.open();
   (window as any).closeShop = () => shopPanel.close();
 
-  // Suppress click-to-play overlay while inventory or shop is open
-  input._suppressClickToPlay = () => inventoryPanel.isOpen || shopPanel.isOpen;
+  // Override MenuManager's default suppression (`() => menuManager.isAnyOpen()`)
+  // to also cover ShopPanel so the click-to-play prompt stays hidden while
+  // the shop is up.
+  input._suppressClickToPlay = () => menuManager.isAnyOpen() || shopPanel.isOpen;
 
   // Initialize debug renderers
   const tracerDebugRenderer = new TracerDebugRenderer(world.scene);
