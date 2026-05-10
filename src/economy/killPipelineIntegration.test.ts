@@ -116,6 +116,14 @@ describe('Kill pipeline integration (DamageSystem → processDeaths → goldEcon
 
   beforeEach(() => {
     world = createWorld();
+    // bitECS allocates entity ids starting from 0. The `killerEid === 0`
+    // sentinel for "no killer / environmental" comes from the convention
+    // that eid 0 is never a real entity (in main.ts the player is created
+    // after dozens of other entities, so this is safe). In a fresh test
+    // world, however, the *first* allocated entity would be eid 0 and would
+    // collide with the sentinel. Burn one entity up-front so all real
+    // entities below start at eid ≥ 1.
+    addEntity(world);
     // Reset every cross-test piece of state the pipeline touches.
     resetHealthTracking(); // also clears EventBus + DamageSystem attribution
     clearDamageAttribution(); // belt-and-suspenders
