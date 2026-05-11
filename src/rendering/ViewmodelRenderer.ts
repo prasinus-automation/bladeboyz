@@ -235,27 +235,31 @@ export class ViewmodelRenderer {
     // ── Viewmodel lighting ──
     //
     // The arena's lights are on Layer 0 (default), so the viewmodel
-    // camera (Layer 1 only) doesn't see them. That made anything using
-    // MeshStandardMaterial — i.e. every weapon — render as solid black
-    // and look "invisible" to the player (the arm meshes use
-    // MeshBasicMaterial and so they continued to show regardless). Add
-    // dedicated viewmodel-only lights here, layered to match the camera,
-    // so PBR weapons get diffuse + ambient contribution in Pass 2 without
-    // bleeding into the world pass.
+    // camera (Layer 1 only) doesn't see them. Anything using PBR
+    // (MeshStandardMaterial — i.e. every weapon) renders solid black
+    // without lights on its layer, while the arms (MeshBasicMaterial)
+    // are unlit and so kept showing regardless. Add dedicated
+    // viewmodel-only lights, layered to match the camera, so PBR weapons
+    // get diffuse + ambient contribution in Pass 2 without bleeding
+    // into the world pass.
     //
-    // A hemisphere light gives a soft "sky / ground" ambient base; a
-    // directional light from the same broad direction as the arena sun
-    // (front-top-right of the camera) provides shape-revealing highlights.
-    // Tuned conservatively — over-bright viewmodel lights wash the weapon
-    // and bury the arena's mood.
-    const vmHemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
-    vmHemi.layers.set(VIEWMODEL_LAYER);
-    scene.add(vmHemi);
+    // An AmbientLight gives a guaranteed flat color contribution that
+    // doesn't depend on geometry direction (so the weapon is visible
+    // regardless of grip rotation). A DirectionalLight on top adds
+    // shape-revealing highlights — its `.target` MUST be added to the
+    // scene (Three.js gotcha — without it the target.matrixWorld doesn't
+    // update and the light direction silently breaks).
+    const vmAmbient = new THREE.AmbientLight(0xffffff, 0.8);
+    vmAmbient.layers.set(VIEWMODEL_LAYER);
+    scene.add(vmAmbient);
 
-    const vmKey = new THREE.DirectionalLight(0xfff5e0, 0.9);
+    const vmKey = new THREE.DirectionalLight(0xfff5e0, 0.7);
     vmKey.position.set(0.5, 1, 0.5);
+    vmKey.target.position.set(0, 0, 0);
     vmKey.layers.set(VIEWMODEL_LAYER);
+    vmKey.target.layers.set(VIEWMODEL_LAYER);
     scene.add(vmKey);
+    scene.add(vmKey.target);
 
     // ── Build bone hierarchy ──
     this.group = new THREE.Group();

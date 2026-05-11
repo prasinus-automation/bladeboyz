@@ -67,7 +67,7 @@ import { ViewmodelDebugOverlay } from './hud/ViewmodelDebugOverlay';
 import { PickupPrompt } from './hud/PickupPrompt';
 import { CombatStateComp } from './ecs/components';
 import { COMBAT_STATE_NAMES } from './combat/states';
-import type * as THREE from 'three';
+import * as THREE from 'three';
 import type { GameWorld } from './core/types';
 import { GameStateManager, GameState } from './core/GameState';
 import { MenuManager } from './hud/MenuManager';
@@ -431,6 +431,56 @@ async function main(): Promise<void> {
 
   // ─── Expose inventory query for debugging ───
   (window as any).getInventory = () => getInventory(world.playerEntity);
+
+  // ─── Diagnostic helpers (FP-weapon-visibility investigation, post-#181) ───
+  // Track removal via a new GitHub issue when the FP weapon bug is resolved.
+  (window as any).__getViewmodelState = () => ({
+    visible: viewmodel.visible,
+    currentWeapon: viewmodel.getCurrentWeaponName(),
+    groupChildren: viewmodel.group.children.length,
+    groupVisible: viewmodel.group.visible,
+    cameraLayer: viewmodel.camera.layers.mask,
+    sceneHasGroup: world.scene.children.includes(viewmodel.group),
+    mode: cameraController.getMode(),
+  });
+  // Flat, paste-friendly viewmodel-scene dump. One newline-separated line
+  // per descendant: name | world=(x,y,z) | rel=(dx,dy,dz from camera) | vis/layer.
+  (window as any).__viewmodelSummary = () => {
+    const cam = viewmodel.camera;
+    const camPos = cam.position;
+    const worldPos = new THREE.Vector3();
+    const lines: string[] = [];
+    lines.push(
+      `CAMERA pos=(${camPos.x.toFixed(2)},${camPos.y.toFixed(2)},${camPos.z.toFixed(2)}) fov=${cam.fov} near=${cam.near} far=${cam.far} layer=${cam.layers.mask}`,
+    );
+    viewmodel.group.traverse((obj: any) => {
+      obj.getWorldPosition(worldPos);
+      const dx = worldPos.x - camPos.x;
+      const dy = worldPos.y - camPos.y;
+      const dz = worldPos.z - camPos.z;
+      const name = (obj.name || obj.type).padEnd(30);
+      lines.push(
+        `${name} world=(${worldPos.x.toFixed(2)},${worldPos.y.toFixed(2)},${worldPos.z.toFixed(2)}) rel=(${dx.toFixed(2)},${dy.toFixed(2)},${dz.toFixed(2)}) vis=${obj.visible} layer=${obj.layers?.mask}`,
+      );
+    });
+    return lines.join('\n');
+  };
+  // Count layer-1 lights actually in the scene — verifies the viewmodel
+  // lighting fix actually compiled & ran without depending on memory.
+  (window as any).__getViewmodelLights = () => {
+    const lights: any[] = [];
+    world.scene.traverse((obj: any) => {
+      if (obj.isLight) {
+        lights.push({
+          type: obj.type,
+          intensity: obj.intensity,
+          layerMask: obj.layers.mask,
+          position: obj.position ? `(${obj.position.x.toFixed(2)},${obj.position.y.toFixed(2)},${obj.position.z.toFixed(2)})` : 'n/a',
+        });
+      }
+    });
+    return lights;
+  };
 
   // ─── Click-to-play handler ───
   const overlay = document.getElementById('click-to-play');
