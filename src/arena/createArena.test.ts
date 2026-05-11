@@ -7,6 +7,12 @@ import {
   registerSpawnPoint,
 } from '../world/SpawnPoints';
 import type { GameWorld } from '../core/types';
+import { CHARACTER_CONTROLLER_OFFSET, GROUND_TOP_Y } from '../core/types';
+
+/** Spawn Y is offset from the ground top so the kinematic character
+ * controller has its collision skin's worth of clearance — see
+ * `createArena.ts` `SPAWN_Y` comment. */
+const SPAWN_Y = GROUND_TOP_Y + CHARACTER_CONTROLLER_OFFSET;
 
 /**
  * Tests for `createArena()` — Arena v1 (issues #91 / #112).
@@ -338,15 +344,15 @@ describe('createArena (Arena v1, #112)', () => {
       expect(ids).toEqual(['s1', 's2', 's3', 's4', 's5', 's6']);
     });
 
-    it('places spawn points at the documented coordinates (y = 0.1)', () => {
+    it('places spawn points at the documented coordinates (y = GROUND_TOP_Y + CHARACTER_CONTROLLER_OFFSET)', () => {
       const spec = createArena(world);
       const positions = spec.spawnPoints.map((sp) => sp.position);
-      expect(positions[0]).toEqual({ x: -13, y: 0.1, z: 0 });
-      expect(positions[1]).toEqual({ x: -7, y: 0.1, z: -9 });
-      expect(positions[2]).toEqual({ x: 7, y: 0.1, z: -9 });
-      expect(positions[3]).toEqual({ x: 13, y: 0.1, z: 0 });
-      expect(positions[4]).toEqual({ x: -7, y: 0.1, z: 9 });
-      expect(positions[5]).toEqual({ x: 7, y: 0.1, z: 9 });
+      expect(positions[0]).toEqual({ x: -13, y: SPAWN_Y, z: 0 });
+      expect(positions[1]).toEqual({ x: -7, y: SPAWN_Y, z: -9 });
+      expect(positions[2]).toEqual({ x: 7, y: SPAWN_Y, z: -9 });
+      expect(positions[3]).toEqual({ x: 13, y: SPAWN_Y, z: 0 });
+      expect(positions[4]).toEqual({ x: -7, y: SPAWN_Y, z: 9 });
+      expect(positions[5]).toEqual({ x: 7, y: SPAWN_Y, z: 9 });
     });
 
     it('all spawn points are inside arena bounds', () => {
@@ -397,7 +403,7 @@ describe('createArena (Arena v1, #112)', () => {
       }
       // Spot-check coord/yaw mirroring on s1.
       const s1 = spawnPointRegistry.get(1)!;
-      expect(s1.position).toEqual({ x: -13, y: 0.1, z: 0 });
+      expect(s1.position).toEqual({ x: -13, y: SPAWN_Y, z: 0 });
       expect(s1.yaw).toBeCloseTo(Math.PI / 2, 5);
     });
 
@@ -449,7 +455,7 @@ describe('createArena (Arena v1, #112)', () => {
 
     it('shopkeep NPC anchor sits behind the counter, feet on ground, facing north', () => {
       const spec = createArena(world);
-      expect(spec.shopkeepStall.npcAnchor).toEqual({ x: -12, y: 0.1, z: 13 });
+      expect(spec.shopkeepStall.npcAnchor).toEqual({ x: -12, y: SPAWN_Y, z: 13 });
       expect(spec.shopkeepStall.facing).toBe(0);
     });
 

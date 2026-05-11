@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { GameWorld } from '../core/types';
+import { CHARACTER_CONTROLLER_OFFSET, GROUND_TOP_Y } from '../core/types';
 import type { ArenaSpec, SpawnPoint, Vec3 } from './types';
 import {
   clearSpawnPoints,
@@ -135,7 +136,13 @@ export function createArena(world: GameWorld): ArenaSpec {
   // character controller eventually does spawn snap-to-ground (#86) it'll
   // raycast from these positions. v1 ground is flat so the static value
   // works directly.
-  const SPAWN_Y = 0.1;
+  // Spawn Y must sit `CHARACTER_CONTROLLER_OFFSET` above the ground top —
+  // otherwise the player's capsule bottom is flush with the floor at
+  // spawn, Rapier's kinematic character controller can't establish its
+  // required collision skin, and `computeColliderMovement` clamps every
+  // axis (including horizontal) to zero. `spawnAtGround()` already
+  // follows this convention; arena spawn points were the lone outlier.
+  const SPAWN_Y = GROUND_TOP_Y + CHARACTER_CONTROLLER_OFFSET;
   // Computed exactly from the architect note: atan2(7, 9) etc. Using
   // `as const` so TypeScript infers tuple types and we keep the table
   // literal for review.
