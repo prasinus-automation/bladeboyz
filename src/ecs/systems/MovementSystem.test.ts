@@ -170,10 +170,14 @@ describe('MovementSystem', () => {
       expect(mockController.setMinSlopeSlideAngle).toHaveBeenCalledWith(MIN_SLOPE_SLIDE_ANGLE);
     });
 
-    it('enables autostep and snap-to-ground', () => {
+    it('enables autostep but NOT snap-to-ground', () => {
+      // Snap-to-ground is intentionally disabled — see MovementSystem.ts
+      // comment for the controller-offset interaction that makes
+      // computeColliderMovement clamp horizontal motion to zero on flat
+      // ground. Re-enable when slopes/stairs need it.
       setup();
       expect(mockController.enableAutostep).toHaveBeenCalled();
-      expect(mockController.enableSnapToGround).toHaveBeenCalled();
+      expect(mockController.enableSnapToGround).not.toHaveBeenCalled();
     });
   });
 

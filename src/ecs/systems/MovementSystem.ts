@@ -27,7 +27,6 @@ import {
   MIN_SLOPE_SLIDE_ANGLE,
   AUTOSTEP_MAX_HEIGHT,
   AUTOSTEP_MIN_WIDTH,
-  SNAP_TO_GROUND_DISTANCE,
 } from '../../core/types';
 
 const playerQuery = defineQuery([
@@ -117,7 +116,15 @@ export function createMovementSystem(world: GameWorld, cameraController: CameraC
   // Create kinematic character controller
   characterController = world.physicsWorld.createCharacterController(CHARACTER_CONTROLLER_OFFSET);
   characterController.enableAutostep(AUTOSTEP_MAX_HEIGHT, AUTOSTEP_MIN_WIDTH, true);
-  characterController.enableSnapToGround(SNAP_TO_GROUND_DISTANCE);
+  // Snap-to-ground intentionally NOT enabled. Rapier's snap mechanism
+  // pulls the kinematic body so the collider bottom touches the ground
+  // (gap = 0), which puts the player inside the controller-offset skin
+  // and makes `computeColliderMovement` clamp ALL axes (including
+  // horizontal) to zero on the next tick. Confirmed in-game via the
+  // `__debugMovement` instrumentation: with snap on, `corrected` stays
+  // `(0,0,0)` forever despite a valid non-zero `desired`. On a flat
+  // arena (#112) snap isn't doing useful work yet anyway; re-enable
+  // (or implement a custom slope-aware snap) when slopes/stairs land.
   characterController.setApplyImpulsesToDynamicBodies(true);
   characterController.setMaxSlopeClimbAngle(MAX_SLOPE_CLIMB_ANGLE);
   characterController.setMinSlopeSlideAngle(MIN_SLOPE_SLIDE_ANGLE);
