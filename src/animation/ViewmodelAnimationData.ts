@@ -32,9 +32,13 @@ const DEG = Math.PI / 180;
 // ── Longsword — wide sweeping arcs, classic medieval FPS feel ──
 
 const LONGSWORD_IDLE: Pose = {
-  upper_arm_R: { x: -30 * DEG, z: -8 * DEG },
-  forearm_R:   { x: -35 * DEG },
-  hand_R:      { x: -5 * DEG, z: -5 * DEG },
+  // X rotations are POSITIVE so the chain extends FORWARD (-Z camera-local)
+  // from the shoulder, putting the hand + weapon in front of the camera.
+  // Combat poses below still use the legacy negative-X convention; see
+  // follow-up tracking issue.
+  upper_arm_R: { x: 30 * DEG, z: -8 * DEG },
+  forearm_R:   { x: 35 * DEG },
+  hand_R:      { x: 5 * DEG, z: -5 * DEG },
 };
 
 const LONGSWORD_ATTACKS: Record<number, CombatAnimation> = {
@@ -161,9 +165,10 @@ const LONGSWORD_ANIMS: ViewmodelWeaponAnims = {
 // ── Mace — heavy, slower swings, extra wrist rotation ───
 
 const MACE_IDLE: Pose = {
-  upper_arm_R: { x: -28 * DEG, z: -10 * DEG },
-  forearm_R:   { x: -30 * DEG },
-  hand_R:      { x: -5 * DEG, z: -8 * DEG, y: 5 * DEG },
+  // X rotations flipped to positive — see LONGSWORD_IDLE comment.
+  upper_arm_R: { x: 28 * DEG, z: -10 * DEG },
+  forearm_R:   { x: 30 * DEG },
+  hand_R:      { x: 5 * DEG, z: -8 * DEG, y: 5 * DEG },
 };
 
 const MACE_ATTACKS: Record<number, CombatAnimation> = {
@@ -291,9 +296,10 @@ const MACE_ANIMS: ViewmodelWeaponAnims = {
 // ── Dagger — quick, snappy motions, tight close-range ───
 
 const DAGGER_IDLE: Pose = {
-  upper_arm_R: { x: -22 * DEG, z: -5 * DEG },
-  forearm_R:   { x: -45 * DEG },
-  hand_R:      { x: -8 * DEG, z: -3 * DEG },
+  // X rotations flipped to positive — see LONGSWORD_IDLE comment.
+  upper_arm_R: { x: 22 * DEG, z: -5 * DEG },
+  forearm_R:   { x: 45 * DEG },
+  hand_R:      { x: 8 * DEG, z: -3 * DEG },
 };
 
 const DAGGER_ATTACKS: Record<number, CombatAnimation> = {
@@ -421,9 +427,10 @@ const DAGGER_ANIMS: ViewmodelWeaponAnims = {
 // ── Battleaxe — exaggerated windups, devastating releases ──
 
 const BATTLEAXE_IDLE: Pose = {
-  upper_arm_R: { x: -32 * DEG, z: -12 * DEG },
-  forearm_R:   { x: -25 * DEG },
-  hand_R:      { x: -5 * DEG, z: -10 * DEG },
+  // X rotations flipped to positive — see LONGSWORD_IDLE comment.
+  upper_arm_R: { x: 32 * DEG, z: -12 * DEG },
+  forearm_R:   { x: 25 * DEG },
+  hand_R:      { x: 5 * DEG, z: -10 * DEG },
 };
 
 const BATTLEAXE_ATTACKS: Record<number, CombatAnimation> = {

@@ -27,30 +27,22 @@ import * as THREE from 'three';
 /**
  * Arm offset from the camera in camera-local space.
  *
- * The shoulder bone (`vm_upper_arm_R`) sits at the viewmodel group origin.
- * From there the bone chain runs forearm → hand → weapon_attach via
- * `(0, -BONE_LENGTH, 0)` offsets, and the per-state pose rotations
- * (see `ViewmodelAnimationData.ts`) are tuned with negative X rotations
- * that fold the chain along the +Z direction (camera-local backward).
- * Empirically the chain extends roughly `+0.63m` in camera-local Z from
- * the shoulder when idle.
+ * The shoulder bone (`vm_upper_arm_R`) sits at the viewmodel group origin,
+ * so this places the *shoulder* at camera-local `(0.25, -0.10, -0.40)`. With
+ * the arm hanging down via negative-Y child offsets, the visible geometry
+ * enters the viewport from the lower-right. Do NOT raise `y` above 0 —
+ * that's the bug fixed in #81 (upper-arm box clipped into the top of the
+ * viewport).
  *
- * For the WHOLE chain (not just the upper arm) to land in front of the
- * camera — and within the vertical FOV given the chain's `-0.41m` Y drop
- * — the shoulder needs to sit at least `~-1.4m` forward. We use `-1.5m`
- * to give the weapon comfortable headroom inside the frustum.
- *
- * (Pre-fix value: `-0.4m`. With that, the elbow was inside the frustum
- * but the wrist + weapon ended up BEHIND the camera and never rendered.
- * The arm "appeared visible" only because the upper-arm box still
- * straddled the camera plane.)
- *
- * Do NOT raise `y` above 0 — that's the bug fixed in #81 (upper-arm box
- * clipped into the top of the viewport).
+ * The per-state pose rotations in `ViewmodelAnimationData.ts` IDLE entries
+ * use positive X rotations so the chain extends FORWARD (-Z camera-local)
+ * from the shoulder, putting hand + weapon in front of the camera. Combat
+ * poses still use the legacy negative-X convention (chain extends +Z =
+ * behind camera) — fix tracked as a follow-up.
  *
  * Moved here from `ViewmodelRenderer.ts` per doc §2.2.
  */
-export const ARM_OFFSET = new THREE.Vector3(0.25, -0.1, -1.5);
+export const ARM_OFFSET = new THREE.Vector3(0.25, -0.1, -0.4);
 
 // ─── Aim-sway lag (doc §7) ─────────────────────────────────
 
