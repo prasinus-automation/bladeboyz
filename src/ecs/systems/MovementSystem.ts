@@ -120,11 +120,9 @@ export function createMovementSystem(world: GameWorld, cameraController: CameraC
   // pulls the kinematic body so the collider bottom touches the ground
   // (gap = 0), which puts the player inside the controller-offset skin
   // and makes `computeColliderMovement` clamp ALL axes (including
-  // horizontal) to zero on the next tick. Confirmed in-game via the
-  // `__debugMovement` instrumentation: with snap on, `corrected` stays
-  // `(0,0,0)` forever despite a valid non-zero `desired`. On a flat
-  // arena (#112) snap isn't doing useful work yet anyway; re-enable
-  // (or implement a custom slope-aware snap) when slopes/stairs land.
+  // horizontal) to zero on the next tick. On a flat arena (#112) snap
+  // isn't doing useful work yet anyway; re-enable (or implement a
+  // custom slope-aware snap) when slopes/stairs land.
   characterController.setApplyImpulsesToDynamicBodies(true);
   characterController.setMaxSlopeClimbAngle(MAX_SLOPE_CLIMB_ANGLE);
   characterController.setMinSlopeSlideAngle(MIN_SLOPE_SLIDE_ANGLE);
@@ -134,12 +132,6 @@ export function createMovementSystem(world: GameWorld, cameraController: CameraC
   return function movementSystem(_dt: number): void {
     movementTick++;
     const entities = playerQuery(world.ecs);
-
-    // Diagnostic: emit one log line per second when `window.__debugMovement`
-    // is set. Temporary — remove once #180 lands.
-    const _dbg =
-      (globalThis as any).__debugMovement === true &&
-      movementTick % 60 === 0;
 
     for (let i = 0; i < entities.length; i++) {
       const eid = entities[i];
@@ -154,10 +146,6 @@ export function createMovementSystem(world: GameWorld, cameraController: CameraC
       const collider = colliderByEid.get(eid);
 
       if (!body || !collider || !characterController) {
-        if (_dbg) {
-          // eslint-disable-next-line no-console
-          console.log('[Movement]', { eid, body: !!body, collider: !!collider, controller: !!characterController, msg: 'SKIPPED — missing dep' });
-        }
         continue;
       }
 
@@ -282,22 +270,6 @@ export function createMovementSystem(world: GameWorld, cameraController: CameraC
       Position.x[eid] = newPos.x;
       Position.y[eid] = newPos.y;
       Position.z[eid] = newPos.z;
-
-      if (_dbg) {
-        // eslint-disable-next-line no-console
-        console.log('[Movement]', {
-          eid,
-          intent: { x: moveX, z: moveZ },
-          speedFactor: MovementState.speedFactor[eid].toFixed(3),
-          speed: speed.toFixed(3),
-          desired: { x: desiredX.toFixed(4), y: desiredY.toFixed(4), z: desiredZ.toFixed(4) },
-          corrected: { x: correctedMovement.x.toFixed(4), y: correctedMovement.y.toFixed(4), z: correctedMovement.z.toFixed(4) },
-          currentPos: { x: currentPos.x.toFixed(2), y: currentPos.y.toFixed(2), z: currentPos.z.toFixed(2) },
-          newPos: { x: newPos.x.toFixed(2), y: newPos.y.toFixed(2), z: newPos.z.toFixed(2) },
-          position: { x: Position.x[eid].toFixed(2), y: Position.y[eid].toFixed(2), z: Position.z[eid].toFixed(2) },
-          grounded: MovementState.grounded[eid] === 1,
-        });
-      }
 
       // Store camera yaw/pitch in entity rotation for animation/HUD
       Rotation.y[eid] = cameraController.getYaw();
