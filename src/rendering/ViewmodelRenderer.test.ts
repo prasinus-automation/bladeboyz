@@ -310,10 +310,10 @@ describe('ViewmodelRenderer', () => {
       viewmodel.syncWithCamera(worldCamera, 0.016, 0, 0);
 
       // With identity quaternion + zero velocity (no bob contribution),
-      // the offset is exactly ARM_OFFSET = (0.25, -0.10, -0.4).
+      // the offset is exactly ARM_OFFSET = (0.25, -0.10, -1.5).
       expect(viewmodel.group.position.x).toBeCloseTo(0.25, 3);
       expect(viewmodel.group.position.y).toBeCloseTo(-0.1, 3);
-      expect(viewmodel.group.position.z).toBeCloseTo(-0.4);
+      expect(viewmodel.group.position.z).toBeCloseTo(-1.5);
     });
 
     it('places the group origin (= shoulder anchor) at or below camera Y', () => {
@@ -983,7 +983,7 @@ describe('ViewmodelRenderer', () => {
       expect(offset).toBeInstanceOf(THREE.Vector3);
       expect(offset.x).toBeCloseTo(0.25);
       expect(offset.y).toBeCloseTo(-0.1);
-      expect(offset.z).toBeCloseTo(-0.4);
+      expect(offset.z).toBeCloseTo(-1.5);
     });
   });
 
