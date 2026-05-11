@@ -42,7 +42,12 @@ import * as THREE from 'three';
  *
  * Moved here from `ViewmodelRenderer.ts` per doc §2.2.
  */
-export const ARM_OFFSET = new THREE.Vector3(0.25, -0.1, -0.4);
+// Tuned bias (#182 follow-up): shifted slightly right (+0.07) and well
+// below eye line (-0.20 lower) so the shoulder anchors near the bottom-
+// right corner of the viewport instead of floating in the middle.
+// Iterate further at runtime via `window.__setArmOffset(x, y, z)` —
+// the field is mutable by design (Vector3 instance is not replaced).
+export const ARM_OFFSET = new THREE.Vector3(0.32, -0.30, -0.4);
 
 // ─── Aim-sway lag (doc §7) ─────────────────────────────────
 

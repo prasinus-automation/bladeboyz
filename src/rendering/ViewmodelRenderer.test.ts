@@ -310,9 +310,9 @@ describe('ViewmodelRenderer', () => {
       viewmodel.syncWithCamera(worldCamera, 0.016, 0, 0);
 
       // With identity quaternion + zero velocity (no bob contribution),
-      // the offset is exactly ARM_OFFSET = (0.25, -0.10, -0.4).
-      expect(viewmodel.group.position.x).toBeCloseTo(0.25, 3);
-      expect(viewmodel.group.position.y).toBeCloseTo(-0.1, 3);
+      // the offset is exactly ARM_OFFSET = (0.32, -0.30, -0.4).
+      expect(viewmodel.group.position.x).toBeCloseTo(0.32, 3);
+      expect(viewmodel.group.position.y).toBeCloseTo(-0.3, 3);
       expect(viewmodel.group.position.z).toBeCloseTo(-0.4);
     });
 
@@ -981,8 +981,8 @@ describe('ViewmodelRenderer', () => {
     it('returns a Vector3 with the FPS lower-right offset', () => {
       const offset = getArmOffset();
       expect(offset).toBeInstanceOf(THREE.Vector3);
-      expect(offset.x).toBeCloseTo(0.25);
-      expect(offset.y).toBeCloseTo(-0.1);
+      expect(offset.x).toBeCloseTo(0.32);
+      expect(offset.y).toBeCloseTo(-0.3);
       expect(offset.z).toBeCloseTo(-0.4);
     });
   });

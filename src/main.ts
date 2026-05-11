@@ -465,6 +465,20 @@ async function main(): Promise<void> {
     });
     return lines.join('\n');
   };
+  // Live arm-anchor tuner. Mutates the shared ARM_OFFSET Vector3 in place
+  // so `syncWithCamera` picks up the new value next frame. Call with no
+  // args to read the current value; call with (x, y, z) numbers to write.
+  //   Examples: __setArmOffset()              → {x: 0.32, y: -0.30, z: -0.40}
+  //             __setArmOffset(0.35, -0.35)   → only x, y change; z held
+  //             __setArmOffset(0.4, -0.4, -0.5)
+  (window as any).__setArmOffset = (x?: number, y?: number, z?: number) => {
+    const a = getArmOffset();
+    if (typeof x === 'number') a.x = x;
+    if (typeof y === 'number') a.y = y;
+    if (typeof z === 'number') a.z = z;
+    return { x: a.x, y: a.y, z: a.z };
+  };
+
   // Count layer-1 lights actually in the scene — verifies the viewmodel
   // lighting fix actually compiled & ran without depending on memory.
   (window as any).__getViewmodelLights = () => {
