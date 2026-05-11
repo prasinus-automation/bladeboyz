@@ -36,7 +36,7 @@ export class Scoreboard {
     this.container.id = 'scoreboard';
     this.container.style.cssText = `
       position: fixed;
-      top: 16px;
+      top: 120px;
       left: 16px;
       padding: 4px 10px;
       background: rgba(0, 0, 0, 0.55);
