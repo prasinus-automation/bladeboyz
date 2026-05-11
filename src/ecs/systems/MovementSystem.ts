@@ -240,8 +240,22 @@ export function createMovementSystem(world: GameWorld, cameraController: CameraC
 
       const desiredMovement = new world.rapier.Vector3(desiredX, desiredY, desiredZ);
 
-      // Use character controller for collision resolution
-      characterController.computeColliderMovement(collider, desiredMovement);
+      // Use character controller for collision resolution.
+      //
+      // QueryFilterFlags.EXCLUDE_SENSORS is critical: HitboxSystem creates
+      // six sensor colliders (head/torso/arms/legs) on kinematicPositionBased
+      // bodies that get repositioned every tick to the player's bone world
+      // positions — i.e. INSIDE the player's own capsule. Without this
+      // filter, Rapier's KCC includes those sensors as obstacles, sees the
+      // capsule penetrating them, and clamps `correctedMovement` to (0,0,0)
+      // on every axis (including horizontal) — the exact "WASD does
+      // nothing while feet animate" symptom. Sensors should never block
+      // physical motion anyway; they're for damage/trigger detection.
+      characterController.computeColliderMovement(
+        collider,
+        desiredMovement,
+        RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+      );
       const correctedMovement = characterController.computedMovement();
 
       // Apply movement to body (advance one fixed-tick worth)
