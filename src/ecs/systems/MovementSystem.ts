@@ -237,15 +237,18 @@ export function createMovementSystem(world: GameWorld, cameraController: CameraC
       // Update grounded state from character controller
       MovementState.grounded[eid] = characterController.computedGrounded() ? 1 : 0;
 
-      // Sync ECS Position from the body's *post-write* translation. Rapier
-      // exposes the kinematic next-translation immediately via .translation()
-      // on bodies created with `kinematicPositionBased`, so this avoids any
-      // chance of ECS Position diverging from Rapier when the controller
-      // clamps the step (e.g. wall-slide).
-      const finalPos = body.translation();
-      Position.x[eid] = finalPos.x;
-      Position.y[eid] = finalPos.y;
-      Position.z[eid] = finalPos.z;
+      // Sync ECS Position from the just-queued next translation. Rapier's
+      // `body.translation()` returns the LAST-COMMITTED translation, NOT the
+      // value queued by `setNextKinematicTranslation` — that lives in
+      // `body.nextTranslation()`. Since `world.step()` runs AFTER this
+      // system, reading `translation()` here gives us the stale pre-step
+      // value and Position would lag the body by a tick (or, when the
+      // physics step skips committing for any reason, never advance at all).
+      // The character controller has already clamped `correctedMovement`
+      // against obstacles, so `newPos` is the authoritative target.
+      Position.x[eid] = newPos.x;
+      Position.y[eid] = newPos.y;
+      Position.z[eid] = newPos.z;
 
       // Store camera yaw/pitch in entity rotation for animation/HUD
       Rotation.y[eid] = cameraController.getYaw();
