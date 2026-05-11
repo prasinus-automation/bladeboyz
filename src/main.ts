@@ -432,6 +432,27 @@ async function main(): Promise<void> {
   // ─── Expose inventory query for debugging ───
   (window as any).getInventory = () => getInventory(world.playerEntity);
 
+  // ─── Diagnostic helpers (#180 investigation) ───
+  // Temporary — remove once the movement/viewmodel bugs are resolved.
+  (window as any).__getPlayerPos = () => {
+    const eid = world.playerEntity;
+    return {
+      eid,
+      position: { x: Position.x[eid], y: Position.y[eid], z: Position.z[eid] },
+      prev: { x: PreviousPosition.x[eid], y: PreviousPosition.y[eid], z: PreviousPosition.z[eid] },
+      rotationY: Rotation.y[eid],
+    };
+  };
+  (window as any).__getViewmodelState = () => ({
+    visible: viewmodel.visible,
+    currentWeapon: viewmodel.getCurrentWeaponName(),
+    groupChildren: viewmodel.group.children.length,
+    groupVisible: viewmodel.group.visible,
+    cameraLayer: viewmodel.camera.layers.mask,
+    sceneHasGroup: world.scene.children.includes(viewmodel.group),
+    mode: cameraController.getMode(),
+  });
+
   // ─── Click-to-play handler ───
   const overlay = document.getElementById('click-to-play');
   if (overlay) {

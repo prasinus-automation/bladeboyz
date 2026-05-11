@@ -128,6 +128,12 @@ export function createMovementSystem(world: GameWorld, cameraController: CameraC
     movementTick++;
     const entities = playerQuery(world.ecs);
 
+    // Diagnostic: emit one log line per second when `window.__debugMovement`
+    // is set. Temporary — remove once #180 lands.
+    const _dbg =
+      (globalThis as any).__debugMovement === true &&
+      movementTick % 60 === 0;
+
     for (let i = 0; i < entities.length; i++) {
       const eid = entities[i];
 
@@ -140,7 +146,13 @@ export function createMovementSystem(world: GameWorld, cameraController: CameraC
       const body = bodyByEid.get(eid);
       const collider = colliderByEid.get(eid);
 
-      if (!body || !collider || !characterController) continue;
+      if (!body || !collider || !characterController) {
+        if (_dbg) {
+          // eslint-disable-next-line no-console
+          console.log('[Movement]', { eid, body: !!body, collider: !!collider, controller: !!characterController, msg: 'SKIPPED — missing dep' });
+        }
+        continue;
+      }
 
       // Save previous position for render-time interpolation
       PreviousPosition.x[eid] = Position.x[eid];
@@ -249,6 +261,22 @@ export function createMovementSystem(world: GameWorld, cameraController: CameraC
       Position.x[eid] = newPos.x;
       Position.y[eid] = newPos.y;
       Position.z[eid] = newPos.z;
+
+      if (_dbg) {
+        // eslint-disable-next-line no-console
+        console.log('[Movement]', {
+          eid,
+          intent: { x: moveX, z: moveZ },
+          speedFactor: MovementState.speedFactor[eid].toFixed(3),
+          speed: speed.toFixed(3),
+          desired: { x: desiredX.toFixed(4), y: desiredY.toFixed(4), z: desiredZ.toFixed(4) },
+          corrected: { x: correctedMovement.x.toFixed(4), y: correctedMovement.y.toFixed(4), z: correctedMovement.z.toFixed(4) },
+          currentPos: { x: currentPos.x.toFixed(2), y: currentPos.y.toFixed(2), z: currentPos.z.toFixed(2) },
+          newPos: { x: newPos.x.toFixed(2), y: newPos.y.toFixed(2), z: newPos.z.toFixed(2) },
+          position: { x: Position.x[eid].toFixed(2), y: Position.y[eid].toFixed(2), z: Position.z[eid].toFixed(2) },
+          grounded: MovementState.grounded[eid] === 1,
+        });
+      }
 
       // Store camera yaw/pitch in entity rotation for animation/HUD
       Rotation.y[eid] = cameraController.getYaw();
