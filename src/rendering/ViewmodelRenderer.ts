@@ -232,6 +232,31 @@ export class ViewmodelRenderer {
     // Only render Layer 1
     this.camera.layers.set(VIEWMODEL_LAYER);
 
+    // ── Viewmodel lighting ──
+    //
+    // The arena's lights are on Layer 0 (default), so the viewmodel
+    // camera (Layer 1 only) doesn't see them. That made anything using
+    // MeshStandardMaterial — i.e. every weapon — render as solid black
+    // and look "invisible" to the player (the arm meshes use
+    // MeshBasicMaterial and so they continued to show regardless). Add
+    // dedicated viewmodel-only lights here, layered to match the camera,
+    // so PBR weapons get diffuse + ambient contribution in Pass 2 without
+    // bleeding into the world pass.
+    //
+    // A hemisphere light gives a soft "sky / ground" ambient base; a
+    // directional light from the same broad direction as the arena sun
+    // (front-top-right of the camera) provides shape-revealing highlights.
+    // Tuned conservatively — over-bright viewmodel lights wash the weapon
+    // and bury the arena's mood.
+    const vmHemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+    vmHemi.layers.set(VIEWMODEL_LAYER);
+    scene.add(vmHemi);
+
+    const vmKey = new THREE.DirectionalLight(0xfff5e0, 0.9);
+    vmKey.position.set(0.5, 1, 0.5);
+    vmKey.layers.set(VIEWMODEL_LAYER);
+    scene.add(vmKey);
+
     // ── Build bone hierarchy ──
     this.group = new THREE.Group();
     this.group.name = 'viewmodel_root';
