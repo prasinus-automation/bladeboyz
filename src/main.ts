@@ -67,7 +67,7 @@ import { ViewmodelDebugOverlay } from './hud/ViewmodelDebugOverlay';
 import { PickupPrompt } from './hud/PickupPrompt';
 import { CombatStateComp } from './ecs/components';
 import { COMBAT_STATE_NAMES } from './combat/states';
-import type * as THREE from 'three';
+import * as THREE from 'three';
 import type { GameWorld } from './core/types';
 import { GameStateManager, GameState } from './core/GameState';
 import { MenuManager } from './hud/MenuManager';
@@ -452,6 +452,44 @@ async function main(): Promise<void> {
     sceneHasGroup: world.scene.children.includes(viewmodel.group),
     mode: cameraController.getMode(),
   });
+
+  // Deep diagnostic: walks the viewmodel scene-graph and reports each
+  // descendant's world position, world scale, .visible, and .layers.mask
+  // so we can spot mis-layered meshes / runaway scales / positions
+  // outside the viewmodel camera's near/far frustum.
+  (window as any).__getViewmodelDeep = () => {
+    const cam = viewmodel.camera;
+    const camPos = cam.position;
+    const result: any = {
+      camera: {
+        position: { x: camPos.x.toFixed(3), y: camPos.y.toFixed(3), z: camPos.z.toFixed(3) },
+        near: cam.near,
+        far: cam.far,
+        fov: cam.fov,
+        layerMask: cam.layers.mask,
+      },
+      group: {
+        position: { ...viewmodel.group.position },
+        scale: { ...viewmodel.group.scale },
+        visible: viewmodel.group.visible,
+        layerMask: viewmodel.group.layers.mask,
+      },
+      descendants: [] as any[],
+    };
+    const worldPos = new THREE.Vector3();
+    viewmodel.group.traverse((obj: any) => {
+      obj.getWorldPosition(worldPos);
+      result.descendants.push({
+        name: obj.name || obj.type,
+        type: obj.type,
+        worldPos: { x: +worldPos.x.toFixed(3), y: +worldPos.y.toFixed(3), z: +worldPos.z.toFixed(3) },
+        visible: obj.visible,
+        layerMask: obj.layers ? obj.layers.mask : '?',
+        scale: obj.scale ? { x: obj.scale.x, y: obj.scale.y, z: obj.scale.z } : '?',
+      });
+    });
+    return result;
+  };
 
   // ─── Click-to-play handler ───
   const overlay = document.getElementById('click-to-play');
