@@ -7,9 +7,14 @@
  * the arc gives a clean linear-in-radians sweep that the eye reads as
  * a slash. See §4 of `docs/animation-architecture.md`.
  *
- * Per-direction params are weapon-agnostic at this stage. Per-weapon
- * scaling (dagger tighter, battleaxe wider, mace wrist follow-through)
- * is deferred to issue #D's pose-data PR.
+ * Per-weapon scaling (#132): the base direction params live in
+ * `ARC_SWING_PARAMS` (Longsword baseline, kept for backward compat).
+ * Per-weapon overrides live in `ARC_SWING_PARAMS_PER_WEAPON`. The
+ * speed/reach hierarchy is Dagger < Longsword < Mace < Battleaxe —
+ * heavier weapons get wider shoulder rotation and more spine commitment,
+ * faster weapons get more wrist/forearm contribution and tighter
+ * shoulders. Phase-t math is identical across all weapons; only the
+ * angular magnitudes scale.
  */
 
 import { Direction } from '../combat/directions';
@@ -39,6 +44,13 @@ export interface ArcSwingParams {
   spineEnd?: BoneRotation;
 }
 
+/**
+ * Canonical weapon names matching `weaponIdToName` in
+ * `src/ecs/systems/CombatSystem.ts:43` and the `getViewmodelPose`
+ * registry keys. Capitalized — lowercase forms are NOT recognized.
+ */
+export type WeaponName = 'Longsword' | 'Mace' | 'Dagger' | 'Battleaxe';
+
 // ── Helpers ──────────────────────────────────────────────
 
 function lerp(a: number, b: number, t: number): number {
@@ -63,7 +75,50 @@ function lerpBoneRotation(
   };
 }
 
-// ── Per-direction arc tables ─────────────────────────────
+/**
+ * Scale every numeric axis of a `BoneRotation` by `factor`. Used to derive
+ * per-weapon endpoints from the Longsword baseline (Mace = 1.15× shoulder,
+ * etc.) without hand-authoring all 16 sets. Missing axes pass through as
+ * undefined (NOT scaled to 0) so the result stays structurally identical
+ * to the input.
+ */
+function scaleBoneRotation(rot: BoneRotation, factor: number): BoneRotation {
+  const out: BoneRotation = {};
+  if (rot.x !== undefined) out.x = rot.x * factor;
+  if (rot.y !== undefined) out.y = rot.y * factor;
+  if (rot.z !== undefined) out.z = rot.z * factor;
+  return out;
+}
+
+/**
+ * Derive a per-weapon `ArcSwingParams` from the Longsword baseline by
+ * scaling shoulder / forearm / hand / spine independently. Spine
+ * endpoints are scaled iff the baseline has them — Stab has no spine
+ * follow-through and stays spine-less across all four weapons.
+ */
+function scaleParams(
+  base: ArcSwingParams,
+  shoulderFactor: number,
+  forearmFactor: number,
+  handFactor: number,
+  spineFactor: number,
+): ArcSwingParams {
+  const out: ArcSwingParams = {
+    shoulderStart: scaleBoneRotation(base.shoulderStart, shoulderFactor),
+    shoulderEnd: scaleBoneRotation(base.shoulderEnd, shoulderFactor),
+    forearmStart: scaleBoneRotation(base.forearmStart, forearmFactor),
+    forearmEnd: scaleBoneRotation(base.forearmEnd, forearmFactor),
+    handStart: scaleBoneRotation(base.handStart, handFactor),
+    handEnd: scaleBoneRotation(base.handEnd, handFactor),
+  };
+  if (base.spineStart && base.spineEnd) {
+    out.spineStart = scaleBoneRotation(base.spineStart, spineFactor);
+    out.spineEnd = scaleBoneRotation(base.spineEnd, spineFactor);
+  }
+  return out;
+}
+
+// ── Per-direction arc tables (Longsword baseline) ────────
 
 /**
  * Swing endpoints per direction. Numeric values follow the issue body's
@@ -79,6 +134,11 @@ function lerpBoneRotation(
  * `Underhand` is intentionally absent — FSM v2 #131 / #139 dropped that
  * direction. If it's re-added post-MVP it gets a new numeric slot per
  * the wire-format note in `src/combat/directions.ts`.
+ *
+ * This table is the **Longsword baseline**. Mace / Dagger / Battleaxe
+ * scale these values (see `WEAPON_SCALING` and `ARC_SWING_PARAMS_PER_WEAPON`).
+ * Kept exported under the legacy name so the existing 1-arg `computeArcSwingPose`
+ * callers that pass no weapon get Longsword behavior verbatim.
  */
 export const ARC_SWING_PARAMS: Record<number, ArcSwingParams> = {
   // ── Overhead — vertical chop down ──
@@ -128,8 +188,90 @@ export const ARC_SWING_PARAMS: Record<number, ArcSwingParams> = {
   },
 };
 
+// ── Per-weapon scaling factors ────────────────────────────
+
 /**
- * Compute the arc-swing pose for a given direction at normalized
+ * Per-weapon multipliers for the four bone groups. Longsword = 1.0 (no
+ * scaling — it's the baseline). Values pulled from issue #132's body:
+ *
+ *  - **Mace**: ~1.15× shoulder, +50% spine wind-up, slightly wider arc plane.
+ *  - **Dagger**: ~0.75× shoulder, ~1.2× forearm/wrist contribution, no spine commitment.
+ *  - **Battleaxe**: ~1.30× shoulder, ~1.5× spine, slowest visual build.
+ *
+ * For weapons with no spine entries in the baseline (Stab), the spine
+ * factor is irrelevant — `scaleParams` skips spine when the baseline lacks it.
+ */
+interface WeaponScaling {
+  shoulder: number;
+  forearm: number;
+  hand: number;
+  spine: number;
+}
+
+const WEAPON_SCALING: Record<WeaponName, WeaponScaling> = {
+  Longsword: { shoulder: 1.0, forearm: 1.0, hand: 1.0, spine: 1.0 },
+  Mace: { shoulder: 1.15, forearm: 1.0, hand: 1.1, spine: 1.5 },
+  // Dagger: forearm + hand contribution boosted; spine commitment zeroed
+  // (a thrust/slash with a dagger has no torso wind-up — it's all wrist).
+  Dagger: { shoulder: 0.75, forearm: 1.2, hand: 1.2, spine: 0 },
+  Battleaxe: { shoulder: 1.3, forearm: 1.05, hand: 1.0, spine: 1.5 },
+};
+
+/**
+ * Build the per-weapon × per-direction params table from the baseline +
+ * scaling. Keys: weapon name → numeric Direction enum value → params.
+ *
+ * Numeric direction keys (not the enum) are used as the inner key so
+ * lookup is a plain object property read — same shape as `ARC_SWING_PARAMS`.
+ */
+function buildPerWeaponParams(): Record<
+  WeaponName,
+  Record<number, ArcSwingParams>
+> {
+  const result = {} as Record<WeaponName, Record<number, ArcSwingParams>>;
+  const directions: number[] = [
+    Direction.Overhead,
+    Direction.Left,
+    Direction.Right,
+    Direction.Stab,
+  ];
+  const weapons: WeaponName[] = ['Longsword', 'Mace', 'Dagger', 'Battleaxe'];
+
+  for (const weapon of weapons) {
+    const scaling = WEAPON_SCALING[weapon];
+    const perDirection: Record<number, ArcSwingParams> = {};
+    for (const dir of directions) {
+      const base = ARC_SWING_PARAMS[dir];
+      perDirection[dir] = scaleParams(
+        base,
+        scaling.shoulder,
+        scaling.forearm,
+        scaling.hand,
+        scaling.spine,
+      );
+    }
+    result[weapon] = perDirection;
+  }
+  return result;
+}
+
+/**
+ * Per-weapon × per-direction arc params. Build-once on module load via
+ * `buildPerWeaponParams()`; the cost is 16 small object allocations at
+ * import time, paid once.
+ *
+ * Lookup contract: `ARC_SWING_PARAMS_PER_WEAPON[weaponName][direction]`.
+ * Unknown weapons fall back to Longsword via `computeArcSwingPose`.
+ */
+export const ARC_SWING_PARAMS_PER_WEAPON: Record<
+  WeaponName,
+  Record<number, ArcSwingParams>
+> = buildPerWeaponParams();
+
+// ── Main API ─────────────────────────────────────────────
+
+/**
+ * Compute the arc-swing pose for a given direction + weapon at normalized
  * progress `t ∈ [0, 1]`.
  *
  * Returns a `Pose` containing **only** the four arm bones
@@ -138,16 +280,42 @@ export const ARC_SWING_PARAMS: Record<number, ArcSwingParams> = {
  * bones the layer owns (the AnimationSystem's `combatOwned ∩ ARM_BONES_R`
  * intersection — see §9 step 7 of the spec doc).
  *
- * If `direction` is unknown, falls back to the `Stab` arc — same
- * fallback as `getCombatPose`.
+ * The 2-arg overload `computeArcSwingPose(direction, t)` is preserved for
+ * backward compat — it implicitly uses the Longsword baseline.
+ *
+ * Unknown `weaponName` (e.g. a future weapon registered after this module
+ * loaded) silently falls back to the Longsword baseline. Unknown `direction`
+ * falls back to the Stab arc — same fallback as `getCombatPose`.
  */
+export function computeArcSwingPose(direction: Direction, t: number): Pose;
 export function computeArcSwingPose(
   direction: Direction,
+  weaponName: WeaponName,
   t: number,
+): Pose;
+export function computeArcSwingPose(
+  direction: Direction,
+  arg2: WeaponName | number,
+  arg3?: number,
 ): Pose {
-  const params =
-    ARC_SWING_PARAMS[direction as number] ??
-    ARC_SWING_PARAMS[Direction.Stab as number];
+  // Disambiguate overloads by arg2 type.
+  let weaponName: WeaponName | undefined;
+  let t: number;
+  if (typeof arg2 === 'number') {
+    weaponName = undefined; // legacy 2-arg form — use Longsword baseline
+    t = arg2;
+  } else {
+    weaponName = arg2;
+    t = arg3 ?? 0;
+  }
+
+  const table =
+    weaponName !== undefined
+      ? ARC_SWING_PARAMS_PER_WEAPON[weaponName] ??
+        ARC_SWING_PARAMS_PER_WEAPON.Longsword
+      : ARC_SWING_PARAMS;
+
+  const params = table[direction as number] ?? table[Direction.Stab as number];
 
   // Clamp t to [0, 1] so callers don't have to.
   const tt = t <= 0 ? 0 : t >= 1 ? 1 : t;
@@ -177,6 +345,25 @@ export function computeArcSwingPose(
  */
 export const ARC_SWING_OWNED_BONES: ReadonlySet<string> = new Set([
   'shoulder_R',
+  'forearm_R',
+  'hand_R',
+]);
+
+/**
+ * Viewmodel arc-swing bones — the FP rig's right-arm hierarchy. Used by
+ * `ViewmodelAnimationSystem` to filter the `computeArcSwingPose` output
+ * to the viewmodel bone names. `vm_weapon_attach` is deliberately absent
+ * — that bone is owned by per-weapon grip data (#125) and must not be
+ * touched by animation code.
+ *
+ * Note: the renderer exposes bones under canonical names (without the
+ * `vm_` prefix) — see `ViewmodelRenderer.bones`. So `shoulder_R` here
+ * matches the third-person system; the viewmodel system maps these to
+ * `upper_arm_R` / `forearm_R` / `hand_R` at the bone-write site (the
+ * viewmodel has no `shoulder_R` — it pivots from `upper_arm_R` directly).
+ */
+export const ARC_SWING_VIEWMODEL_BONES: ReadonlySet<string> = new Set([
+  'upper_arm_R',
   'forearm_R',
   'hand_R',
 ]);

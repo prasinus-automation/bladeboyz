@@ -6,6 +6,39 @@
  *
  * Architecture: animation data is separate from the system —
  * poses are plain data objects, looked up by FSM state + direction.
+ *
+ * ── Release-entry policy (#132 — option A) ────────────────────
+ *
+ * The `release` pose under each direction in `ATTACK_ANIMATIONS` is the
+ * **third-person spine + non-right-arm fallback** during Release. The
+ * right arm (shoulder_R, forearm_R, hand_R) is owned by `arcSwing.ts`'s
+ * `computeArcSwingPose(direction, weaponName, t)` during Release —
+ * `AnimationSystem.ts` filters the arc bones out before applying the
+ * keyframe pose to the remaining combat-owned bones (chest, neck, head,
+ * left arm, upper_arm_R, plus spine when the combat layer owns it).
+ *
+ * Option B (delete `release` entries) was considered and rejected: the
+ * spine + chest follow-through values authored here are visually load-
+ * bearing for horizontal slashes and stab thrusts, and the arc-swing
+ * already supplies its own spine endpoints when the swing is horizontal.
+ * Keeping the keyframe `release` entries means a future spine-owning
+ * Release pose can be tuned independently of the arc-swing geometry
+ * without re-authoring `arcSwing.ts`.
+ *
+ * Right-arm entries (`shoulder_R`, `forearm_R`, `hand_R`) inside a
+ * `release` pose are dead-on-arrival in third-person — the AnimationSystem
+ * never reads them because `combatOwned` is set-minus'd with
+ * `ARC_SWING_OWNED_BONES` before they're applied. They're kept here only
+ * so the data file remains consistent with the windup/recovery shape;
+ * editors should NOT spend authoring time on right-arm `release` values.
+ *
+ * **First-person viewmodel does NOT read these `release` entries at all** —
+ * `ViewmodelAnimationSystem.ts` (#132) calls `computeArcSwingPose` directly
+ * for the right-arm viewmodel bones; `getViewmodelPose(weaponName, Release, dir)`
+ * is bypassed during Release. The viewmodel `release` pose data in
+ * `ViewmodelAnimationData.ts` is similarly dead-on-arrival during Release,
+ * but kept for the same reason — symmetry with windup/recovery + future
+ * extension.
  */
 
 import { CombatState } from '../combat/states';
