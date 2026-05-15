@@ -13,7 +13,7 @@ npm install          # Install dependencies
 npm run dev          # Start Vite dev server with HMR (http://localhost:5173)
 ```
 
-When the page loads you'll see the **main menu** (`BLADEBOYZ` title + Play button + controls hint + version label). Click **PLAY** to acquire pointer lock and enter the arena. ESC inside the menu is a no-op for now; once the pause menu lands (issue #4), ESC during play will open it.
+When the page loads you'll see the **main menu** (`BLADEBOYZ` title + Play button + controls hint + version label). Click **PLAY** to acquire pointer lock and enter the arena. ESC inside the menu is a no-op for now (a future PR may wire a quit-confirm). Pressing ESC **during play** opens the pause menu (#111) — see [Pause menu](#pause-menu) below.
 
 ## Build
 
@@ -41,6 +41,25 @@ npm run lint         # ESLint
 | **ESC** (inside main menu) | No-op for now. A future PR may wire a quit-confirm flow. |
 
 The legacy `Click to Play` overlay still exists, but its role is now the *lost-pointer-lock-mid-game hint*: if you press ESC during play or alt-tab away, the browser releases pointer lock and that prompt re-appears so you can click to re-acquire. On initial page load you see the main menu instead.
+
+### Pause menu
+
+| Key / Click | Action |
+|-------------|--------|
+| **ESC** (during play) | Open the pause menu — **Resume / Controls / Quit** |
+| **Resume** | Close the menu; click the canvas afterwards to re-acquire pointer lock |
+| **Controls** | Open the read-only Controls overlay (Back / ESC returns to pause) |
+| **Quit** | Close the menu and transition `GameState → MAIN_MENU` |
+
+> ⚠ **PvP simulation continues while paused.** The ECS world keeps stepping at 60 Hz; only `InputManager.paused` flips. In a networked match you can be killed while the pause panel is open. This is the in-UI documentation of that contract — the warning text appears below the panel in `theme.status.warn` yellow.
+
+### Controls overlay
+
+A read-only modal listing every keybind, grouped by section (Movement / Combat / Interface). The list is **data-driven** from `src/input/keybinds.ts` via `keybindsByGroup()` — adding a new keybind there automatically renders here without code changes in the overlay. Key labels run through `formatKeyCode` for display (`KeyW` → `W`, `ShiftLeft` → `Shift`, `Mouse0` → `LMB`, `Escape` → `Esc`, `ArrowLeft` → `←`, etc.).
+
+Press **Back** (or ESC) to dismiss. If the overlay was opened from the pause menu, ESC pops MenuManager's one-deep back-stack and re-opens pause; if opened standalone, ESC just closes it.
+
+Rebindable controls are out of scope here — covered by #87. This overlay is read-only.
 
 ### Movement
 | Key | Action |

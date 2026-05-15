@@ -22,6 +22,12 @@ export const theme = {
     panel: 'rgba(20, 20, 30, 0.95)',
     /** Backdrop behind modal panels — translucent black. */
     backdrop: 'rgba(0, 0, 0, 0.7)',
+    /**
+     * Lighter dim backdrop — used by Pause menu so the running game stays
+     * faintly visible underneath (PvP simulation continues; the player needs
+     * to read the world, not just the menu). #111.
+     */
+    dim: 'rgba(0, 0, 0, 0.55)',
     /** Subtle inner cell / placeholder background. */
     subtle: 'rgba(40, 40, 50, 0.6)',
     /** Pure black — body and overlay backgrounds. */

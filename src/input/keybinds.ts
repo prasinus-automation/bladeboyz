@@ -94,6 +94,88 @@ export function keybindsByGroup(): Record<KeybindGroup, Keybind[]> {
   return out;
 }
 
+/**
+ * Pretty-print a `KeyboardEvent.code`-style string for display in the Controls
+ * overlay (#111). Coverage mirrors the rest of the project's convention:
+ *
+ *   - `KeyA`–`KeyZ`            → `A`–`Z`
+ *   - `Digit0`–`Digit9`        → `0`–`9`
+ *   - `Numpad0`–`Numpad9`      → `Num0`–`Num9`
+ *   - `ShiftLeft/Right`        → `Shift`
+ *   - `ControlLeft/Right`      → `Ctrl`
+ *   - `AltLeft/Right`          → `Alt`
+ *   - `MetaLeft/Right`         → `Meta`
+ *   - `Space` / `Escape` / `Tab` / `Enter` / `Backspace` / `Delete` →
+ *                              `Space` / `Esc` / `Tab` / `Enter` / `Backspace` / `Delete`
+ *   - `F1`–`F12`               → `F1`–`F12` (passthrough)
+ *   - `Arrow{Left,Right,Up,Down}` → `←` / `→` / `↑` / `↓`
+ *   - `Mouse0` / `Mouse1` / `Mouse2` → `LMB` / `MMB` / `RMB`
+ *
+ * Unknown codes pass through unchanged — this is intentional so the overlay
+ * surfaces "raw" codes for any binding the table doesn't yet recognize.
+ */
+export function formatKeyCode(code: string): string {
+  // Letter keys: KeyA → A
+  if (code.length === 4 && code.startsWith('Key')) {
+    return code.slice(3);
+  }
+  // Digit keys: Digit0 → 0
+  if (code.length === 6 && code.startsWith('Digit')) {
+    return code.slice(5);
+  }
+  // Numpad digit keys: Numpad0 → Num0
+  if (code.length === 7 && code.startsWith('Numpad')) {
+    return 'Num' + code.slice(6);
+  }
+  // F-keys passthrough (F1..F12)
+  if (/^F([1-9]|1[0-2])$/.test(code)) {
+    return code;
+  }
+  // Modifier keys — strip Left/Right side suffix
+  switch (code) {
+    case 'ShiftLeft':
+    case 'ShiftRight':
+      return 'Shift';
+    case 'ControlLeft':
+    case 'ControlRight':
+      return 'Ctrl';
+    case 'AltLeft':
+    case 'AltRight':
+      return 'Alt';
+    case 'MetaLeft':
+    case 'MetaRight':
+      return 'Meta';
+    case 'Space':
+      return 'Space';
+    case 'Escape':
+      return 'Esc';
+    case 'Tab':
+      return 'Tab';
+    case 'Enter':
+      return 'Enter';
+    case 'Backspace':
+      return 'Backspace';
+    case 'Delete':
+      return 'Delete';
+    case 'ArrowLeft':
+      return '←';
+    case 'ArrowRight':
+      return '→';
+    case 'ArrowUp':
+      return '↑';
+    case 'ArrowDown':
+      return '↓';
+    case 'Mouse0':
+      return 'LMB';
+    case 'Mouse1':
+      return 'MMB';
+    case 'Mouse2':
+      return 'RMB';
+    default:
+      return code;
+  }
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // Surface 2 — Runtime input-pipeline keybind map (InputManager, issue #102)
 // ───────────────────────────────────────────────────────────────────────────
