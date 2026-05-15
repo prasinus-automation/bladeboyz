@@ -69,8 +69,9 @@ import { CombatStateComp } from './ecs/components';
 import { COMBAT_STATE_NAMES } from './combat/states';
 import * as THREE from 'three';
 import type { GameWorld } from './core/types';
-import { GameStateManager, GameState } from './core/GameState';
+import { GameStateManager } from './core/GameState';
 import { MenuManager } from './hud/MenuManager';
+import { MainMenu } from './hud/MainMenu';
 
 // Import weapon configs so they auto-register
 import './weapons/longsword';
@@ -309,11 +310,11 @@ async function main(): Promise<void> {
   const pickupPrompt = new PickupPrompt();
 
   // ─── Game state + menu manager (#101 foundation) ───
-  // GameStateManager defaults to MAIN_MENU. For now we eagerly transition to
-  // PLAYING since the game still starts directly in the world (issue #2 will
-  // replace this with a real main menu flow).
+  // GameStateManager defaults to MAIN_MENU. As of issue #106 the page now
+  // loads into the main menu and the player must click Play to transition
+  // into PLAYING — no eager state flip here. See `MainMenu.ts` for the
+  // entry-overlay implementation.
   const gameStateManager = new GameStateManager();
-  gameStateManager.state = GameState.PLAYING;
 
   // MenuManager owns the ESC listener, pointer-lock release, input pause, and
   // click-to-play suppression for any modal that registers with it. Its ctor
@@ -321,6 +322,17 @@ async function main(): Promise<void> {
   // override that below to also account for ShopPanel (which doesn't yet
   // register with MenuManager — its modal kind isn't part of #101's contract).
   const menuManager = new MenuManager(input, gameStateManager);
+
+  // Main menu (#106). The MenuManager registration covers the click-to-play
+  // suppression composition (`menuManager.isAnyOpen()`) so the legacy
+  // `#click-to-play` text overlay stays hidden behind us on initial load.
+  // The eventual override below (`|| shopPanel.isOpen`) doesn't touch our
+  // path — we're already accounted for by `isAnyOpen()`.
+  const mainMenu = new MainMenu(input, gameStateManager, menuManager);
+  // Reference `mainMenu` once to keep the binding live and silence the
+  // unused-variable lint. The MenuManager / GameStateManager subscriptions
+  // keep the menu reacting to state changes for the lifetime of the page.
+  void mainMenu;
 
   // Inventory panel (I key to toggle). Registers itself with menuManager so
   // ESC routes to it and pointer-lock / input.paused are managed centrally.

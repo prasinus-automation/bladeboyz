@@ -77,7 +77,14 @@
     </style>
   </head>
   <body>
-    <div id="click-to-play">Click to Play</div>
+    <!--
+      The legacy "click to play" overlay is the *lost-pointer-lock* hint for
+      mid-game lock loss (ESC pressed during play, alt-tab, etc.). It starts
+      hidden — the entry overlay is now `MainMenu` (issue #106). When the
+      player loses pointer lock mid-game `InputManager._onPointerLockChange`
+      removes `.hidden` so this prompt re-appears.
+    -->
+    <div id="click-to-play" class="hidden">Click to Play</div>
     <div id="crosshair"></div>
     <div id="debug-overlay"></div>
     <div id="camera-mode-indicator">FPS</div>

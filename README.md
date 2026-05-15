@@ -13,6 +13,8 @@ npm install          # Install dependencies
 npm run dev          # Start Vite dev server with HMR (http://localhost:5173)
 ```
 
+When the page loads you'll see the **main menu** (`BLADEBOYZ` title + Play button + controls hint + version label). Click **PLAY** to acquire pointer lock and enter the arena. ESC inside the menu is a no-op for now; once the pause menu lands (issue #4), ESC during play will open it.
+
 ## Build
 
 ```bash
@@ -20,7 +22,25 @@ npm run build        # Production build (type-checks first)
 npm run preview      # Preview production build locally
 ```
 
+## Testing
+
+```bash
+npm test             # Run test suite (Vitest)
+npm run test:watch   # Run tests in watch mode
+npm run typecheck    # TypeScript type checking (tsc --noEmit)
+npm run lint         # ESLint
+```
+
 ## Controls
+
+### Main menu
+
+| Key / Click | Action |
+|-------------|--------|
+| **Click "PLAY"** | Acquire pointer lock and transition `GameState.MAIN_MENU → PLAYING`. The pointer-lock request runs synchronously inside the click handler — browsers reject lock requests outside a user-gesture stack frame. |
+| **ESC** (inside main menu) | No-op for now. A future PR may wire a quit-confirm flow. |
+
+The legacy `Click to Play` overlay still exists, but its role is now the *lost-pointer-lock-mid-game hint*: if you press ESC during play or alt-tab away, the browser releases pointer lock and that prompt re-appears so you can click to re-acquire. On initial page load you see the main menu instead.
 
 ### Movement
 | Key | Action |
@@ -284,15 +304,6 @@ The world is a single 30×30 m arena built code-first from `src/arena/createAren
 
 Every visible prop has a matching Rapier static (`RigidBodyType.Fixed`) cuboid collider with identical extents — if you can see it, you collide with it. The arena's `ArenaSpec` (returned by `createArena()` and stored on `world.arena`) exposes `spawnPoints`, `bounds`, `shopkeepStall.{counter, npcAnchor, facing}`, and `weaponPickupSafeVolume` for systems (spawn, weapon-pickup, shopkeep AI) to query. The full design — including dimensions tables and spawn-point yaw values — lives in [`docs/arena-v1.md`](docs/arena-v1.md).
 
-## Testing
-
-```bash
-npm test             # Run test suite (Vitest)
-npm run test:watch   # Run tests in watch mode
-npm run typecheck    # TypeScript type checking (tsc --noEmit)
-npm run lint         # ESLint
-```
-
 ## Tech Stack
 
 - **TypeScript** — strict mode, ES2022 target
@@ -309,7 +320,9 @@ src/
 ├── main.ts                  # Entry point — initializes world, wires systems, starts game loop
 ├── core/
 │   ├── GameLoop.ts          # Fixed-timestep game loop (60Hz fixed + variable render)
+│   ├── GameState.ts         # GameState enum + GameStateManager pub/sub (#101)
 │   ├── World.ts             # Creates ECS world, Three.js scene, Rapier physics world
+│   ├── version.ts           # APP_VERSION constant (mirrored from package.json) (#106)
 │   └── types.ts             # Shared type definitions and constants
 ├── ecs/
 │   ├── components.ts        # All bitECS component definitions + lookup registries
@@ -376,6 +389,9 @@ src/
 │   └── PurchaseFlow.ts      # Atomic validate-then-mutate purchaseWeapon API (#123)
 ├── hud/
 │   ├── HUD.ts               # HUD manager (health, stamina, debug, direction indicator)
+│   ├── theme.ts             # Shared visual constants (font, colors, z-index tiers) (#101)
+│   ├── MenuManager.ts       # Single owner of modal-overlay lifecycle (ESC routing, pointer-lock) (#101)
+│   ├── MainMenu.ts          # Entry overlay shown at boot — title + Play button + version (#106)
 │   ├── HealthBar.ts         # Player health bar
 │   ├── StaminaBar.ts        # Player stamina bar
 │   ├── InventoryPanel.ts    # Inventory overlay UI (weapon selection & gear slots)
