@@ -11,8 +11,13 @@
 import { CombatState } from '../../combat/states';
 import { fsmRegistry } from '../../combat/CombatFSM';
 import { weaponConfigs } from '../../weapons/WeaponConfig';
-import { CombatStateComponent, meshRegistry } from '../components';
+import { CombatStateComponent, meshRegistry, Position } from '../components';
 import { weaponIdToName } from './CombatSystem';
+import { createWeaponPickup } from '../entities/createWeaponPickup';
+import { getCurrentFixedTick } from '../../core/tickCounter';
+import { DESPAWN_TICKS } from './WeaponPickupSystem';
+import { EventBus } from '../../events/EventBus';
+import type { GameWorld } from '../../core/types';
 
 // ── Types ───────────────────────────────────────────────
 
@@ -283,28 +288,84 @@ export function equipDefaultStarter(entityId: number): boolean {
 }
 
 /**
- * Drop the entity's currently-equipped weapon at its feet (no-op stub).
+ * Drop the entity's currently-equipped weapon at its feet.
  *
- * Issue #130 wires this into `processDeaths` so the death pipeline is
- * complete; the actual implementation — spawn a `WeaponPickup` entity at
- * the victim's feet, unequip the weapon, skip the protected `starterWeapon` —
- * is owned by issue #94 / #A2 (drop-on-death). The signature here is the
- * contract those PRs implement against.
+ * Called from `processDeaths` (`processDeaths.ts:133`) for every dying
+ * Player/Bot entity. The death pipeline (HealthSystem → processDeaths →
+ * dropEquippedWeapon) is the canonical "an entity died" path — this
+ * function is the drop-on-death hook the rest of the pipeline depends on.
  *
- * Until then this is a deliberate no-op. Tests that assert the function
- * is called pass via spy / mock; production behavior is unchanged.
+ * Behavior:
+ *   - No-op if the entity has no inventory or nothing equipped.
+ *   - No-op if the equipped weapon IS the protected `starterWeapon` —
+ *     starters are tied to the player identity and never drop.
+ *   - Otherwise: spawn a `WeaponPickup` at the entity's current Position
+ *     (feet), remove the dropped weapon from inventory, re-equip the
+ *     starter if it's still in inventory (so the dying entity isn't left
+ *     unarmed mid-respawn-countdown; cosmetic but matches the design),
+ *     emit a `WeaponDrop` event on the EventBus.
  *
- * @param entityId the dying entity
- * @param world the GameWorld (will be needed to spawn the pickup); typed
- *   loosely so this module doesn't have to import GameWorld and create
- *   an import cycle with `core/types`.
+ * Spawn-tick of the dropped pickup is `currentTick` (no claim cooldown —
+ * the corpse is unconscious for `RESPAWN_DELAY_TICKS` and the killer can
+ * walk over immediately). Despawn tick is `currentTick + DESPAWN_TICKS`
+ * (#121 — 30s lifetime). Both constants live in `WeaponPickupSystem.ts`
+ * so the timeline is single-sourced.
+ *
+ * @param entityId  the dying entity (Player or Bot — caller filters)
+ * @param world     the GameWorld — needed to spawn the pickup entity
  */
-export function dropEquippedWeapon(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  entityId: number,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
-  world: any,
-): void {
-  // Intentionally empty — see #94. The hook is wired so processDeaths can
-  // be tested end-to-end now without waiting for the drop implementation.
+export function dropEquippedWeapon(entityId: number, world: GameWorld): void {
+  const inv = inventoryRegistry.get(entityId);
+  if (!inv) return;
+  if (inv.equippedWeapon === null) return;
+  // Starter is protected — never dropped. (`starterWeapon` can be null
+  // for entities created without a protected starter, in which case
+  // anything equipped is fair game.)
+  if (inv.starterWeapon !== null && inv.equippedWeapon === inv.starterWeapon) {
+    return;
+  }
+
+  const droppedName = inv.equippedWeapon;
+  const tick = getCurrentFixedTick();
+  const position: [number, number, number] = [
+    Position.x[entityId],
+    Position.y[entityId],
+    Position.z[entityId],
+  ];
+
+  // 1. Spawn the ground pickup at the corpse's feet. spawnTick = currentTick
+  // means no claim-cooldown — the pickup is immediately claimable.
+  createWeaponPickup(world, {
+    weaponName: droppedName,
+    position: { x: position[0], y: position[1], z: position[2] },
+    spawnTick: tick,
+    despawnTick: tick + DESPAWN_TICKS,
+  });
+
+  // 2. Strip the dropped weapon out of inventory. `removeWeaponFromInventory`
+  // also nulls `equippedWeapon` if it matched.
+  removeWeaponFromInventory(entityId, droppedName);
+
+  // 3. Re-equip the starter weapon if it's still in inventory and the
+  // entity's FSM allows it. processDeaths reset the FSM to Idle just
+  // before calling us, so `equipWeapon`'s Idle gate passes. If the
+  // starter isn't in inventory (rare — a future PR might let a player
+  // discard their starter intentionally) we leave equippedWeapon = null;
+  // `processRespawns` will re-equip on respawn via `equipDefaultStarter`.
+  if (
+    inv.starterWeapon !== null &&
+    inv.weapons.includes(inv.starterWeapon)
+  ) {
+    equipWeapon(entityId, inv.starterWeapon);
+  }
+
+  // 4. Emit the drop event. Killfeed, scoreboard, analytics, networking
+  // (#92) consume this declaratively rather than walking the pickup
+  // registry for new entries.
+  EventBus.emit('WeaponDrop', {
+    sourceEid: entityId,
+    weaponName: droppedName,
+    position,
+    tick,
+  });
 }

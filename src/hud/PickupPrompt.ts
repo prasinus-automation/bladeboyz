@@ -22,7 +22,7 @@ import { Position } from '../ecs/components';
 import { pickupRegistry } from '../inventory/PickupRegistry';
 import { fsmRegistry } from '../combat/CombatFSM';
 import { CombatState } from '../combat/states';
-import { PICKUP_RADIUS } from '../rendering/PickupRenderer';
+import { PICKUP_RADIUS } from '../ecs/systems/WeaponPickupSystem';
 
 /** Squared radius — avoids a sqrt per pickup in the tight loop. */
 const PICKUP_RADIUS_SQ = PICKUP_RADIUS * PICKUP_RADIUS;

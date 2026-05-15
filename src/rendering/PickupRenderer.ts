@@ -29,33 +29,19 @@ import type { GameWorld } from '../core/types';
 
 // ── Pickup timeline constants ────────────────────────────────
 //
-// TODO(#121): once `src/ecs/systems/WeaponPickupSystem.ts` lands, move these
-// constants there and re-export from this module. Keeping the values in one
-// place means the despawn timer (#121) can never drift from the blink window
-// (#127). The `// TODO(#121)` markers below pin the dependency.
-
-/**
- * Total ticks a pickup lives on the ground before despawning. 30s @ 60Hz.
- *
- * TODO(#121): re-import from WeaponPickupSystem.
- */
-export const DESPAWN_TICKS = 1800;
-
-/**
- * How many ticks before despawn the blink+fade warning starts. 5s @ 60Hz.
- *
- * TODO(#121): re-import from WeaponPickupSystem.
- */
-export const BLINK_TICKS = 300;
-
-/**
- * 3D Euclidean radius (meters) within which a player can pick up a weapon.
- * Read by `PickupPrompt` — owned here so it stays sync'd with the renderer's
- * fade window.
- *
- * TODO(#121): re-import from WeaponPickupSystem.
- */
-export const PICKUP_RADIUS = 1.5;
+// As of #121 the canonical home for these is `WeaponPickupSystem.ts` — the
+// system that owns drop-on-death, KeyE pickup, and despawn-sweep timing.
+// We import them here so this renderer can read them in the fade-window
+// math below AND re-export them so existing callers (`PickupPrompt.ts`
+// reads `PICKUP_RADIUS`, `PickupRenderer.test.ts` reads all three) don't
+// break. New code should import directly from
+// `../ecs/systems/WeaponPickupSystem`.
+import {
+  DESPAWN_TICKS,
+  BLINK_TICKS,
+  PICKUP_RADIUS,
+} from '../ecs/systems/WeaponPickupSystem';
+export { DESPAWN_TICKS, BLINK_TICKS, PICKUP_RADIUS };
 
 // ── Visual tuning constants ──────────────────────────────────
 

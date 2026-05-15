@@ -24,7 +24,10 @@ export type EventType =
   | 'DamageDealt'
   | 'DeathEvent'
   | 'RespawnEvent'
-  | 'WeaponEquipped';
+  | 'WeaponEquipped'
+  | 'WeaponDrop'
+  | 'WeaponPickup'
+  | 'WeaponDespawn';
 
 /**
  * `DamageDealt` — emitted by `DamageSystem` after a non-blocked, non-parried
@@ -96,6 +99,57 @@ export interface WeaponEquippedPayload {
 }
 
 /**
+ * `WeaponDrop` — emitted by `dropEquippedWeapon` (called from `processDeaths`
+ * for each dying Player/Bot) after a non-starter weapon has been laid on the
+ * ground and the entity's inventory updated. Killfeed / scoreboard / analytics
+ * can subscribe without having to walk the ECS for a fresh `WeaponPickup`
+ * entity each tick.
+ *
+ * Networking note (#92): when the server takes ownership of pickup state,
+ * this same payload is replayed on the client receive path so HUD code
+ * doesn't have to branch on local-vs-server origin.
+ */
+export interface WeaponDropPayload {
+  /** Entity that dropped the weapon (the dying player/bot) */
+  sourceEid: number;
+  /** Canonical weapon name dropped */
+  weaponName: string;
+  /** Drop position (feet of the source entity) */
+  position: [number, number, number];
+  /** Fixed-tick of the drop */
+  tick: number;
+}
+
+/**
+ * `WeaponPickup` — emitted by `weaponPickupSystem` when a player successfully
+ * claims a ground pickup via KeyE. The pickup entity is removed from the
+ * scene and the player's equipped weapon swaps in the same tick.
+ */
+export interface WeaponPickupPayload {
+  /** The pickup ECS entity that was consumed (now removed) */
+  pickupEid: number;
+  /** Player entity that claimed the pickup */
+  playerEid: number;
+  /** Canonical weapon name that was picked up */
+  weaponName: string;
+  /** Fixed-tick of the claim */
+  tick: number;
+}
+
+/**
+ * `WeaponDespawn` — emitted by `weaponPickupSystem` when a pickup expires
+ * past its `despawnTick` and is swept from the scene. Used by analytics / HUD
+ * code that needs to know the pickup is gone (the renderer itself doesn't
+ * subscribe — it iterates `pickupRegistry` and naturally drops removed entries).
+ */
+export interface WeaponDespawnPayload {
+  /** The pickup ECS entity that timed out */
+  pickupEid: number;
+  /** Fixed-tick of the despawn */
+  tick: number;
+}
+
+/**
  * Convenience map from event type name → payload type. Used by EventBus's
  * generic on/emit signatures so consumers get type-safe payloads.
  */
@@ -104,4 +158,7 @@ export interface EventPayloadMap {
   DeathEvent: DeathEventPayload;
   RespawnEvent: RespawnEventPayload;
   WeaponEquipped: WeaponEquippedPayload;
+  WeaponDrop: WeaponDropPayload;
+  WeaponPickup: WeaponPickupPayload;
+  WeaponDespawn: WeaponDespawnPayload;
 }

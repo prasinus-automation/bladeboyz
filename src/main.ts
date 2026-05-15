@@ -62,6 +62,7 @@ import { weaponModelFactories } from './rendering/WeaponModels';
 import { ViewmodelRenderer, getArmOffset } from './rendering/ViewmodelRenderer';
 import { viewmodelAnimationSystem } from './rendering/ViewmodelAnimationSystem';
 import { pickupRenderer } from './rendering/PickupRenderer';
+import { weaponPickupSystem } from './ecs/systems/WeaponPickupSystem';
 import { ViewmodelDebugOverlay } from './hud/ViewmodelDebugOverlay';
 import { PickupPrompt } from './hud/PickupPrompt';
 import { CombatStateComp } from './ecs/components';
@@ -555,7 +556,12 @@ async function main(): Promise<void> {
     //
     // Issue #134: processRespawns consumes `respawned` to teleport, restore
     // HP/stamina, equip default weapon, and remove the lifecycle tags.
-    // TODO(#A2): weaponPickupSystem(world, currentTick, died, ...);
+    //
+    // Issue #121: drop-on-death lives in `dropEquippedWeapon` (called from
+    // `processDeaths` below); `weaponPickupSystem` ticks AFTER the death
+    // pipeline so freshly-dropped pickups are visible to the despawn-sweep
+    // path and to the KeyE pickup attempt this tick (though the corpse
+    // can't press E for itself — the killer can walk over immediately).
     const { died, respawned } = healthSystemTick(world.ecs);
 
     // Death-cleanup hook. Emits DeathEvent, increments Score, resets FSM,
@@ -589,6 +595,16 @@ async function main(): Promise<void> {
 
     // Update nearest-interactable cache (for KeyE handler + WorldLabel prompt)
     interactionSystem(playerEid);
+
+    // Weapon pickup + despawn loop (#121). Reads `KeyE` edge-press, calls
+    // `tryClaimPickup` against the closest in-range `WeaponPickup`, swaps
+    // inventory + equipment on success (dropping the previously-equipped
+    // weapon at the player's feet with a claim cooldown), and sweeps any
+    // pickup past its `despawnTick` from the scene. Drop-on-death is NOT
+    // here — that goes through `dropEquippedWeapon` called from
+    // `processDeaths` above. Emits `WeaponPickup` / `WeaponDespawn` on
+    // EventBus; the returned arrays are for in-test assertions.
+    weaponPickupSystem(world, getCurrentFixedTick(), input, playerEid);
 
     // Drain queued events (DamageDealt, DeathEvent, etc.) to subscribers.
     // Must be the LAST thing in fixedUpdate so handlers see a consistent
