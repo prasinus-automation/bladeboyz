@@ -105,6 +105,8 @@ bladeboyz/
 │   │   ├── theme.ts             # Shared visual constants (font, bg, border, text, status, z-index tiers); mirrored as CSS custom properties on `:root` in index.html (#101)
 │   │   ├── MenuManager.ts       # Single owner of modal-overlay lifecycle (open/close, ESC routing, pointer-lock release, input.paused, click-to-play suppression). Modals register `{close, open?}` callbacks (#101)
 │   │   ├── MainMenu.ts          # Entry overlay shown at boot — `BLADEBOYZ` title + PLAY button + controls hint + version label. Registers as `'main'` with MenuManager; pointer-lock acquired synchronously inside Play-button click handler BEFORE GameState flip (#106)
+│   │   ├── PauseMenu.ts         # ESC-during-play overlay — Resume / Controls / Quit buttons + PvP-simulation warning. Registers as `'pause'` with MenuManager; uses `theme.bg.dim` (rgba(0,0,0,0.55)) so the scene shows through. `_setVisible(visible, notify)` is the single source of truth for the DOM-flip / notify split — `notify=false` is the back-stack hop into Controls. Does NOT pause ECS (pinned by synthetic-tick test) (#111)
+│   │   ├── ControlsOverlay.ts   # Read-only modal listing every keybind from `keybindsByGroup()`. Data-driven — adding a row in `src/input/keybinds.ts` appears here with zero code change. Single Back button uses `notifyClose('controls')`; MenuManager's back-stack restores pause when that's where we came from (#111)
 │   │   ├── HealthBar.ts
 │   │   ├── StaminaBar.ts
 │   │   ├── DirectionIndicator.ts # Mordhau-style compass-rose crosshair overlay (attack/block direction)
