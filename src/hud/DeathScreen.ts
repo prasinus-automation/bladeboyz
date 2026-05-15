@@ -28,12 +28,11 @@
  */
 
 import { hasComponent } from 'bitecs';
-import { DeadTag, RespawnPending, Player } from '../ecs/components';
+import { DeadTag, RespawnPending, Player, IsTrainingDummy } from '../ecs/components';
 import type { GameWorld } from '../core/types';
 import { EventBus } from '../events/EventBus';
 import type { DeathEventPayload, RespawnEventPayload } from '../events/types';
 import { weaponIdToName } from '../ecs/systems/CombatSystem';
-import { activeDummies } from '../ecs/entities/createDummy';
 
 /**
  * Resolve a display name for an entity id.
@@ -43,16 +42,20 @@ import { activeDummies } from '../ecs/entities/createDummy';
  *
  * - `0` → `"the void"` (the sentinel for "no killer" in `DeathEvent.killerEid`)
  * - `world.playerEntity` → `"You"`
+ * - any entity tagged `IsTrainingDummy` → `"Dummy <id>"`
  * - any entity tagged `Player` → `"Player"`
- * - any entity in `activeDummies` → `"Dummy <id>"`
  * - everything else → `"Unknown"`
+ *
+ * The training-dummy branch was migrated from the legacy `activeDummies`
+ * array to the `IsTrainingDummy` ECS tag in issue #114 — the resolver is
+ * tag-driven now, mirroring the rest of the spawn/death/respawn HUD.
  *
  * TODO(#92): replace with real display names from networked player state.
  */
 export function getDisplayName(world: GameWorld, eid: number): string {
   if (eid === 0) return 'the void';
   if (eid === world.playerEntity) return 'You';
-  if (activeDummies.indexOf(eid) !== -1) return `Dummy ${eid}`;
+  if (hasComponent(world.ecs, IsTrainingDummy, eid)) return `Dummy ${eid}`;
   if (hasComponent(world.ecs, Player, eid)) return 'Player';
   return 'Unknown';
 }

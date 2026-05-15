@@ -1,29 +1,49 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { createWorld, addEntity, addComponent } from 'bitecs';
 import * as THREE from 'three';
 import { DummyHealthBar } from './DummyHealthBar';
-import { Health, meshRegistry } from '../ecs/components';
-import { activeDummies } from '../ecs/entities/createDummy';
+import { Health, IsNPC, IsTrainingDummy, meshRegistry } from '../ecs/components';
+import type { GameWorld } from '../core/types';
+
+function makeStubWorld(): GameWorld {
+  return {
+    ecs: createWorld(),
+    scene: undefined as any,
+    renderer: undefined as any,
+    rapier: undefined as any,
+    physicsWorld: undefined as any,
+    camera: undefined as any,
+    playerEntity: 0,
+  };
+}
+
+function tagAsTrainingDummy(world: GameWorld): number {
+  const eid = addEntity(world.ecs);
+  addComponent(world.ecs, IsNPC, eid);
+  addComponent(world.ecs, IsTrainingDummy, eid);
+  return eid;
+}
 
 describe('DummyHealthBar', () => {
   let camera: THREE.PerspectiveCamera;
+  let world: GameWorld;
   let healthBar: DummyHealthBar;
 
   beforeEach(() => {
     const existing = document.getElementById('dummy-healthbar-container');
     if (existing) existing.remove();
-    activeDummies.length = 0;
 
     camera = new THREE.PerspectiveCamera(78, 1, 0.1, 1000);
     camera.position.set(0, 1.6, 5);
     camera.lookAt(0, 1, 0);
     camera.updateMatrixWorld(true);
 
-    healthBar = new DummyHealthBar(camera);
+    world = makeStubWorld();
+    healthBar = new DummyHealthBar(camera, world);
   });
 
   afterEach(() => {
     healthBar.dispose();
-    activeDummies.length = 0;
     meshRegistry.clear();
   });
 
@@ -33,8 +53,7 @@ describe('DummyHealthBar', () => {
   });
 
   it('should create a health bar for an active dummy', () => {
-    const eid = 200;
-    activeDummies.push(eid);
+    const eid = tagAsTrainingDummy(world);
     Health.current[eid] = 100;
     Health.max[eid] = 100;
 
@@ -55,8 +74,7 @@ describe('DummyHealthBar', () => {
   });
 
   it('should show full health bar at 100%', () => {
-    const eid = 200;
-    activeDummies.push(eid);
+    const eid = tagAsTrainingDummy(world);
     Health.current[eid] = 100;
     Health.max[eid] = 100;
 
@@ -78,8 +96,7 @@ describe('DummyHealthBar', () => {
   });
 
   it('should reflect reduced health', () => {
-    const eid = 200;
-    activeDummies.push(eid);
+    const eid = tagAsTrainingDummy(world);
     Health.current[eid] = 50;
     Health.max[eid] = 100;
 

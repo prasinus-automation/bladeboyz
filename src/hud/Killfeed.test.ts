@@ -6,10 +6,9 @@ import {
   FADE_DURATION_MS,
   MAX_VISIBLE,
 } from './Killfeed';
-import { Player } from '../ecs/components';
+import { Player, IsNPC, IsTrainingDummy } from '../ecs/components';
 import { EventBus } from '../events/EventBus';
 import type { GameWorld } from '../core/types';
-import { activeDummies } from '../ecs/entities/createDummy';
 
 function makeWorld(): GameWorld {
   return {
@@ -41,7 +40,6 @@ describe('Killfeed', () => {
 
   beforeEach(() => {
     EventBus.clear();
-    activeDummies.length = 0;
     now = 0;
     world = makeWorld();
     const playerEid = addEntity(world.ecs);
@@ -53,7 +51,6 @@ describe('Killfeed', () => {
   afterEach(() => {
     feed.dispose();
     EventBus.clear();
-    activeDummies.length = 0;
   });
 
   it('creates a #killfeed container in the DOM', () => {
@@ -161,11 +158,12 @@ describe('Killfeed', () => {
   });
 
   it('renders dummy victims as "Dummy <eid>"', () => {
-    const dummyEid = 77;
-    activeDummies.push(dummyEid);
+    const dummyEid = addEntity(world.ecs);
+    addComponent(world.ecs, IsNPC, dummyEid);
+    addComponent(world.ecs, IsTrainingDummy, dummyEid);
     emitDeath(world, dummyEid, world.playerEntity);
     expect(feed.entryTexts[0]).toContain('You');
-    expect(feed.entryTexts[0]).toContain('Dummy 77');
+    expect(feed.entryTexts[0]).toContain(`Dummy ${dummyEid}`);
   });
 
   it('cleans up DOM on dispose', () => {

@@ -490,7 +490,7 @@ describe('AnimationSystem', () => {
     addComponent(world.ecs, CombatStateComp, dummyEid);
     addComponent(world.ecs, AnimationComp, dummyEid);
     addComponent(world.ecs, HitReactComp, dummyEid);
-    // NOTE: MovementState deliberately NOT added — matches createDummy.ts.
+    // NOTE: MovementState deliberately NOT added — matches createTrainingDummy.ts.
 
     const { group, skeleton, bones } = createCharacterModel(0xff0000);
     CharacterModel.id[dummyEid] = dummyEid;

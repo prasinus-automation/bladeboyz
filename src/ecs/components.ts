@@ -52,6 +52,26 @@ export const IsPlayer = Player;
 export const Bot = defineComponent();
 
 /**
+ * Tag: any non-player NPC (training dummies, future warmup bots, shopkeeps).
+ *
+ * Generalizes the legacy hardcoded `activeDummies: number[]` array — any system
+ * that wants to act on every NPC (floating damage numbers, replication chrome,
+ * killfeed labels, etc.) iterates `defineQuery([IsNPC])` instead.
+ *
+ * Supersedes the dummy/shopkeep coupling per `docs/training-dummies-and-bots-spec.md` §6.
+ */
+export const IsNPC = defineComponent();
+
+/**
+ * Tag: training dummy specifically (subset of `IsNPC`).
+ *
+ * Marks the entity as eligible for the auto-regen + `K`-key reset pipeline.
+ * Bots get `IsNPC` but NOT `IsTrainingDummy` — they don't regen and don't
+ * reset on `K`.
+ */
+export const IsTrainingDummy = defineComponent();
+
+/**
  * Tag: entity is currently dead, awaiting respawn.
  *
  * Added by `processDeaths` (issue #130) when HP first crosses to 0; removed

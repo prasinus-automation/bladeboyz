@@ -1,6 +1,9 @@
 import * as THREE from 'three';
-import { Health, meshRegistry } from '../ecs/components';
-import { activeDummies } from '../ecs/entities/createDummy';
+import { defineQuery } from 'bitecs';
+import { Health, meshRegistry, IsTrainingDummy } from '../ecs/components';
+import type { GameWorld } from '../core/types';
+
+const trainingDummyQuery = defineQuery([IsTrainingDummy]);
 
 /**
  * DummyHealthBar — renders floating health bars above each dummy's head.
@@ -19,11 +22,13 @@ const HEAD_OFFSET_Y = 2.1; // above character head
 
 export class DummyHealthBar {
   private camera: THREE.PerspectiveCamera;
+  private world: GameWorld;
   private wrapper: HTMLDivElement;
   private bars: Map<number, HealthBarEntry> = new Map();
 
-  constructor(camera: THREE.PerspectiveCamera) {
+  constructor(camera: THREE.PerspectiveCamera, world: GameWorld) {
     this.camera = camera;
+    this.world = world;
 
     this.wrapper = document.createElement('div');
     this.wrapper.id = 'dummy-healthbar-container';
@@ -54,21 +59,30 @@ export class DummyHealthBar {
 
   /**
    * Update health bar positions and fill. Call each render frame.
+   *
+   * Iterates the `IsTrainingDummy` ECS tag query — the legacy
+   * `activeDummies` array is gone (issue #114). Bots and other future NPCs
+   * that should NOT show a head-bar are not picked up here, which matches
+   * the spec (the bar is a training-dummy affordance, not a generic NPC
+   * health indicator).
    */
   update(): void {
     const width = window.innerWidth;
     const height = window.innerHeight;
     const proj = new THREE.Vector3();
+    const dummies = trainingDummyQuery(this.world.ecs);
+    // Build a set for O(1) lookup when reaping stale bars below.
+    const liveSet = new Set<number>(dummies);
 
     // Remove bars for dummies that no longer exist
     for (const [eid, entry] of this.bars) {
-      if (!activeDummies.includes(eid)) {
+      if (!liveSet.has(eid)) {
         entry.container.remove();
         this.bars.delete(eid);
       }
     }
 
-    for (const eid of activeDummies) {
+    for (const eid of dummies) {
       const bar = this.getOrCreateBar(eid);
       const modelData = meshRegistry.get(eid);
       if (!modelData) {

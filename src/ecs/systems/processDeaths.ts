@@ -18,9 +18,9 @@
  *
  * Filtering:
  *   - Only entities tagged `Player` or `Bot` are processed. Dummies are
- *     deliberately excluded (they regen via `tickDummyHealthReset` and
- *     never "die" in the killfeed sense). The early-skip is critical —
- *     without it, a dummy's HP hitting 0 would emit a DeathEvent and bump
+ *     deliberately excluded (they regen via `tickTrainingDummyHealthReset`
+ *     and never "die" in the killfeed sense). The early-skip is critical
+ *     — without it, a dummy's HP hitting 0 would emit a DeathEvent and bump
  *     an absent `Score.deaths` counter to garbage values.
  *   - When #99 lands warmup bots, the `Bot` tag is added automatically
  *     and they flow through this same pipeline (kills/deaths counted).
@@ -68,7 +68,7 @@ export function processDeaths(died: number[], world: GameWorld): void {
   for (let i = 0; i < died.length; i++) {
     const victimEid = died[i];
 
-    // Skip dummies / non-combatants. Their HP=0 is reset by tickDummyHealthReset.
+    // Skip dummies / non-combatants. Their HP=0 is reset by tickTrainingDummyHealthReset.
     if (!shouldProcess(world, victimEid)) continue;
 
     // 1. Resolve killer attribution. Window is 5 s; missing record → 0.

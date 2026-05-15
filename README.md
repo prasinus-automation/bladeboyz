@@ -111,9 +111,19 @@ The shop releases pointer lock and pauses input on open, the same way the invent
 | Key | Action |
 |-----|--------|
 | **T** | Toggle dummy block (idle ↔ blocking) |
-| **Y** | Cycle dummy block direction (Top → Bottom → Left → Right) |
+| **Y** | Cycle dummy block direction (Overhead → Stab → Left → Right) |
 | **J** | Spawn additional training dummy |
-| **K** | Reset all dummies (full health, idle state) |
+| **K** | Reset all training dummies (full health, idle state) |
+
+Training dummies are **NPC entities** with the `IsNPC` and `IsTrainingDummy`
+ECS tags. The legacy `activeDummies` global array was retired in #114; every
+consumer (debug overlay, HP bars, killfeed labels, K-key reset, floating
+damage numbers) iterates a `defineQuery([IsTrainingDummy])` (or `[IsNPC]`
+for systems that should also pick up future warmup bots). Each dummy has a
+fixed-body capsule collider whose feet are snapped to the ground via
+`spawnAtGround()` — they're solid obstacles you collide with, not floating
+overlays. The full design lives in
+[`docs/training-dummies-and-bots-spec.md`](docs/training-dummies-and-bots-spec.md).
 
 ### Debug Controls
 | Key | Action |
@@ -327,11 +337,12 @@ src/
 │   │   ├── StaminaSystem.ts     # Stamina drain/regen based on combat actions
 │   │   ├── AnimationSystem.ts   # Procedural pose blending from combat state
 │   │   ├── PhysicsSystem.ts     # Rapier physics step
-│   │   └── DummyDamageObserver.ts  # Floating damage numbers for training dummies
+│   │   └── NpcDamageObserver.ts # Floating damage numbers for any IsNPC entity (#114)
 │   ├── entities/
 │   │   ├── createPlayer.ts      # Player entity factory (mesh, kinematic body, MovementIntent)
-│   │   ├── createDummy.ts       # Training dummy factory (mesh, fixed body, capsule)
+│   │   ├── createTrainingDummy.ts # Training dummy factory (IsNPC + IsTrainingDummy tags) — #114
 │   │   └── createWeaponPickup.ts # Ground weapon pickup factory (#109, foundation for #94)
+│   ├── npcRegistry.ts           # Side-table for non-numeric NPC metadata (kind, spawn pose) — #114
 │   └── utils/
 │       └── spawnAtGround.ts     # Raycast-down feet-Y resolver (used by all entity factories)
 ├── arena/

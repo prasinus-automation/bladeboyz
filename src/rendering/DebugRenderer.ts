@@ -5,7 +5,7 @@ import {
   isHitboxDebugVisible,
 } from '../ecs/systems/HitboxSystem';
 import { CombatStateComponent, Health, Stamina, Position, meshRegistry } from '../ecs/components';
-import { activeDummies } from '../ecs/entities/createDummy';
+import { getTrainingDummyEids } from '../ecs/entities/createTrainingDummy';
 import { showNotification } from '../hud/DebugNotification';
 import type { GameWorld } from '../core/types';
 
@@ -179,7 +179,7 @@ export class DebugRenderer {
     const proj = new THREE.Vector3();
 
     // Also show player FSM if they have CombatStateComponent
-    const allEntities = [...activeDummies];
+    const allEntities = getTrainingDummyEids(this._world);
     if (this._world.playerEntity >= 0) {
       allEntities.push(this._world.playerEntity);
     }
