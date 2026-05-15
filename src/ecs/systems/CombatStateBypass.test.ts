@@ -20,16 +20,17 @@
  *
  * ## Allowlist categories
  *
- * 1. **Init writes** (`createPlayer.ts`, `createDummy.ts`) — entity
+ * 1. **Init writes** (`createPlayer.ts`, `createTrainingDummy.ts`) — entity
  *    factories set the initial Idle state at spawn before the FSM exists
  *    in `fsmRegistry`.
  * 2. **Authoritative FSM-ECS sync writes** (`CombatSystem.ts`,
- *    `StaminaSystem.ts`, `createDummy.ts`) — every tick CombatSystem
+ *    `StaminaSystem.ts`, `createTrainingDummy.ts`) — every tick CombatSystem
  *    writes `state = fsm.state` to mirror the FSM into the component.
  *    StaminaSystem performs the same mirror immediately after dispatching
- *    `BlockBreak`. createDummy's debug helpers (`toggleDummyBlock`,
- *    `cycleDummyBlockDirection`, `resetAllDummies`) mirror eagerly so
- *    callers see the change without waiting for the next CombatSystem tick.
+ *    `BlockBreak`. createTrainingDummy's debug helpers
+ *    (`toggleTrainingDummyBlock`, `cycleTrainingDummyBlockDirection`,
+ *    `resetAllTrainingDummies`) mirror eagerly so callers see the change
+ *    without waiting for the next CombatSystem tick.
  * 3. **Death reset** (`processDeaths.ts:113`) — forces Idle when an
  *    entity dies, before the FSM gets to react.
  * 4. **No-FSM defensive fallback** (`StaminaSystem.ts:137`) — when an
@@ -62,7 +63,7 @@ const sourceFiles = import.meta.glob('/src/**/*.ts', {
 // Listed by project-rooted path; the glob keys are matched verbatim.
 const ALLOWED_FILES = new Set<string>([
   '/src/ecs/entities/createPlayer.ts',
-  '/src/ecs/entities/createDummy.ts',
+  '/src/ecs/entities/createTrainingDummy.ts',
   '/src/ecs/systems/CombatSystem.ts',
   '/src/ecs/systems/StaminaSystem.ts',
   '/src/ecs/systems/processDeaths.ts',

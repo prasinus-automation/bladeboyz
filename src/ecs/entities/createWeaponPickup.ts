@@ -65,7 +65,7 @@ export function createWeaponPickup(
 
 /**
  * Remove a weapon pickup entity and clean up its scene mesh, geometries,
- * materials, and registry entry. Mirrors `removeDummy` / `removeShopkeep`.
+ * materials, and registry entry. Mirrors `removeTrainingDummy` / `removeShopkeep`.
  *
  * Safe to call with an unknown eid — no-op if not in `pickupRegistry`.
  */

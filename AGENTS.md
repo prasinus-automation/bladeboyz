@@ -37,6 +37,7 @@ bladeboyz/
 │   │   │   ├── StaminaSystem.ts
 │   │   │   ├── HealthSystem.ts  # Damage application, death detection, respawn timer (#93)
 │   │   │   ├── InteractionSystem.ts # Per-tick proximity check; caches nearest in-range interactable per player (#113)
+│   │   │   ├── NpcDamageObserver.ts # Floating damage numbers + auto-regen book-keeping for any IsNPC entity; renamed from DummyDamageObserver in #114
 │   │   │   ├── HitReactSystem.ts # Clears expired HitReactComp entries (active=1 → 0 once tick >= spawnedAtTick + durationTicks) (#120)
 │   │   │   ├── processDeaths.ts # Death-cleanup hook: emits DeathEvent, increments Score, resets FSM, zeros Velocity, calls dropEquippedWeapon stub (#130)
 │   │   │   ├── processRespawns.ts # Respawn-cleanup hook: picks spawn point, teleports Position/PreviousPosition/Rotation + Rapier body, restores HP/Stamina, equips default starter, removes DeadTag/RespawnPending, emits RespawnEvent (#134)
@@ -44,10 +45,11 @@ bladeboyz/
 │   │   │   └── ...
 │   │   ├── entities/            # Entity factory/spawner functions
 │   │   │   ├── createPlayer.ts  # Player factory: kinematic body + capsule (offset upward), MovementIntent component, Y resolved by spawnAtGround
-│   │   │   ├── createDummy.ts   # Training dummy factory: fixed body + capsule (same offset as player), Y resolved by spawnAtGround
+│   │   │   ├── createTrainingDummy.ts # Training dummy factory: fixed body + capsule (same offset as player), Y resolved by spawnAtGround; carries `IsNPC` + `IsTrainingDummy` tags + npcRegistry entry (#114)
 │   │   │   ├── createShopkeep.ts # Static non-combatant NPC (Position/Rotation/CharacterModel only) + shopkeepRegistry side-table (#113)
 │   │   │   ├── createWeaponPickup.ts # Ground weapon pickup factory + remover (#109, foundation for #94)
 │   │   │   └── ...
+│   │   ├── npcRegistry.ts       # Side-table for non-numeric NPC metadata (kind, spawnPos, spawnYaw, spawnTick) — replaces the legacy `activeDummies` array (#114)
 │   │   └── utils/
 │   │       └── spawnAtGround.ts # Raycast-down feet-Y resolver used by all entity factories (#104)
 │   ├── events/
@@ -223,9 +225,9 @@ npm run lint         # Run ESLint
 
 ### Spatial Conventions (SHIPPED — #104 / PR #150)
 - **ECS `Position` = entity feet position** (point of contact with ground). The character mesh's root bone is at the feet (`y=0` in local space), so `meshGroup.position = (Position.x, Position.y, Position.z)` is a direct copy with NO offset.
-- **Capsule collider** is offset upward inside the rigid body via `ColliderDesc.capsule(...).setTranslation(0, CAPSULE_RADIUS + CAPSULE_HALF_HEIGHT, 0)` so the capsule's bottom hemisphere sits at the body origin (= feet). With `R=0.3, H=0.7` the offset is `(0, 1.0, 0)`. This is enforced by tests in `createPlayer.test.ts` and `createDummy.test.ts`.
+- **Capsule collider** is offset upward inside the rigid body via `ColliderDesc.capsule(...).setTranslation(0, CAPSULE_RADIUS + CAPSULE_HALF_HEIGHT, 0)` so the capsule's bottom hemisphere sits at the body origin (= feet). With `R=0.3, H=0.7` the offset is `(0, 1.0, 0)`. This is enforced by tests in `createPlayer.test.ts` and `createTrainingDummy.test.ts`.
 - **Forward = -Z** (Three.js convention). Yaw=0 looks down -Z. `moveX = strafe*cos(yaw) - forward*sin(yaw); moveZ = -strafe*sin(yaw) - forward*cos(yaw)`. The yaw rotation lives in `InputSystem`, not `MovementSystem`.
-- **Spawn**: always use `spawnAtGround(world, x, z)` from `src/ecs/utils/spawnAtGround.ts`. It raycasts down from `(x, 50, z)` and returns `hit.toi + CHARACTER_CONTROLLER_OFFSET`, falling back to `GROUND_TOP_Y + offset` when the raycast misses or the host environment lacks Rapier (tests). Never hard-code Y in spawn-position arrays. `createPlayer` and `createDummy` both use it; `createShopkeep` still uses the deprecated `SPAWN_HEIGHT` default and is a follow-up cleanup.
+- **Spawn**: always use `spawnAtGround(world, x, z)` from `src/ecs/utils/spawnAtGround.ts`. It raycasts down from `(x, 50, z)` and returns `hit.toi + CHARACTER_CONTROLLER_OFFSET`, falling back to `GROUND_TOP_Y + offset` when the raycast misses or the host environment lacks Rapier (tests). Never hard-code Y in spawn-position arrays. `createPlayer` and `createTrainingDummy` both use it; `createShopkeep` still uses the deprecated `SPAWN_HEIGHT` default and is a follow-up cleanup.
 - **Ground**: arena ground is a fixed cuboid centered at y=0 with half-height 0.1, so its top surface is at **y = 0.1 = `GROUND_TOP_Y`** (exported from `core/types.ts`). Visual ground plane sits at y=0 (mid-cuboid).
 - **Constants**: `GROUND_TOP_Y` (0.1), `CHARACTER_CONTROLLER_OFFSET` (0.02), `CAPSULE_HALF_HEIGHT` (0.7), `CAPSULE_RADIUS` (0.3) all live in `core/types.ts`. `SPAWN_HEIGHT` is a **deprecated alias of `GROUND_TOP_Y`** kept for one cycle — its semantics changed from capsule-center (1.1) to feet (0.1). New code should use `spawnAtGround()` or `GROUND_TOP_Y` directly.
 - This convention applies to **all** characters (player, dummies, shopkeep, future NPCs). Entity factories must not invent their own offset.

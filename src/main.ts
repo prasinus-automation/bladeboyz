@@ -16,14 +16,13 @@ import { createPlayer } from './ecs/entities/createPlayer';
 import { createArena } from './arena/createArena';
 import { processRespawns } from './ecs/systems/processRespawns';
 import {
-  createDummy,
-  removeDummy,
-  resetAllDummies,
-  toggleDummyBlock,
-  cycleDummyBlockDirection,
-  tickDummyHealthReset,
-  activeDummies,
-} from './ecs/entities/createDummy';
+  createTrainingDummy,
+  resetAllTrainingDummies,
+  toggleTrainingDummyBlock,
+  cycleTrainingDummyBlockDirection,
+  tickTrainingDummyHealthReset,
+  getTrainingDummyEids,
+} from './ecs/entities/createTrainingDummy';
 import { createShopkeep } from './ecs/entities/createShopkeep';
 import {
   interactionSystem,
@@ -42,7 +41,7 @@ import { TracerDebugRenderer } from './rendering/TracerDebugRenderer';
 import { FloatingDamage } from './hud/FloatingDamage';
 import { DummyHealthBar } from './hud/DummyHealthBar';
 import { WorldLabel } from './hud/WorldLabel';
-import { createDummyDamageObserver } from './ecs/systems/DummyDamageObserver';
+import { createNpcDamageObserver } from './ecs/systems/NpcDamageObserver';
 import { showNotification } from './hud/DebugNotification';
 import { InventoryPanel } from './hud/InventoryPanel';
 import { ShopPanel } from './hud/ShopPanel';
@@ -119,9 +118,11 @@ function spawnDummyAtNextPosition(world: GameWorld): void {
   const pos = positions[dummySpawnIdx % positions.length];
   const colors = [0xcc4444, 0xcc8844, 0xcc44cc, 0x44cccc, 0xcccc44];
   const color = colors[dummySpawnIdx % colors.length];
-  createDummy(world, pos.x, pos.z, color);
+  createTrainingDummy(world, { spawnPos: { x: pos.x, z: pos.z }, color });
   dummySpawnIdx++;
-  showNotification(`Dummy spawned (${activeDummies.length} total)`);
+  showNotification(
+    `Dummy spawned (${getTrainingDummyEids(world).length} total)`,
+  );
 }
 
 async function main(): Promise<void> {
@@ -275,7 +276,7 @@ async function main(): Promise<void> {
   const _boneEulers: Record<string, THREE.Euler> = {};
 
   // Spawn initial training dummy (Y resolved by spawnAtGround raycast)
-  createDummy(world, 0, -4, 0xcc4444);
+  createTrainingDummy(world, { spawnPos: { x: 0, z: -4 }, color: 0xcc4444 });
   dummySpawnIdx = 1;
 
   // Spawn shopkeep NPC behind the SW shop counter. Coordinates come from
@@ -356,8 +357,8 @@ async function main(): Promise<void> {
   // Initialize debug renderers
   const tracerDebugRenderer = new TracerDebugRenderer(world.scene);
   const floatingDamage = new FloatingDamage(world.camera);
-  const dummyHealthBar = new DummyHealthBar(world.camera);
-  const dummyDamageObserver = createDummyDamageObserver(world, floatingDamage);
+  const dummyHealthBar = new DummyHealthBar(world.camera, world);
+  const dummyDamageObserver = createNpcDamageObserver(world, floatingDamage);
 
   // Shopkeep nameplate + "Press [E] to shop" prompt
   const worldLabel = new WorldLabel(world.camera);
@@ -383,12 +384,12 @@ async function main(): Promise<void> {
 
     switch (e.code) {
       case 'KeyT': {
-        const state = toggleDummyBlock();
+        const state = toggleTrainingDummyBlock(world);
         showNotification(`Dummy: ${state}`);
         break;
       }
       case 'KeyY': {
-        const dir = cycleDummyBlockDirection();
+        const dir = cycleTrainingDummyBlockDirection(world);
         showNotification(`Dummy Block Dir: ${dir}`);
         break;
       }
@@ -396,7 +397,7 @@ async function main(): Promise<void> {
         spawnDummyAtNextPosition(world);
         break;
       case 'KeyK':
-        resetAllDummies(world);
+        resetAllTrainingDummies(world);
         showNotification('All dummies reset');
         break;
       case 'KeyI': {
@@ -583,8 +584,8 @@ async function main(): Promise<void> {
     DamageSystem(world, FIXED_TIMESTEP);
     hitReactSystemTick(world.ecs);
 
-    // Dummy health reset timer
-    tickDummyHealthReset();
+    // Training-dummy health reset timer (3 s no-hit → restore HP)
+    tickTrainingDummyHealthReset(world);
 
     // Update nearest-interactable cache (for KeyE handler + WorldLabel prompt)
     interactionSystem(playerEid);
@@ -673,7 +674,11 @@ async function main(): Promise<void> {
       const pz = lerp(PreviousPosition.z[playerEid], Position.z[playerEid], alpha);
       playerModelData.group.position.set(px, py, pz);
     }
-    for (const deid of activeDummies) {
+    // Iterate every training dummy via the IsTrainingDummy tag query (the
+    // legacy `activeDummies` array is gone — issue #114). Bots and other
+    // future moving NPCs that need lerp-sync should join this loop via the
+    // same query (they'll get IsNPC + IsBot — see the spec doc).
+    for (const deid of getTrainingDummyEids(world)) {
       const modelData = meshRegistry.get(deid);
       if (modelData) {
         // Dummies are static — Position.* equals PreviousPosition.* so the

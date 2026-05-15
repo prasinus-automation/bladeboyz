@@ -1,10 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createWorld, addEntity, addComponent, removeComponent } from 'bitecs';
 import { DeathScreen, getDisplayName } from './DeathScreen';
-import { DeadTag, RespawnPending, Player } from '../ecs/components';
+import {
+  DeadTag,
+  RespawnPending,
+  Player,
+  IsNPC,
+  IsTrainingDummy,
+} from '../ecs/components';
 import { EventBus } from '../events/EventBus';
 import type { GameWorld } from '../core/types';
-import { activeDummies } from '../ecs/entities/createDummy';
 
 /** Build a minimal stand-in for `GameWorld` — only `ecs` + `playerEntity` are read. */
 function makeStubWorld(): GameWorld {
@@ -28,7 +33,6 @@ describe('DeathScreen', () => {
 
   beforeEach(() => {
     EventBus.clear();
-    activeDummies.length = 0;
     world = makeStubWorld();
     playerEid = addEntity(world.ecs);
     addComponent(world.ecs, Player, playerEid);
@@ -39,7 +43,6 @@ describe('DeathScreen', () => {
   afterEach(() => {
     screen.dispose();
     EventBus.clear();
-    activeDummies.length = 0;
   });
 
   it('creates a #death-screen element in the DOM', () => {
@@ -196,7 +199,6 @@ describe('getDisplayName', () => {
   let world: GameWorld;
 
   beforeEach(() => {
-    activeDummies.length = 0;
     world = {
       ecs: createWorld(),
       scene: undefined as any,
@@ -206,10 +208,6 @@ describe('getDisplayName', () => {
       camera: undefined as any,
       playerEntity: 0,
     };
-  });
-
-  afterEach(() => {
-    activeDummies.length = 0;
   });
 
   it('returns "the void" for eid 0', () => {
@@ -232,10 +230,11 @@ describe('getDisplayName', () => {
     expect(getDisplayName(world, otherEid)).toBe('Player');
   });
 
-  it('returns "Dummy <id>" for entities in activeDummies', () => {
-    const dummyEid = 42;
-    activeDummies.push(dummyEid);
-    expect(getDisplayName(world, dummyEid)).toBe('Dummy 42');
+  it('returns "Dummy <id>" for entities tagged IsTrainingDummy', () => {
+    const dummyEid = addEntity(world.ecs);
+    addComponent(world.ecs, IsNPC, dummyEid);
+    addComponent(world.ecs, IsTrainingDummy, dummyEid);
+    expect(getDisplayName(world, dummyEid)).toBe(`Dummy ${dummyEid}`);
   });
 
   it('returns "Unknown" as the fallback', () => {

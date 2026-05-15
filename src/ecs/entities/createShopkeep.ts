@@ -90,7 +90,7 @@ export function createShopkeep(
 
 /**
  * Remove a shopkeep entity and clean up its resources.
- * Symmetrical to `removeDummy`.
+ * Symmetrical to `removeTrainingDummy`.
  */
 export function removeShopkeep(world: GameWorld, eid: number): void {
   const modelData = meshRegistry.get(eid);

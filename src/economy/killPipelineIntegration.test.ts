@@ -159,7 +159,7 @@ describe('Kill pipeline integration (DamageSystem → processDeaths → goldEcon
     const player = setupPlayer(world, 100);
     const dummy = setupCombatant(world, 5);
     // processDeaths needs the Player or Bot tag to fire the DeathEvent.
-    // Dummies in production opt out (they regen via tickDummyHealthReset),
+    // Dummies in production opt out (they regen via tickTrainingDummyHealthReset),
     // but the integration test simulates a kill-credit scenario where the
     // victim IS something that emits a DeathEvent. Tag it accordingly.
     addComponent(world, Player, dummy);
