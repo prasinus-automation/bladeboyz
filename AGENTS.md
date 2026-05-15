@@ -41,18 +41,19 @@ bladeboyz/
 │   │   │   ├── processDeaths.ts # Death-cleanup hook: emits DeathEvent, increments Score, resets FSM, zeros Velocity, calls dropEquippedWeapon stub (#130)
 │   │   │   ├── processRespawns.ts # Respawn-cleanup hook: picks spawn point, teleports Position/PreviousPosition/Rotation + Rapier body, restores HP/Stamina, equips default starter, removes DeadTag/RespawnPending, emits RespawnEvent (#134)
 │   │   │   ├── AnimationSystem.ts # Layered procedural animator: snapshot phase-t slerp + arc swings + hit-react overlay; defensive vs missing MovementState (#128)
+│   │   │   ├── WeaponPickupSystem.ts # KeyE edge-detect pickup + despawn sweep; owns `DESPAWN_TICKS`/`BLINK_TICKS`/`PICKUP_RADIUS`/`PICKUP_COOLDOWN_TICKS`; pure `tryClaimPickup` is the networking seam (#121)
 │   │   │   └── ...
 │   │   ├── entities/            # Entity factory/spawner functions
 │   │   │   ├── createPlayer.ts  # Player factory: kinematic body + capsule (offset upward), MovementIntent component, Y resolved by spawnAtGround
 │   │   │   ├── createDummy.ts   # Training dummy factory: fixed body + capsule (same offset as player), Y resolved by spawnAtGround
 │   │   │   ├── createShopkeep.ts # Static non-combatant NPC (Position/Rotation/CharacterModel only) + shopkeepRegistry side-table (#113)
-│   │   │   ├── createWeaponPickup.ts # Ground weapon pickup factory + remover (#109, foundation for #94)
+│   │   │   ├── createWeaponPickup.ts # Ground weapon pickup factory + remover (#109, foundation for #94; behavior lives in `WeaponPickupSystem.ts` per #121)
 │   │   │   └── ...
 │   │   └── utils/
 │   │       └── spawnAtGround.ts # Raycast-down feet-Y resolver used by all entity factories (#104)
 │   ├── events/
-│   │   ├── EventBus.ts          # In-process pub/sub: queue + flush for DamageDealt/DeathEvent/RespawnEvent/WeaponEquipped — flushed once per fixedUpdate (#130)
-│   │   └── types.ts             # Event payload types matching docs/spawn-death-respawn.md (#130)
+│   │   ├── EventBus.ts          # In-process pub/sub: queue + flush for DamageDealt/DeathEvent/RespawnEvent/WeaponEquipped/WeaponDrop/WeaponPickup/WeaponDespawn — flushed once per fixedUpdate (#130, #121)
+│   │   └── types.ts             # Event payload types matching docs/spawn-death-respawn.md (#130); WeaponDrop/WeaponPickup/WeaponDespawn payloads added by #121
 │   ├── world/
 │   │   └── SpawnPoints.ts       # Spawn-point registry + selectSpawnPoint() weighted-random selector. Arena owns ground truth (createArena clears + registers); seedPlaceholderSpawnPoints() retained for unit tests only (#93, #134, #112)
 │   ├── animation/
@@ -85,11 +86,11 @@ bladeboyz/
 │   │   ├── WeaponModels.ts      # Procedural weapon models (Mace, Dagger, Battleaxe) + factory registry; `createGroundPickupModel` per-weapon flat-orientation map (#127); `WeaponModelFactory` type alias documenting the post-cache immutability contract that `ViewmodelRenderer`'s cache + #173 layer guard depend on
 │   │   ├── ViewmodelRenderer.ts # First-person viewmodel (right arm + weapon, Layer 1, separate camera)
 │   │   ├── ViewmodelAnimationSystem.ts # Viewmodel bone animation (reads CombatStateComp, per-weapon poses)
-│   │   ├── PickupRenderer.ts    # Variable-rate spin/bob/blink+fade for ground weapon pickups (#127); owns DESPAWN_TICKS/BLINK_TICKS/PICKUP_RADIUS until #121
+│   │   ├── PickupRenderer.ts    # Variable-rate spin/bob/blink+fade for ground weapon pickups (#127); re-exports `DESPAWN_TICKS`/`BLINK_TICKS`/`PICKUP_RADIUS` from `WeaponPickupSystem.ts` (canonical home as of #121)
 │   │   └── DebugRenderer.ts     # Wireframe, hitbox, physics debug drawing
 │   ├── inventory/
 │   │   ├── InventoryData.ts     # Legacy UI-only side-table (DEAD CODE — see "Two Disconnected Inventory Modules" below)
-│   │   └── PickupRegistry.ts    # Side-table for ground weapon pickups: pickupRegistry Map<eid, PickupData> (#109)
+│   │   └── PickupRegistry.ts    # Side-table for ground weapon pickups: pickupRegistry Map<eid, PickupData> (#109; consumed by `WeaponPickupSystem.ts` and `dropEquippedWeapon` per #121)
 │   ├── economy/
 │   │   ├── Wallet.ts            # Legacy in-memory player gold balance + onGoldChange pubsub (#107) — being migrated to `Gold` ECS component (#103); `awardGold` double-writes here as a transitional bridge
 │   │   ├── Prices.ts            # weaponPrices side-table + getWeaponPrice() (#107)
@@ -190,6 +191,28 @@ Movement is a Rapier `KinematicCharacterController` driven by `MovementSystem` i
 
 ### Spawn / Death / Respawn Loop (designed in #93 — see [docs/spawn-death-respawn.md](docs/spawn-death-respawn.md))
 Entity lifecycle is **separate from CombatFSM**: it's a higher-level state expressed via `DeadTag` + `RespawnPending` components plus `Health.current`. States: `Alive → Dying (1 tick) → Dead → Respawning (1 tick) → Alive`. Death fires a `DeathEvent` on the in-process `EventBus`; killfeed/scoreboard/death-screen consume it. Respawn timer is **180 ticks (3 s)**, default starter weapon is **Longsword**, spawn-point selection is **random weighted-away-from-enemies** (min distance 8.0, max-min fallback). `CombatSystem` and `MovementSystem` both early-out on `DeadTag` so dead entities don't read input or move. **Continuous deathmatch — no rounds for MVP.** See the design doc for full state diagram and event payloads.
+
+### Weapon Pickup Pipeline (SHIPPED — #121 / parent #94)
+Ground weapon pickups have a full death → drop → pickup → despawn pipeline as of #121. Three architectural pieces:
+
+1. **Foundation (#109)** — `WeaponPickup` component + `createWeaponPickup`/`removeWeaponPickup` factory + `pickupRegistry` side-table + `InventoryData.starterWeapon` field. Numeric data lives on the ECS component; the Three.js Group + cached `Material[]` live in `pickupRegistry`.
+
+2. **Visuals (#127)** — `PickupRenderer` (variable-rate spin/bob/blink+fade in last 5s), `PickupPrompt` HUD overlay ("Press [E] to pick up X"), per-weapon flat-orientation map in `createGroundPickupModel`. Pure rendering — no gameplay state change.
+
+3. **Behavior (#121)** — split across two homes:
+   - `dropEquippedWeapon(eid, world)` in `InventorySystem.ts` is called by `processDeaths` for every dying Player/Bot. Spawns a `WeaponPickup` at the corpse's feet (Position.x/y/z), removes the dropped weapon from inventory, re-equips the protected `starterWeapon` if it's still in inventory, emits `WeaponDrop` on EventBus. **Starters are never dropped** — `equippedWeapon === starterWeapon` is a no-op early-out. Dummies opt out (filtered by `processDeaths`'s Player|Bot gate).
+   - `weaponPickupSystem(world, currentTick, input, playerEid)` in `WeaponPickupSystem.ts` runs once per fixed tick. Edge-detects KeyE press (module-level `prevKeyEDown` latch — held-down doesn't re-fire), finds closest in-range pickup, validates via the **pure** `tryClaimPickup` helper (the networking seam — same predicate the server will run in #92), then mutates inventory + scene. If the player has a non-starter equipped, that weapon is dropped at their feet with `spawnTick = currentTick + PICKUP_COOLDOWN_TICKS` (30 ticks, 0.5s) so the just-dropped weapon is invisible to claim until the cooldown elapses. Also runs the despawn sweep: any pickup whose `despawnTick <= currentTick` is removed + `WeaponDespawn` emitted.
+
+**Constants** (single source of truth in `WeaponPickupSystem.ts`): `DESPAWN_TICKS = 1800` (30s lifetime), `BLINK_TICKS = 300` (5s blink/fade warning), `PICKUP_RADIUS = 1.5` (meters, 3D Euclidean), `PICKUP_COOLDOWN_TICKS = 30` (0.5s post-drop). `PickupRenderer.ts` and `PickupPrompt.ts` re-import these. The renderer's blink-fade window can never drift from the system's despawn timer.
+
+**Events** (all on `EventBus`):
+- `WeaponDrop { sourceEid, weaponName, position, tick }` — fired both by `dropEquippedWeapon` on death and by `weaponPickupSystem` when a player swaps a non-starter at pickup time.
+- `WeaponPickup { pickupEid, playerEid, weaponName, tick }` — fired on successful KeyE claim.
+- `WeaponDespawn { pickupEid, tick }` — fired when a pickup times out.
+
+**Prompt / pickup parity**: `PickupPrompt.update` runs the same proximity + Idle + pointer-lock predicate as `tryClaimPickup`. The acceptance contract is "when the prompt is showing, KeyE must always succeed; when hidden, KeyE must always fail". `PickupPrompt` still does its own closest-in-range scan (it needs the name to render), but the visibility predicate matches the claim predicate 1:1.
+
+**Networking seam**: `tryClaimPickup` is pure — calling it twice with the same args returns equal events and mutates nothing. The mutating side (`claimPickup` / drop logic) lives in the calling system. When #92 lands, `tryClaimPickup` moves server-side verbatim; the client just sends "tried to pick up pickup eid X" and waits for the server's authoritative `WeaponPickup` event echo.
 
 ## Build / Run / Test Commands
 ```bash
