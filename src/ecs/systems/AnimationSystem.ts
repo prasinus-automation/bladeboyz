@@ -55,7 +55,9 @@ import {
 import {
   computeArcSwingPose,
   ARC_SWING_OWNED_BONES,
+  type WeaponName,
 } from '../../animation/arcSwing';
+import { weaponIdToName } from './CombatSystem';
 import { applyHitReactLean } from '../../animation/hitReact';
 import { getCurrentFixedTick } from '../../core/tickCounter';
 import type { GameWorld } from '../../core/types';
@@ -422,7 +424,14 @@ export function animationSystem(world: GameWorld, dt: number): void {
     // ── 7. Upper-body combat (always — Idle uses IDLE_POSE ready stance) ──
     if (state === CombatState.Release) {
       // Hybrid: arc swing for arm bones; keyframe slerp for the rest.
-      const arcPose = computeArcSwingPose(direction, phaseT);
+      // Per-weapon scaling (#132): thread `weaponIdToName[weaponId]` through
+      // to the arc so heavier weapons get bigger swings. Unknown weapon IDs
+      // (typo / out-of-range / future weapons) fall back to Longsword inside
+      // `computeArcSwingPose`. Cast to `WeaponName` is safe — the map is
+      // typed `string[]` but every entry is a known WeaponName.
+      const weaponId = CombatStateComp.weaponId[eid];
+      const weaponName = (weaponIdToName[weaponId] ?? 'Longsword') as WeaponName;
+      const arcPose = computeArcSwingPose(direction, weaponName, phaseT);
       const armOwned = intersectBones(combatOwned, ARC_SWING_OWNED_BONES);
       // Arc swing: target moves with phaseT, so we use crossfadeT alone
       // for the slerp blend factor — once the crossfade has ramped up
