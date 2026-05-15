@@ -72,6 +72,8 @@ import type { GameWorld } from './core/types';
 import { GameStateManager } from './core/GameState';
 import { MenuManager } from './hud/MenuManager';
 import { MainMenu } from './hud/MainMenu';
+import { PauseMenu } from './hud/PauseMenu';
+import { ControlsOverlay } from './hud/ControlsOverlay';
 
 // Import weapon configs so they auto-register
 import './weapons/longsword';
@@ -333,6 +335,25 @@ async function main(): Promise<void> {
   // unused-variable lint. The MenuManager / GameStateManager subscriptions
   // keep the menu reacting to state changes for the lifetime of the page.
   void mainMenu;
+
+  // Pause menu (#111). Opens on ESC during PLAYING — MenuManager owns the ESC
+  // listener and dispatches to the registered `pause` handler. Resume button
+  // closes; Quit transitions GameState back to MAIN_MENU; Controls opens the
+  // ControlsOverlay on top (via MenuManager's one-deep back-stack).
+  const pauseMenu = new PauseMenu(gameStateManager, menuManager);
+
+  // Read-only Controls overlay (#111). Reachable from PauseMenu's "Controls"
+  // button (and from MainMenu once that flow is wired). MenuManager's back-
+  // stack ensures Back/ESC restores whichever modal opened it.
+  const controlsOverlay = new ControlsOverlay(menuManager);
+
+  // Link the two panels so PauseMenu's "Controls" button can call into
+  // ControlsOverlay.show() without depending on construction order.
+  pauseMenu.setControlsOverlay(controlsOverlay);
+  // Reference both so unused-variable lint stays quiet — the MenuManager
+  // registrations keep them reactive for the lifetime of the page.
+  void pauseMenu;
+  void controlsOverlay;
 
   // Inventory panel (I key to toggle). Registers itself with menuManager so
   // ESC routes to it and pointer-lock / input.paused are managed centrally.
