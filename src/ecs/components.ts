@@ -408,6 +408,11 @@ export const KnockbackState = defineComponent({
  * - walkCycle: accumulated walk cycle phase (radians, wraps at 2π).
  * - prevCombatState: previous combat state for transition detection.
  * - prevDirection: previous direction for transition detection.
+ * - blendPhaseTotal: `phaseTotal` captured when the current phase was ENTERED
+ *   (on the state/direction change). The combat ease curve is driven off
+ *   `phaseElapsed / blendPhaseTotal`, NOT the live `phaseTotal`, so an
+ *   in-place shrink (combo buffered mid-Recovery, #190) can't make the curve
+ *   jump — see `anchoredPhaseT` / `combatPhaseBlend`.
  */
 export const AnimationComp = defineComponent({
   crossfadeT: Types.f32,
@@ -415,6 +420,7 @@ export const AnimationComp = defineComponent({
   walkCycle: Types.f32,
   prevCombatState: Types.ui8,
   prevDirection: Types.ui8,
+  blendPhaseTotal: Types.ui16,
 });
 
 /* ─── Lookup tables for non-numeric data ─── */

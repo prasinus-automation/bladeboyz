@@ -444,6 +444,58 @@ describe('AnimationSystem', () => {
     expect(recoveryEnd.equals(releaseEnd)).toBe(false);
   });
 
+  it('combo buffered mid-Recovery (phaseTotal shrinks in place) does NOT pop the arm', () => {
+    // Regression for the QA finding on PR #198: `CombatFSM._handleAttack`
+    // (#190) shrinks `phaseTotal` in place when a combo is buffered during
+    // Recovery (Longsword Overhead: 24 → 10 ticks) with NO state/direction
+    // change. Driving `easeOutBack` off the live `phaseElapsed / phaseTotal`
+    // made the blend leap ~0.31 in one tick — a visible arm snap on the
+    // primary attack-chaining path. The fix anchors the curve to the entry
+    // total, so the per-frame motion stays continuous across the shrink.
+    // (The numeric no-fix repro lives in poseBlending.test.ts.)
+    const modelData = meshRegistry.get(CharacterModel.id[eid])!;
+    const shoulderR = modelData.bones['shoulder_R'];
+
+    for (let i = 0; i < 30; i++) animationSystem(world, 1 / 60);
+
+    // Enter Recovery (state change from Idle → snapshot + anchor captured).
+    CombatStateComp.state[eid] = CombatState.Recovery;
+    CombatStateComp.direction[eid] = Direction.Overhead;
+    const ENTRY_TOTAL = 24;
+    const SHRUNK_TOTAL = 10;
+    const SHRINK_AT = 6;
+
+    const deltas: number[] = [];
+    let prev: THREE.Quaternion | null = null;
+    for (let e = 0; e <= SHRUNK_TOTAL; e++) {
+      // Combo buffered at e = SHRINK_AT: phaseTotal collapses in place while
+      // phaseElapsed keeps marching and state stays Recovery.
+      const total = e < SHRINK_AT ? ENTRY_TOTAL : SHRUNK_TOTAL;
+      CombatStateComp.phaseElapsed[eid] = e;
+      CombatStateComp.phaseTotal[eid] = total;
+      CombatStateComp.phaseT[eid] = total > 0 ? Math.min(1, e / total) : 0;
+      animationSystem(world, 1 / 60);
+
+      const q = shoulderR.quaternion.clone();
+      if (prev) deltas.push(prev.angleTo(q));
+      prev = q;
+    }
+
+    // `deltas[i]` is the per-frame angular motion entering phaseElapsed=i+1.
+    // The shrink happens entering e=SHRINK_AT, i.e. deltas[SHRINK_AT - 1].
+    const shrinkDelta = deltas[SHRINK_AT - 1];
+    const preShrinkDelta = deltas[SHRINK_AT - 2];
+
+    // No discontinuity: the shrink frame moves no more than the frame just
+    // before it (easeOutBack decelerates, so it should actually be smaller).
+    // A pop would make shrinkDelta spike well above preShrinkDelta.
+    expect(shrinkDelta).toBeLessThanOrEqual(preShrinkDelta + 1e-6);
+
+    // And no frame after the shrink spikes either — the whole recovery glides.
+    const maxAfter = Math.max(...deltas.slice(SHRINK_AT - 1));
+    expect(maxAfter).toBeLessThanOrEqual(preShrinkDelta + 1e-6);
+  });
+
   it('phase progress is frame-rate independent (deterministic from phaseT)', () => {
     // Same phaseT on two separate "runs" with different dt values should
     // produce visually consistent (close) quaternions once the crossfade

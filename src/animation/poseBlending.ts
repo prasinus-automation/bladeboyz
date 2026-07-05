@@ -87,6 +87,44 @@ export function easeOutBack(t: number): number {
 }
 
 /**
+ * Phase progress for the combat blend, ANCHORED to the `phaseTotal` captured
+ * when the phase was ENTERED (`anchorPhaseTotal`) rather than the live
+ * `phaseTotal` (#goal-2026-07 fluidity pass, combo-pop fix).
+ *
+ * Why anchor: `CombatFSM._handleAttack` (PR #190) shrinks `phaseTotal` **in
+ * place** when a combo is buffered mid-Recovery — a Longsword Overhead
+ * recovery collapses 24 → 10 ticks the instant of the click, with no
+ * state/direction change. Driving `easeOutBack` off the live
+ * `phaseElapsed / phaseTotal` makes it leap (0.25 → 0.6) in a single tick —
+ * a ~0.31 jump in the slerp factor that visibly pops the arm on every
+ * chained swing (the *primary*, encouraged combat pattern). Re-snapshotting
+ * on the shrink only halves the pop, because `easeOutBack` is steep near 0
+ * and the shrunk span is only a few ticks.
+ *
+ * Anchoring to the ENTRY total keeps `phaseElapsed / anchorPhaseTotal`
+ * monotonic and smooth across the shrink: the recovery follow-through eases
+ * toward guard at its ORIGINAL pace and is simply cut short by the next
+ * Windup (which snapshots wherever the arm actually is and draws back from
+ * there). No rush-to-guard, no discontinuity. Since `phaseElapsed` never
+ * reaches the (larger) anchor total before the state changes, the curve is
+ * traversed partially — exactly the "flow into the next swing" feel combos
+ * want.
+ *
+ * For the common no-shrink case `anchorPhaseTotal === phaseTotal`, so this
+ * returns exactly the FSM's `getPhaseT()`.
+ */
+export function anchoredPhaseT(
+  phaseElapsed: number,
+  anchorPhaseTotal: number,
+): number {
+  if (anchorPhaseTotal <= 0) return 0;
+  const t = phaseElapsed / anchorPhaseTotal;
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  return t;
+}
+
+/**
  * Blend factor for the COMBAT pose layer, per state (#goal-2026-07
  * fluidity pass).
  *
