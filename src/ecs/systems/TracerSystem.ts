@@ -94,7 +94,40 @@ const _boneMatrix = new THREE.Matrix4();
 const _sweepCenter = new THREE.Vector3();
 const _sweepDir = new THREE.Vector3();
 const _sweepQuat = new THREE.Quaternion();
-const _up = new THREE.Vector3(0, 1, 0);
+
+// Scratch objects for computeSweepQuaternion — no per-call allocation.
+const UP = new THREE.Vector3(0, 1, 0);
+const WORLD_X = new THREE.Vector3(1, 0, 0);
+const _basisX = new THREE.Vector3();
+const _basisY = new THREE.Vector3();
+const _basisZ = new THREE.Vector3();
+const _m4 = new THREE.Matrix4();
+
+/**
+ * Build a deterministic orientation quaternion that rotates the default
+ * Z-forward axis (0,0,1) onto `sweepDir`, using an explicit orthonormal basis
+ * rather than `Quaternion.setFromUnitVectors` (which is non-deterministic at
+ * the 180° antiparallel case and leaves roll uncontrolled near ±Y).
+ *
+ * `sweepDir` MUST already be normalized. The chosen reference axis is UP for
+ * ordinary (horizontal-ish) sweeps — keeping the cuboid's thin Y extent
+ * roughly vertical — and WORLD_X for near-vertical sweeps where UP would be
+ * degenerate. A roll discontinuity exactly at that switch is acceptable
+ * (standard lookAt behavior); deterministic ≠ continuous.
+ *
+ * Pure: writes only into `out` (and module-level scratch). Allocation-free.
+ */
+export function computeSweepQuaternion(
+  sweepDir: THREE.Vector3,
+  out: THREE.Quaternion,
+): THREE.Quaternion {
+  _basisZ.copy(sweepDir);
+  const ref = Math.abs(sweepDir.dot(UP)) > 0.999 ? WORLD_X : UP;
+  _basisX.copy(ref).cross(_basisZ).normalize();
+  _basisY.copy(_basisZ).cross(_basisX); // already unit-length
+  out.setFromRotationMatrix(_m4.makeBasis(_basisX, _basisY, _basisZ));
+  return out;
+}
 
 // ─── System ──────────────────────────────────────────────────────────────────
 
@@ -246,14 +279,10 @@ function sweepTracerSegment(
   // Orientation: align cuboid Z-axis along sweep direction
   _sweepDir.set(dx, dy, dz).normalize();
 
-  // Build rotation quaternion from default Z-forward to sweep direction
-  const dotUp = Math.abs(_sweepDir.dot(_up));
-  if (dotUp > 0.999) {
-    // Nearly parallel to up — use X as reference axis
-    _sweepQuat.setFromUnitVectors(new THREE.Vector3(0, 0, 1), _sweepDir);
-  } else {
-    _sweepQuat.setFromUnitVectors(new THREE.Vector3(0, 0, 1), _sweepDir);
-  }
+  // Build rotation quaternion from default Z-forward to sweep direction using
+  // an explicit, allocation-free orthonormal basis (deterministic near ±Y and
+  // for the antiparallel case).
+  computeSweepQuaternion(_sweepDir, _sweepQuat);
 
   // Thin cuboid: small X/Y extent (blade thickness), Z = half sweep length
   const BLADE_HALF_THICKNESS = 0.03;
