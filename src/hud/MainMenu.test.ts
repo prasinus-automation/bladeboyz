@@ -73,11 +73,25 @@ describe('MainMenu', () => {
       expect(title!.textContent).toBe('BLADEBOYZ');
     });
 
-    it('renders a PLAY button', () => {
-      const btn = document.getElementById('main-menu-play-button');
-      expect(btn).not.toBeNull();
-      expect(btn!.tagName.toLowerCase()).toBe('button');
-      expect(btn!.textContent).toBe('PLAY');
+    it('renders the four landing buttons (multiplayer era)', () => {
+      for (const [id, label] of [
+        ['menu-btn-multiplayer', 'MULTIPLAYER'],
+        ['menu-btn-practice', 'PRACTICE BOTS'],
+        ['menu-btn-shop', 'SHOP'],
+        ['menu-btn-credits', 'BUY CREDITS'],
+      ] as const) {
+        const btn = document.getElementById(id);
+        expect(btn, id).not.toBeNull();
+        expect(btn!.tagName.toLowerCase()).toBe('button');
+        expect(btn!.textContent).toBe(label);
+      }
+    });
+
+    it('MULTIPLAYER opens a submenu with QUICK PLAY — FFA', () => {
+      document.getElementById('menu-btn-multiplayer')!.click();
+      const ffa = document.getElementById('menu-btn-ffa');
+      expect(ffa).not.toBeNull();
+      expect(ffa!.textContent).toContain('FFA');
     });
 
     it('renders a controls hint', () => {
@@ -175,14 +189,14 @@ describe('MainMenu', () => {
       pointerLockSpy.mockRestore();
     });
 
-    it('clicking PLAY transitions GameState to PLAYING', () => {
-      const btn = document.getElementById('main-menu-play-button') as HTMLButtonElement;
+    it('clicking PRACTICE BOTS transitions GameState to PLAYING', () => {
+      const btn = document.getElementById('menu-btn-practice') as HTMLButtonElement;
       btn.click();
       expect(gsm.state).toBe(GameState.PLAYING);
     });
 
-    it('clicking PLAY calls input.requestPointerLock()', () => {
-      const btn = document.getElementById('main-menu-play-button') as HTMLButtonElement;
+    it('clicking PRACTICE BOTS calls input.requestPointerLock()', () => {
+      const btn = document.getElementById('menu-btn-practice') as HTMLButtonElement;
       btn.click();
       expect(pointerLockSpy).toHaveBeenCalledTimes(1);
     });
@@ -195,14 +209,14 @@ describe('MainMenu', () => {
       gsm.subscribe((state) => {
         if (state === GameState.PLAYING) order.push('state:PLAYING');
       });
-      const btn = document.getElementById('main-menu-play-button') as HTMLButtonElement;
+      const btn = document.getElementById('menu-btn-practice') as HTMLButtonElement;
       btn.click();
       expect(order).toEqual(['requestPointerLock', 'state:PLAYING']);
     });
 
-    it('clicking PLAY hides the menu', () => {
+    it('clicking PRACTICE BOTS hides the menu', () => {
       expect(menu.isVisible).toBe(true);
-      const btn = document.getElementById('main-menu-play-button') as HTMLButtonElement;
+      const btn = document.getElementById('menu-btn-practice') as HTMLButtonElement;
       btn.click();
       expect(menu.isVisible).toBe(false);
     });

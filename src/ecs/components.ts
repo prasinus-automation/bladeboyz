@@ -333,6 +333,16 @@ export const HitReactComp = defineComponent({
 });
 
 /**
+ * Tag: entity is a replicated REMOTE player (multiplayer). Position/yaw
+ * come from the network interpolation buffer (`src/net/RemotePlayers.ts`),
+ * combat state from the server's state stream. Remote players have
+ * hitboxes (local tracers hit them → damage claims) but no TracerTag (their
+ * swings are resolved by their own client), no MovementIntent, and none of
+ * the local lifecycle tags — the server owns their HP/death/respawn.
+ */
+export const RemotePlayer = defineComponent();
+
+/**
  * KnockbackState — physical displacement applied to a target on unblocked
  * hits (per-weapon `WeaponConfig.knockback`). Written by DamageSystem;
  * consumed by MovementSystem for player-controlled entities (added to the

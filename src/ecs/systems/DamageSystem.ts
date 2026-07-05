@@ -64,6 +64,26 @@ export function clearDamageAttribution(): void {
   attributionByVictim.clear();
 }
 
+/**
+ * Record kill attribution from OUTSIDE the local damage pipeline — the
+ * multiplayer net layer calls this when the server echoes damage on the
+ * LOCAL player (remote attackers bypass the local DamageSystem entirely),
+ * so `processDeaths` credits the right killer in the killfeed.
+ */
+export function recordDamageAttribution(
+  victimEid: number,
+  attackerEid: number,
+  weaponId: number,
+  bodyRegion: BodyRegion,
+): void {
+  attributionByVictim.set(victimEid, {
+    attackerEid,
+    weaponId,
+    bodyRegion,
+    tick: getCurrentFixedTick(),
+  });
+}
+
 // ─── Queries ─────────────────────────────────────────────────────────────────
 
 const damageEventQuery = defineQuery([DamageEvent]);
