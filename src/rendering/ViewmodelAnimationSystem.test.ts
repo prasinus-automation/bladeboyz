@@ -77,6 +77,9 @@ describe('ViewmodelAnimationSystem', () => {
       CombatStateComp.direction[eid] = Direction.Left;
       CombatStateComp.phaseTotal[eid] = 20;
       CombatStateComp.phaseElapsed[eid] = 10;
+      // CombatSystem syncs phaseT from the FSM every tick — mirror that
+      // here, since Windup blending is phaseT-driven (#goal-2026-07).
+      CombatStateComp.phaseT[eid] = 0.5;
 
       // Run enough frames to blend
       for (let i = 0; i < 10; i++) {
@@ -114,6 +117,8 @@ describe('ViewmodelAnimationSystem', () => {
       CombatStateComp.direction[eid] = Direction.Overhead;
       CombatStateComp.phaseTotal[eid] = 30;
       CombatStateComp.phaseElapsed[eid] = 1;
+      // Mirror CombatSystem's per-tick phaseT sync (Windup blends by phaseT).
+      CombatStateComp.phaseT[eid] = 1 / 30;
 
       // First frame after transition — should be partially blended
       viewmodelAnimationSystem(viewmodel, eid, 0.016, WEAPON_ID_TO_NAME);

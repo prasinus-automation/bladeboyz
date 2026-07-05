@@ -50,7 +50,9 @@ import {
 import {
   applyPoseLayer,
   smoothstepEase,
-  CROSSFADE_DURATION_SEC,
+  combatPhaseBlend,
+  crossfadeDurationFor,
+  anchoredPhaseT,
 } from '../../animation/poseBlending';
 import {
   computeArcSwingPose,
@@ -303,6 +305,8 @@ export function animationSystem(world: GameWorld, dt: number): void {
     const state = CombatStateComp.state[eid] as CombatState;
     const direction = CombatStateComp.direction[eid];
     const phaseT = CombatStateComp.phaseT[eid];
+    const phaseElapsed = CombatStateComp.phaseElapsed[eid];
+    const phaseTotal = CombatStateComp.phaseTotal[eid];
 
     // Defensive: not every animatable entity has `MovementState` (dummies
     // don't — only `createPlayer` adds it). For those, default to
@@ -337,6 +341,11 @@ export function animationSystem(world: GameWorld, dt: number): void {
       AnimationComp.crossfadeT[eid] = 0;
       AnimationComp.prevCombatState[eid] = state;
       AnimationComp.prevDirection[eid] = direction;
+      // Anchor the combat ease curve to the phase length AT ENTRY. A combo
+      // buffered mid-Recovery (`CombatFSM._handleAttack`, #190) shrinks
+      // `phaseTotal` in place with no state change; anchoring here means the
+      // curve keeps using the entry total and never jumps. See `anchoredPhaseT`.
+      AnimationComp.blendPhaseTotal[eid] = phaseTotal;
     }
 
     // First sight: lazy-initialize an empty snapshot so the first frame's
@@ -350,9 +359,27 @@ export function animationSystem(world: GameWorld, dt: number): void {
 
     // ── 3. Crossfade timer ──
     let crossfadeT = AnimationComp.crossfadeT[eid];
-    crossfadeT = Math.min(1, crossfadeT + dt / CROSSFADE_DURATION_SEC);
+    crossfadeT = Math.min(1, crossfadeT + dt / crossfadeDurationFor(state));
     AnimationComp.crossfadeT[eid] = crossfadeT;
     const effectiveT = smoothstepEase(Math.max(phaseT, crossfadeT));
+    // Combat layers get per-state time curves (full-duration windup draw,
+    // follow-through recovery) — see combatPhaseBlend. Movement layers
+    // keep the crossfade-raced effectiveT: legs settling into a stance
+    // SHOULD snap in 80ms regardless of the combat phase length.
+    //
+    // Drive the combat curve off phase progress anchored to the ENTRY total
+    // (`blendPhaseTotal`), not the live phaseTotal — this is what keeps a
+    // combo-buffered mid-Recovery shrink (#190) from popping the arm: the
+    // curve stays monotonic instead of jumping when the FSM redefines
+    // phaseTotal mid-phase. For the no-shrink case blendPhaseTotal ===
+    // phaseTotal, so this equals the raw phaseT. The `|| phaseTotal` guards a
+    // never-anchored entity (first observed mid-phase); when no phase length
+    // is available at all (phaseTotal 0 — the reactive Idle/Blocking states,
+    // where the FSM's phaseT is 0 too) we fall back to the raw phaseT.
+    const anchorTotal = AnimationComp.blendPhaseTotal[eid] || phaseTotal;
+    const blendPhaseT =
+      anchorTotal > 0 ? anchoredPhaseT(phaseElapsed, anchorTotal) : phaseT;
+    const combatBlendT = combatPhaseBlend(state, blendPhaseT, crossfadeT);
 
     // ── 4. Layer ownership ──
     const movKey = movementKeyFromState(speedFactor, isGrounded, isCrouching);
@@ -449,17 +476,19 @@ export function animationSystem(world: GameWorld, dt: number): void {
         bones,
         prevSnapshot,
         combatPose,
-        effectiveT,
+        combatBlendT,
         nonArmCombat,
       );
     } else {
       // Pure keyframe slerp — covers Idle (IDLE_POSE), Windup, Recovery,
-      // Blocking, Parry, HitStun.
+      // Blocking, Parry, HitStun. Windup/Recovery ride the per-state time
+      // curves (combatPhaseBlend) so the draw fills its whole phase and
+      // the recovery follows through past guard before settling.
       applyPoseLayer(
         bones,
         prevSnapshot,
         combatPose,
-        effectiveT,
+        combatBlendT,
         combatOwned,
       );
     }

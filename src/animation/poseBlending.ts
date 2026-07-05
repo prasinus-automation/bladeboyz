@@ -23,6 +23,7 @@
 
 import * as THREE from 'three';
 import type { Pose, BoneRotation } from './AnimationData';
+import { CombatState } from '../combat/states';
 
 // ── Constants ────────────────────────────────────────────
 
@@ -33,6 +34,22 @@ import type { Pose, BoneRotation } from './AnimationData';
  * first-person systems crossfade in lockstep.
  */
 export const CROSSFADE_DURATION_SEC = 0.08;
+
+/**
+ * Per-state crossfade overrides (seconds) — one uniform 0.08 for every
+ * transition flattened all character out of the blends (#goal-2026-07
+ * fluidity pass). Parry snaps (it's a reward flourish), hit-stun lands
+ * heavier. States not listed use CROSSFADE_DURATION_SEC.
+ */
+const CROSSFADE_BY_STATE: Partial<Record<CombatState, number>> = {
+  [CombatState.Parry]: 0.05,
+  [CombatState.HitStun]: 0.12,
+};
+
+/** Crossfade duration to use when ENTERING `state`. */
+export function crossfadeDurationFor(state: CombatState): number {
+  return CROSSFADE_BY_STATE[state] ?? CROSSFADE_DURATION_SEC;
+}
 
 // ── Reusable temp objects (avoid GC pressure) ────────────
 
@@ -51,6 +68,95 @@ export function smoothstepEase(t: number): number {
   if (t <= 0) return 0;
   if (t >= 1) return 1;
   return t * t * (3 - 2 * t);
+}
+
+/**
+ * Ease-out-back: decelerating curve that overshoots 1 by ~6% around
+ * t≈0.75 and settles back to exactly 1. Used as a slerp factor it carries
+ * the bone PAST its target along the snapshot→target geodesic before
+ * settling — physical follow-through from a single blend. (THREE's
+ * Quaternion.slerp extrapolates cleanly for factors > 1.)
+ */
+export function easeOutBack(t: number): number {
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  const c1 = 1.0; // ~6% overshoot; the standard 1.70158 (10%) reads rubbery
+  const c3 = c1 + 1;
+  const u = t - 1;
+  return 1 + c3 * u * u * u + c1 * u * u;
+}
+
+/**
+ * Phase progress for the combat blend, ANCHORED to the `phaseTotal` captured
+ * when the phase was ENTERED (`anchorPhaseTotal`) rather than the live
+ * `phaseTotal` (#goal-2026-07 fluidity pass, combo-pop fix).
+ *
+ * Why anchor: `CombatFSM._handleAttack` (PR #190) shrinks `phaseTotal` **in
+ * place** when a combo is buffered mid-Recovery — a Longsword Overhead
+ * recovery collapses 24 → 10 ticks the instant of the click, with no
+ * state/direction change. Driving `easeOutBack` off the live
+ * `phaseElapsed / phaseTotal` makes it leap (0.25 → 0.6) in a single tick —
+ * a ~0.31 jump in the slerp factor that visibly pops the arm on every
+ * chained swing (the *primary*, encouraged combat pattern). Re-snapshotting
+ * on the shrink only halves the pop, because `easeOutBack` is steep near 0
+ * and the shrunk span is only a few ticks.
+ *
+ * Anchoring to the ENTRY total keeps `phaseElapsed / anchorPhaseTotal`
+ * monotonic and smooth across the shrink: the recovery follow-through eases
+ * toward guard at its ORIGINAL pace and is simply cut short by the next
+ * Windup (which snapshots wherever the arm actually is and draws back from
+ * there). No rush-to-guard, no discontinuity. Since `phaseElapsed` never
+ * reaches the (larger) anchor total before the state changes, the curve is
+ * traversed partially — exactly the "flow into the next swing" feel combos
+ * want.
+ *
+ * For the common no-shrink case `anchorPhaseTotal === phaseTotal`, so this
+ * returns exactly the FSM's `getPhaseT()`.
+ */
+export function anchoredPhaseT(
+  phaseElapsed: number,
+  anchorPhaseTotal: number,
+): number {
+  if (anchorPhaseTotal <= 0) return 0;
+  const t = phaseElapsed / anchorPhaseTotal;
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  return t;
+}
+
+/**
+ * Blend factor for the COMBAT pose layer, per state (#goal-2026-07
+ * fluidity pass).
+ *
+ * The legacy formula `smoothstep(max(phaseT, crossfadeT))` let the 80ms
+ * crossfade win every race against multi-hundred-ms phases: a 300ms
+ * windup reached its full pose in 80ms and then FROZE for the remaining
+ * 220ms, and recovery snapped back to guard the same way. That
+ * hit-a-pose-and-hold cadence is the single biggest "robotic" tell.
+ *
+ *  - Windup: driven by phaseT alone — the arm draws back across the WHOLE
+ *    windup and arrives at full draw exactly when the swing releases.
+ *    Continuity on entry comes from the state-change snapshot (phaseT
+ *    restarts at 0), including direction morphs and combos.
+ *  - Recovery: ease-out-back on phaseT — the arm carries past guard
+ *    (follow-through momentum) and settles into it across the whole
+ *    recovery window.
+ *  - Everything else (Idle, Blocking, Parry, HitStun): reactive states
+ *    keep the crossfade race — snapping fast IS correct for a block.
+ */
+export function combatPhaseBlend(
+  state: CombatState,
+  phaseT: number,
+  crossfadeT: number,
+): number {
+  switch (state) {
+    case CombatState.Windup:
+      return smoothstepEase(phaseT);
+    case CombatState.Recovery:
+      return easeOutBack(phaseT);
+    default:
+      return smoothstepEase(Math.max(phaseT, crossfadeT));
+  }
 }
 
 /**

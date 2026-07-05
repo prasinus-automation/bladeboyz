@@ -249,29 +249,43 @@ interface WeaponScaling {
   forearm: number;
   hand: number;
   spine: number;
+  /**
+   * Slash velocity-profile exponent (#goal-2026-07 fluidity pass):
+   * `tt = t^swingExponent` for Left/Right/Overhead. 1 = the old constant
+   * angular velocity. Higher = the blade loads up early and ACCELERATES
+   * through contact — the whip that makes a heavy swing read as heavy.
+   * Stab keeps its own ease-out (fast extension, dwell at full reach).
+   */
+  swingExponent: number;
 }
 
 const WEAPON_SCALING: Record<WeaponName, WeaponScaling> = {
-  Longsword: { shoulder: 1.0, forearm: 1.0, hand: 1.0, spine: 1.0 },
-  Mace: { shoulder: 1.15, forearm: 1.0, hand: 1.1, spine: 1.5 },
+  Longsword: { shoulder: 1.0, forearm: 1.0, hand: 1.0, spine: 1.0, swingExponent: 1.35 },
+  Mace: { shoulder: 1.15, forearm: 1.0, hand: 1.1, spine: 1.5, swingExponent: 1.55 },
   // Dagger: forearm + hand contribution boosted; spine commitment zeroed
   // (a thrust/slash with a dagger has no torso wind-up — it's all wrist).
-  Dagger: { shoulder: 0.75, forearm: 1.2, hand: 1.2, spine: 0 },
-  Battleaxe: { shoulder: 1.3, forearm: 1.05, hand: 1.0, spine: 1.5 },
+  Dagger: { shoulder: 0.75, forearm: 1.2, hand: 1.2, spine: 0, swingExponent: 1.15 },
+  Battleaxe: { shoulder: 1.3, forearm: 1.05, hand: 1.0, spine: 1.5, swingExponent: 1.6 },
   // ── 2026-07 arsenal ──
   // Zweihander: huge deliberate arcs with full-body commitment.
-  Zweihander: { shoulder: 1.25, forearm: 1.0, hand: 1.0, spine: 1.4 },
+  Zweihander: { shoulder: 1.25, forearm: 1.0, hand: 1.0, spine: 1.4, swingExponent: 1.75 },
   // Warhammer: the biggest wind — the whole torso loads the launch.
-  Warhammer: { shoulder: 1.35, forearm: 1.0, hand: 1.0, spine: 1.6 },
+  Warhammer: { shoulder: 1.35, forearm: 1.0, hand: 1.0, spine: 1.6, swingExponent: 1.8 },
   // Spear: economical thrust-first motion, slashes stay tight.
-  Spear: { shoulder: 0.9, forearm: 1.1, hand: 1.0, spine: 0.6 },
+  Spear: { shoulder: 0.9, forearm: 1.1, hand: 1.0, spine: 0.6, swingExponent: 1.3 },
   // Katana: quick wrist-driven cuts.
-  Katana: { shoulder: 0.9, forearm: 1.15, hand: 1.25, spine: 0.9 },
+  Katana: { shoulder: 0.9, forearm: 1.15, hand: 1.25, spine: 0.9, swingExponent: 1.2 },
   // Scythe: sweeping horizontal drama.
-  Scythe: { shoulder: 1.2, forearm: 1.0, hand: 1.0, spine: 1.5 },
+  Scythe: { shoulder: 1.2, forearm: 1.0, hand: 1.0, spine: 1.5, swingExponent: 1.5 },
   // Yeeter: maximum wind-up, maximum theater.
-  Yeeter: { shoulder: 1.4, forearm: 0.95, hand: 0.9, spine: 1.7 },
+  Yeeter: { shoulder: 1.4, forearm: 0.95, hand: 0.9, spine: 1.7, swingExponent: 1.75 },
 };
+
+/**
+ * Exponent used for the legacy 2-arg `computeArcSwingPose` form and for
+ * unknown weapon names — matches the Longsword baseline.
+ */
+const DEFAULT_SWING_EXPONENT = WEAPON_SCALING.Longsword.swingExponent;
 
 /**
  * Build the per-weapon × per-direction params table from the baseline +
@@ -377,12 +391,22 @@ export function computeArcSwingPose(
   // Clamp t to [0, 1] so callers don't have to.
   let tt = t <= 0 ? 0 : t >= 1 ? 1 : t;
 
-  // Stab: ease-out (fast extension, then dwell at full reach). Slashes
-  // stay linear — a constant angular sweep is what reads as a slash.
+  // Stab: ease-out (fast extension, then dwell at full reach).
   // Identity-compared against the resolved params so the unknown-direction
   // fallback (which uses the stab arc) eases identically to a real Stab.
+  //
+  // Slashes: accelerate through the swing (`t^exponent`, per-weapon).
+  // The old constant angular velocity had no loading phase and no whip —
+  // the #goal-2026-07 fluidity pass made the profile weight-dependent:
+  // daggers stay near-linear, warhammers load up and crack through.
   if (params === stabParams) {
     tt = 1 - (1 - tt) * (1 - tt);
+  } else {
+    const exponent =
+      weaponName !== undefined
+        ? (WEAPON_SCALING[weaponName]?.swingExponent ?? DEFAULT_SWING_EXPONENT)
+        : DEFAULT_SWING_EXPONENT;
+    tt = Math.pow(tt, exponent);
   }
 
   const result: Pose = {

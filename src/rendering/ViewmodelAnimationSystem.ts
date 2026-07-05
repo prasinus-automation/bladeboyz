@@ -36,7 +36,9 @@ import { getViewmodelPose } from '../animation/ViewmodelAnimationData';
 import {
   applyPoseLayer,
   smoothstepEase,
-  CROSSFADE_DURATION_SEC,
+  combatPhaseBlend,
+  crossfadeDurationFor,
+  anchoredPhaseT,
 } from '../animation/poseBlending';
 import {
   computeArcSwingPose,
@@ -107,6 +109,11 @@ interface ViewmodelEntityState {
   /** Elapsed-time accumulator for idle sway (per-entity so it survives
    *  state changes without re-syncing the sinusoid phase). */
   elapsedTime: number;
+  /** `phaseTotal` captured when the current phase was ENTERED. The combat
+   *  ease curve is driven off `phaseElapsed / blendPhaseTotal` so an in-place
+   *  shrink (combo buffered mid-Recovery, #190) can't make it jump. Mirror of
+   *  `AnimationComp.blendPhaseTotal`. */
+  blendPhaseTotal: number;
 }
 
 const entityStates = new Map<number, ViewmodelEntityState>();
@@ -122,6 +129,7 @@ function getOrCreateEntityState(eid: number): ViewmodelEntityState {
       prevState: -1,
       prevDirection: -1,
       elapsedTime: 0,
+      blendPhaseTotal: 0,
     };
     entityStates.set(eid, s);
   }
@@ -162,6 +170,8 @@ export function viewmodelAnimationSystem(
   const combatState = CombatStateComp.state[playerEid] as CombatState;
   const direction = CombatStateComp.direction[playerEid];
   const phaseT = CombatStateComp.phaseT[playerEid];
+  const phaseElapsed = CombatStateComp.phaseElapsed[playerEid];
+  const phaseTotal = CombatStateComp.phaseTotal[playerEid];
   const weaponId = CombatStateComp.weaponId[playerEid];
 
   // ── Map weapon ID to name ──
@@ -181,7 +191,7 @@ export function viewmodelAnimationSystem(
 
   if (stateChanged) {
     // Snapshot every animatable bone's current quaternion. Same pattern
-    // as `AnimationSystem.ts:330` — cost is 3 Quaternion clones (arm bones
+    // as `AnimationSystem.ts` — cost is 3 Quaternion clones (arm bones
     // only, weapon_attach is owned by grip data + skipped).
     const snapshot: Record<string, THREE.Quaternion> = {};
     for (const boneName of VIEWMODEL_COMBAT_BONES) {
@@ -192,6 +202,11 @@ export function viewmodelAnimationSystem(
     entityState.crossfadeT = 0;
     entityState.prevState = combatState;
     entityState.prevDirection = direction;
+    // Anchor the ease curve to the phase length at entry — a combo buffered
+    // mid-Recovery (#190) shrinks phaseTotal in place; anchoring keeps the
+    // curve monotonic so the FP rig doesn't pop and stays in lockstep with
+    // AnimationSystem (BladeTimingParity). See `anchoredPhaseT`.
+    entityState.blendPhaseTotal = phaseTotal;
   }
 
   // Lazy-init empty snapshot on first sight so applyPoseLayer's missing-bone
@@ -205,7 +220,7 @@ export function viewmodelAnimationSystem(
   // ── Crossfade timer ──
   entityState.crossfadeT = Math.min(
     1,
-    entityState.crossfadeT + dt / CROSSFADE_DURATION_SEC,
+    entityState.crossfadeT + dt / crossfadeDurationFor(combatState),
   );
   const crossfadeT = entityState.crossfadeT;
 
@@ -240,10 +255,20 @@ export function viewmodelAnimationSystem(
     );
   } else {
     // Pure keyframe slerp — Idle, Windup, Recovery, Blocking, Parry, HitStun.
-    // effectiveT = smoothstep(max(phaseT, crossfadeT)) covers both
-    // fixed-duration states (use phaseT) and no-duration states (use
-    // crossfadeT) per docs/animation-architecture.md §6.
-    const effectiveT = smoothstepEase(Math.max(phaseT, crossfadeT));
+    // Per-state time curves via combatPhaseBlend (#goal-2026-07 fluidity
+    // pass): Windup draws across its WHOLE phase, Recovery follows through
+    // past guard and settles; reactive states keep the crossfade race.
+    // Mirrors AnimationSystem's combat layer exactly so FP and TP stay in
+    // lockstep (BladeTimingParity).
+    // Phase progress anchored to the ENTRY total (`blendPhaseTotal`), not the
+    // live phaseTotal — see AnimationSystem / anchoredPhaseT. Keeps a
+    // combo-buffered mid-Recovery shrink (#190) from popping the arm. Falls
+    // back to raw phaseT when no phase length is available (phaseTotal 0 —
+    // reactive states), matching AnimationSystem exactly for FP/TP lockstep.
+    const anchorTotal = entityState.blendPhaseTotal || phaseTotal;
+    const blendPhaseT =
+      anchorTotal > 0 ? anchoredPhaseT(phaseElapsed, anchorTotal) : phaseT;
+    const effectiveT = combatPhaseBlend(combatState, blendPhaseT, crossfadeT);
     applyPoseLayer(
       viewmodel.bones,
       prevSnapshot,

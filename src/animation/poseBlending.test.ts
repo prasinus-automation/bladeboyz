@@ -3,9 +3,14 @@ import * as THREE from 'three';
 import {
   applyPoseLayer,
   smoothstepEase,
+  easeOutBack,
+  combatPhaseBlend,
+  crossfadeDurationFor,
+  anchoredPhaseT,
   CROSSFADE_DURATION_SEC,
 } from './poseBlending';
 import type { Pose } from './AnimationData';
+import { CombatState } from '../combat/states';
 
 describe('poseBlending', () => {
   describe('CROSSFADE_DURATION_SEC', () => {
@@ -245,6 +250,140 @@ describe('poseBlending', () => {
 
       expect(a.quaternion.equals(new THREE.Quaternion())).toBe(false);
       expect(b.quaternion.equals(new THREE.Quaternion())).toBe(false);
+    });
+  });
+
+  describe('easeOutBack (#goal-2026-07 follow-through curve)', () => {
+    it('is exact at the endpoints', () => {
+      expect(easeOutBack(0)).toBe(0);
+      expect(easeOutBack(1)).toBe(1);
+    });
+
+    it('clamps outside [0, 1]', () => {
+      expect(easeOutBack(-1)).toBe(0);
+      expect(easeOutBack(2)).toBe(1);
+    });
+
+    it('overshoots 1 in the settle region (the follow-through)', () => {
+      let peak = 0;
+      for (let t = 0; t <= 1; t += 0.01) peak = Math.max(peak, easeOutBack(t));
+      expect(peak).toBeGreaterThan(1.0);
+      expect(peak).toBeLessThan(1.12); // subtle, not rubbery
+    });
+  });
+
+  describe('combatPhaseBlend (#goal-2026-07 per-state time curves)', () => {
+    it('Windup ignores the crossfade race — the draw fills the whole phase', () => {
+      // Legacy max(phaseT, crossfadeT) hit 1.0 within 80ms; now a windup
+      // 20% through its phase is 20%-ish drawn even with crossfade done.
+      const early = combatPhaseBlend(CombatState.Windup, 0.2, 1.0);
+      expect(early).toBeLessThan(0.2); // smoothstep(0.2) = 0.104
+      expect(combatPhaseBlend(CombatState.Windup, 1, 1)).toBe(1);
+    });
+
+    it('Recovery overshoots past the target before settling (follow-through)', () => {
+      let peak = 0;
+      for (let t = 0; t <= 1; t += 0.01) {
+        peak = Math.max(peak, combatPhaseBlend(CombatState.Recovery, t, 1.0));
+      }
+      expect(peak).toBeGreaterThan(1.0);
+      expect(combatPhaseBlend(CombatState.Recovery, 1, 1)).toBe(1);
+    });
+
+    it('reactive states keep the crossfade race (block snaps fast)', () => {
+      // phaseT 0 but crossfade done → fully blended.
+      expect(combatPhaseBlend(CombatState.Blocking, 0, 1)).toBe(1);
+      expect(combatPhaseBlend(CombatState.Idle, 0, 0.5)).toBeCloseTo(0.5 * 0.5 * (3 - 2 * 0.5), 6);
+    });
+  });
+
+  describe('crossfadeDurationFor', () => {
+    it('parry is snappier and hit-stun heavier than the default', () => {
+      expect(crossfadeDurationFor(CombatState.Parry)).toBeLessThan(CROSSFADE_DURATION_SEC);
+      expect(crossfadeDurationFor(CombatState.HitStun)).toBeGreaterThan(CROSSFADE_DURATION_SEC);
+      expect(crossfadeDurationFor(CombatState.Windup)).toBe(CROSSFADE_DURATION_SEC);
+    });
+  });
+
+  describe('anchoredPhaseT (combo-buffer pop fix)', () => {
+    it('equals raw phaseT when anchorTotal === live phaseTotal (no-shrink case)', () => {
+      expect(anchoredPhaseT(6, 24)).toBeCloseTo(6 / 24, 6);
+      expect(anchoredPhaseT(12, 24)).toBeCloseTo(0.5, 6);
+    });
+
+    it('ignores an in-place shrink — stays on the ENTRY total', () => {
+      // Recovery entered at total 24, combo shrinks live phaseTotal to 10.
+      // The curve keeps using the anchor (24), so phaseElapsed=6 → 0.25,
+      // NOT 6/10 = 0.6. This is the whole fix.
+      expect(anchoredPhaseT(6, 24)).toBeCloseTo(0.25, 6);
+      expect(anchoredPhaseT(6, 24)).not.toBeCloseTo(6 / 10, 2);
+    });
+
+    it('is monotonic across the shrink tick (no discontinuity)', () => {
+      // phaseElapsed marches 5 → 6 while live phaseTotal collapses 24 → 10;
+      // anchored to 24 the progress just continues 5/24 → 6/24.
+      const before = anchoredPhaseT(5, 24);
+      const after = anchoredPhaseT(6, 24); // anchor unchanged by the shrink
+      expect(after).toBeGreaterThan(before);
+      expect(after - before).toBeCloseTo(1 / 24, 6);
+    });
+
+    it('clamps to [0,1] and guards a zero/negative anchor', () => {
+      expect(anchoredPhaseT(-1, 24)).toBe(0);
+      expect(anchoredPhaseT(30, 24)).toBe(1);
+      expect(anchoredPhaseT(5, 0)).toBe(0);
+      expect(anchoredPhaseT(5, -4)).toBe(0);
+    });
+
+    it('the combat blend does NOT pop across a combo-buffered mid-Recovery shrink', () => {
+      // Reproduces QA's numeric case: Longsword Overhead recovery (entry total
+      // 24), combo buffered at phaseElapsed=6 → live phaseTotal shrinks to 10.
+      //
+      // Recovery uses `easeOutBack(phaseT)` with NO snapshot change mid-phase,
+      // so the blend factor IS the arm's progress toward guard here. Assert it
+      // moves continuously frame-to-frame through the shrink.
+      const RECOVERY = 24;
+      const COMBO = 10;
+      const SHRINK_AT = 6;
+
+      // WITHOUT the fix: drive the curve off the LIVE (shrinking) phaseTotal.
+      // The shrink tick jumps easeOutBack(6/24)=0.72 → easeOutBack(6/10)=1.03.
+      const noFix: number[] = [];
+      let liveTotal = RECOVERY;
+      for (let e = 0; e <= COMBO; e++) {
+        if (e === SHRINK_AT) liveTotal = COMBO;
+        const t = Math.min(1, e / liveTotal);
+        noFix.push(combatPhaseBlend(CombatState.Recovery, t, 1));
+      }
+
+      // WITH the fix: anchored to the entry total (24), unaffected by the shrink.
+      const fixed: number[] = [];
+      for (let e = 0; e <= COMBO; e++) {
+        const t = anchoredPhaseT(e, RECOVERY);
+        fixed.push(combatPhaseBlend(CombatState.Recovery, t, 1));
+      }
+
+      const maxDelta = (xs: number[]): number => {
+        let m = 0;
+        for (let i = 1; i < xs.length; i++) m = Math.max(m, Math.abs(xs[i] - xs[i - 1]));
+        return m;
+      };
+      const deltaAt = (xs: number[], i: number) => Math.abs(xs[i] - xs[i - 1]);
+
+      // The no-fix version pops hard AT the shrink tick — guard the repro so a
+      // regression that reverts to live phaseTotal fails here.
+      expect(deltaAt(noFix, SHRINK_AT)).toBeGreaterThan(0.25);
+
+      // The fix has NO extra jump at the shrink — that step is the smallest so
+      // far (easeOutBack is decelerating), well under the no-fix pop.
+      expect(deltaAt(fixed, SHRINK_AT)).toBeLessThan(0.1);
+      // Every fixed step is bounded by the natural curve's steepest step (its
+      // start), which is strictly smaller than the no-fix teleport.
+      expect(maxDelta(fixed)).toBeLessThan(deltaAt(noFix, SHRINK_AT));
+      // Monotonic non-decreasing across the whole recovery (no reversal).
+      for (let i = 1; i < fixed.length; i++) {
+        expect(fixed[i]).toBeGreaterThanOrEqual(fixed[i - 1] - 1e-9);
+      }
     });
   });
 });
