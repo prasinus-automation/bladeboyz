@@ -96,9 +96,11 @@ export const mace: WeaponConfig = {
   // 3 points on the mace head only (not the shaft).
 
   tracerPoints: [
-    [0, 0.45, 0],   // bottom of head
-    [0, 0.55, 0],   // center of head
-    [0, 0.65, 0],   // top of head
+    // Synced to createMaceModel's head (#goal-2026-07 hit-accuracy pass).
+    // Guarded by TracerVisualParity.test.ts.
+    [0, 0.4, 0],    // bottom of head
+    [0, 0.48, 0],   // center of head
+    [0, 0.56, 0],   // top of head
   ],
 
   // -- Range ---------------------------------------------

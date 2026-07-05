@@ -34,6 +34,7 @@ import {
   AnimationComp,
   HitReactComp,
   MovementState,
+  Rotation,
   meshRegistry,
 } from '../components';
 import {
@@ -75,6 +76,13 @@ const RUN_SPEED_FACTOR_THRESHOLD = 0.85;
 /** Subtle idle breathing — amplitude (radians) and frequency (Hz). */
 const BREATH_AMPLITUDE = 0.008;
 const BREATH_FREQUENCY = 0.4;
+
+/**
+ * Max chest lean from aim pitch during attack states (radians, ~34°).
+ * Enough to move a spear thrust from head height to shins at reach;
+ * clamped so a straight-down camera doesn't fold the model in half.
+ */
+const PITCH_AIM_MAX_RAD = 0.6;
 
 // ── Pre-computed bone subsets ────────────────────────────
 
@@ -491,6 +499,43 @@ export function animationSystem(world: GameWorld, dt: number): void {
         combatBlendT,
         combatOwned,
       );
+    }
+
+    // ── 7.5 Pitch aim (#goal-2026-07 hit-accuracy pass) ──
+    // During attack states, lean the chest by the aim pitch so the swing
+    // plane follows the camera vertically — aim at the head, the blade
+    // sweeps at head height; aim at the legs, it sweeps low. The tracer
+    // and the six body hitboxes read these same bones, so the DAMAGE
+    // volume tilts with the visual automatically. Rotation.x is written
+    // by MovementSystem for the local player (camera pitch, positive =
+    // looking up) and streamed onto remote puppets via the `pitch` field
+    // of the state message (RemotePlayers.pushRemoteState); bots leave it 0.
+    // Premultiplied AFTER the combat layer so it composes with (rather
+    // than fights) the keyframe/arc pose; clamped so full-vertical aim
+    // doesn't fold the model in half.
+    if (
+      state === CombatState.Windup ||
+      state === CombatState.Release ||
+      state === CombatState.Recovery
+    ) {
+      const aimPitch = Rotation.x[eid];
+      if (aimPitch !== 0) {
+        const chestBone = bones['chest'];
+        if (chestBone) {
+          const lean = Math.max(
+            -PITCH_AIM_MAX_RAD,
+            Math.min(PITCH_AIM_MAX_RAD, aimPitch),
+          );
+          // Rotation about +X maps front-of-body points (−Z) upward:
+          // y' = y·cos θ + d·sin θ for a point d ahead. So chest X = +pitch
+          // raises the swing in front when looking up and drops it when
+          // looking down (verified against the tracer debug segments —
+          // the naive "negate it" guess tilts the arc the wrong way).
+          _euler.set(lean, 0, 0, 'XYZ');
+          _swayQuat.setFromEuler(_euler);
+          chestBone.quaternion.premultiply(_swayQuat);
+        }
+      }
     }
 
     // ── 8. Hit-react overlay (only in HitStun, only when fresh) ──

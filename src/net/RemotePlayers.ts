@@ -199,6 +199,12 @@ export function pushRemoteState(eid: number, s: NetPlayerState, now: number): vo
   // Keep ~1 s of history.
   while (data.samples.length > 30) data.samples.shift();
 
+  // Camera pitch → chest lean during attack states (AnimationSystem §7.5).
+  // Applied directly (not interpolated) so the lean stays locked to the
+  // same sample as the combat-state mirror below — the swing pose and the
+  // aim tilt come from one packet, no skew between them.
+  Rotation.x[eid] = s.pitch;
+
   // Combat-state mirror → AnimationSystem drives the swing/block pose.
   CombatStateComp.state[eid] = s.cs.s;
   CombatStateComp.direction[eid] = s.cs.d;

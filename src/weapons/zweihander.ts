@@ -69,11 +69,13 @@ export const zweihander: WeaponConfig = {
 
   // 1.9m of blade — five tracer points for coverage at the long reach.
   tracerPoints: [
-    [0, 0.3, 0],
-    [0, 0.7, 0],
-    [0, 1.1, 0],
-    [0, 1.5, 0],
-    [0, 1.9, 0],
+    // Synced to createZweihanderModel's blade (#goal-2026-07 hit-accuracy
+    // pass). Guarded by TracerVisualParity.test.ts.
+    [0, 0.39, 0],
+    [0, 0.777, 0],
+    [0, 1.165, 0],
+    [0, 1.552, 0],
+    [0, 1.94, 0],
   ],
 
   range: 2.0,

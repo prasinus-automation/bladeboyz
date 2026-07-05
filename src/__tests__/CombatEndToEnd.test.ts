@@ -403,6 +403,37 @@ describe('combat end-to-end (real Rapier, real scene graph)', { timeout: 30_000 
     expect(displacement).toBeLessThan(0.5);
   });
 
+  // ── Body-part accuracy (#goal-2026-07 hit-accuracy pass) ──
+  // Zone is asserted through the EXACT damage value — longsword Left:
+  // head 50 / torso 35 / limb 25 — so these fail loudly if the sweep
+  // starts landing on the wrong body part.
+
+  it('a level left slash lands on the upper body (head/torso), never as a limb graze', () => {
+    const h = buildHarness({ dummyPos: { x: 0, z: -1.0 } });
+    h.runTicks(3);
+    attack(h, Direction.Left);
+    h.runTicks(60);
+    const delta = 100 - Health.current[h.dummyEid];
+    // Head (50) or torso (35). A chest-height sweep that clips an arm on
+    // the way through must not be priced as a limb hit (25) — region
+    // priority resolves head > torso > limb within the tick.
+    expect([35, 50]).toContain(delta);
+  });
+
+  it('the same slash aimed DOWN (pitch) hits the legs for limb damage', () => {
+    const h = buildHarness({ dummyPos: { x: 0, z: -1.0 } });
+    // Camera pitch: looking down. MovementSystem writes Rotation.x for
+    // the local player each tick; the harness sets it directly. The
+    // AnimationSystem pitch-aim lean tilts the chest, the tracer rides
+    // the same bones, and the sweep drops to leg height.
+    Rotation.x[h.playerEid] = -0.35;
+    h.runTicks(3);
+    attack(h, Direction.Left);
+    h.runTicks(60);
+    const delta = 100 - Health.current[h.dummyEid];
+    expect(delta).toBe(25); // limb — the legs are what the blade visibly crosses
+  });
+
   it('every registered weapon can land a hit on a dummy at mid-range', () => {
     // The one test that keeps future weapons honest: each entry in
     // weaponIdToName must be able to connect. Range-appropriate spacing:

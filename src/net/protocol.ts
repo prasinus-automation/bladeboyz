@@ -46,6 +46,9 @@ export interface NetPlayerState {
   id: string;
   p: NetVec3;
   yaw: number;
+  /** Camera pitch (Rotation.x, positive = looking up). Drives the remote
+   * puppet's chest lean so its swing plane matches the real player's aim. */
+  pitch: number;
   cs: NetCombatState;
 }
 
@@ -76,6 +79,8 @@ export interface StateMsg {
   t: 'state';
   p: NetVec3;
   yaw: number;
+  /** Camera pitch (Rotation.x, positive = looking up). See NetPlayerState. */
+  pitch: number;
   cs: NetCombatState;
 }
 

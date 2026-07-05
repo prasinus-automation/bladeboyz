@@ -99,8 +99,10 @@ export const dagger: WeaponConfig = {
   // 2 points along the short blade.
 
   tracerPoints: [
-    [0, 0.18, 0],   // blade base
-    [0, 0.32, 0],   // blade tip
+    // Synced to createDaggerModel's blade (#goal-2026-07 hit-accuracy
+    // pass). Guarded by TracerVisualParity.test.ts.
+    [0, 0.13, 0],   // blade base
+    [0, 0.28, 0],   // blade tip
   ],
 
   // -- Range ---------------------------------------------
