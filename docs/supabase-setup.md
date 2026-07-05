@@ -70,6 +70,22 @@ the server accepts guests only (client-chosen names, sanitized).
   client once a skin picker ships. `profiles.credits` and ownership rows
   are already enforced server-side.
 
+## Verify the guardrails (once, after applying)
+
+Run as a signed-in user (SQL editor "Run as" or a client session):
+
+```sql
+-- (i) MUST fail: clients can never write credits directly.
+update public.profiles set credits = credits + 1000 where id = auth.uid();
+-- (ii) MUST succeed (given balance ≥ 1): the definer RPC path is allowed.
+select public.spend_credits(1, 'smoke-test');
+```
+
+The trigger admits the RPCs via a transaction-scoped `set_config` flag
+(`SECURITY DEFINER` does not change `current_setting('role')`, so a naive
+role check would block legitimate spends — see the comment on
+`protect_credits` in the migration).
+
 ## Security model recap
 
 - Clients can read their own profile/ledger/skins and everyone's username.

@@ -19,7 +19,7 @@
  * runs untouched — the server arbitrates HP/deaths/scores.
  */
 
-import { defineQuery, hasComponent, removeEntity } from 'bitecs';
+import { defineQuery, hasComponent, addComponent, removeComponent, removeEntity } from 'bitecs';
 import {
   DamageEvent,
   Health,
@@ -31,6 +31,7 @@ import {
   CombatStateComp,
   CombatStateComponent,
   DeadTag,
+  RespawnPending,
 } from '../ecs/components';
 import { CombatState } from '../combat/states';
 import { CombatInput, fsmRegistry } from '../combat/CombatFSM';
@@ -39,7 +40,7 @@ import { recordDamageAttribution } from '../ecs/systems/DamageSystem';
 import { getPhysicsBody } from '../ecs/systems/MovementSystem';
 import { EventBus } from '../events/EventBus';
 import { getCurrentFixedTick } from '../core/tickCounter';
-import { GROUND_TOP_Y } from '../core/types';
+import { GROUND_TOP_Y, CHARACTER_CONTROLLER_OFFSET } from '../core/types';
 import { weaponConfigs } from '../weapons/WeaponConfig';
 import { weaponIdToName } from '../ecs/systems/CombatSystem';
 import { DEFAULT_KNOCKBACK } from '../weapons/WeaponConfig';
@@ -117,10 +118,15 @@ export class NetworkSystem {
         for (const p of msg.roster) {
           if (p.id === msg.id) continue;
           if (!remoteByNetId.has(p.id)) {
+            // Spawn position is unknown until their first state sample —
+            // hold the puppet (and its live hitboxes) far below the arena
+            // instead of at the origin, where it could soak bogus local
+            // tracer hits (QA note #4 on PR #193).
             createRemotePlayer(this.world, p.id, p.name, {
               x: 0,
               z: 0,
               yaw: 0,
+              holdBelowArena: true,
             });
           }
         }
@@ -147,21 +153,43 @@ export class NetworkSystem {
         break;
       }
       case 'hp':
-        this.applyHp(msg.id, msg.hp, msg.from, msg.dmg, msg.region, msg.w);
+        this.applyHp(msg.id, msg.hp, msg.from, msg.dmg, msg.region, msg.w, msg.dir);
         break;
       case 'death': {
         const victimEid = this.eidFor(msg.victim);
         const killerEid = this.eidFor(msg.killer);
         if (victimEid === this.playerEid) {
-          // Local death: HP already 0 from the hp echo — the local
-          // pipeline (healthSystemTick → processDeaths) runs and emits
-          // the DeathEvent with the attribution recorded in applyHp.
+          // LOCAL death — the server is the lifecycle authority in
+          // multiplayer (the local healthSystemTick/processDeaths/
+          // processRespawns pipeline is gated off in main.ts). Mirror the
+          // essential parts here: death-state components (DeathScreen
+          // reads DeadTag + RespawnPending for its countdown; Movement/
+          // CombatSystem early-out on DeadTag), FSM reset, and the
+          // killfeed DeathEvent with the attribution recorded in applyHp.
+          Health.current[this.playerEid] = 0;
+          if (!hasComponent(this.world.ecs, DeadTag, this.playerEid)) {
+            addComponent(this.world.ecs, DeadTag, this.playerEid);
+            addComponent(this.world.ecs, RespawnPending, this.playerEid);
+            // Display-only countdown; the authoritative respawn is the
+            // server's `respawn` message (~3 s, matching this).
+            RespawnPending.ticksRemaining[this.playerEid] = 180;
+          }
+          fsmRegistry.get(this.playerEid)?.reset();
+          EventBus.emit('DeathEvent', {
+            victimEid,
+            killerEid: killerEid ?? 0,
+            weaponId: msg.w,
+            bodyRegion: 0,
+            tick: getCurrentFixedTick(),
+          });
           break;
         }
         if (victimEid !== null) {
           Health.current[victimEid] = 0;
-          // Remote victims have no local death pipeline — emit the
-          // killfeed event directly.
+          // Remote victims: the local lifecycle pipeline never touches
+          // them (gated off in MP + RemotePlayer exclusions in
+          // healthSystemTick/processRespawns) — the server death message
+          // IS their death. Emit the killfeed event directly.
           EventBus.emit('DeathEvent', {
             victimEid,
             killerEid: killerEid ?? 0,
@@ -177,6 +205,14 @@ export class NetworkSystem {
         if (eid === this.playerEid) {
           this.teleportLocal(msg.spawn);
           Health.current[this.playerEid] = 100;
+          // Server respawn = authoritative resurrection: clear the
+          // death-state components (nothing else removes them in MP).
+          if (hasComponent(this.world.ecs, DeadTag, this.playerEid)) {
+            removeComponent(this.world.ecs, DeadTag, this.playerEid);
+          }
+          if (hasComponent(this.world.ecs, RespawnPending, this.playerEid)) {
+            removeComponent(this.world.ecs, RespawnPending, this.playerEid);
+          }
         } else if (eid !== null) {
           Health.current[eid] = 100;
           // Snap the puppet: clear stale interp samples so it doesn't
@@ -184,7 +220,7 @@ export class NetworkSystem {
           const data = remotePlayerRegistry.get(eid);
           if (data) data.samples.length = 0;
           Position.x[eid] = msg.spawn.x;
-          Position.y[eid] = GROUND_TOP_Y + 0.02;
+          Position.y[eid] = GROUND_TOP_Y + CHARACTER_CONTROLLER_OFFSET;
           Position.z[eid] = msg.spawn.z;
           Rotation.y[eid] = msg.spawn.yaw;
         }
@@ -219,7 +255,7 @@ export class NetworkSystem {
 
   private teleportLocal(spawn: NetSpawn): void {
     const eid = this.playerEid;
-    const y = GROUND_TOP_Y + 0.02;
+    const y = GROUND_TOP_Y + CHARACTER_CONTROLLER_OFFSET;
     Position.x[eid] = spawn.x;
     Position.y[eid] = y;
     Position.z[eid] = spawn.z;
@@ -249,6 +285,7 @@ export class NetworkSystem {
     dmg: number,
     region: number,
     weaponId: number,
+    attackDir: number,
   ): void {
     const victimEid = this.eidFor(victimNetId);
     if (victimEid === null) return;
@@ -300,7 +337,7 @@ export class NetworkSystem {
       amount: dmg,
       bodyRegion: region,
       weaponId,
-      attackDirection: Direction.Overhead,
+      attackDirection: attackDir as Direction,
       isLethal: hp <= 0,
       tick: getCurrentFixedTick(),
     });
@@ -360,7 +397,10 @@ export class NetworkSystem {
         s: CombatStateComp.state[eid],
         d: CombatStateComp.direction[eid],
         pt: CombatStateComp.phaseT[eid],
-        w: CombatStateComp.weaponId[eid],
+        // Single-source weaponId: CombatStateComponent is what equipWeapon
+        // writes and what interceptClaims sends — reading the animation
+        // mirror here risked a wire mismatch (QA note #3 on PR #193).
+        w: CombatStateComponent.weaponId[eid],
       },
     });
   }
@@ -368,5 +408,21 @@ export class NetworkSystem {
   /** Interpolate remote puppets (call each fixed tick before hitboxSystem). */
   updateRemotes(): void {
     remotePlayerSystem(this.world, performance.now());
+  }
+
+  /**
+   * Multiplayer replacement for the gated local lifecycle: tick the
+   * DeathScreen's respawn countdown down (display only — never below 0,
+   * never resurrects; the server's `respawn` message does that).
+   */
+  tickLocalLifecycle(): void {
+    const eid = this.playerEid;
+    if (
+      hasComponent(this.world.ecs, DeadTag, eid) &&
+      hasComponent(this.world.ecs, RespawnPending, eid) &&
+      RespawnPending.ticksRemaining[eid] > 0
+    ) {
+      RespawnPending.ticksRemaining[eid] -= 1;
+    }
   }
 }

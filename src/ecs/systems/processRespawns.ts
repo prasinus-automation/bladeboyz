@@ -40,6 +40,7 @@
 
 import { defineQuery, hasComponent, removeComponent } from 'bitecs';
 import {
+  RemotePlayer,
   Position,
   PreviousPosition,
   Rotation,
@@ -95,6 +96,10 @@ export function processRespawns(
 
   for (let i = 0; i < respawned.length; i++) {
     const eid = respawned[i];
+
+    // Server-owned remote puppets never respawn locally (defense-in-depth;
+    // see the matching exclusion in healthSystemTick).
+    if (hasComponent(world.ecs, RemotePlayer, eid)) continue;
 
     // Build enemies list = live combatants minus self. The respawning
     // entity is still DeadTag'd at this point so it's already excluded

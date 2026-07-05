@@ -24,7 +24,7 @@ import {
   addComponent,
   type IWorld,
 } from 'bitecs';
-import { Health, DeadTag, RespawnPending } from '../components';
+import { RemotePlayer, Health, DeadTag, RespawnPending } from '../components';
 import { EventBus } from '../../events/EventBus';
 import { clearDamageAttribution } from './DamageSystem';
 
@@ -123,6 +123,13 @@ export function healthSystemTick(
   // Check for deaths and process respawns
   for (let i = 0; i < entities.length; i++) {
     const eid = entities[i];
+
+    // Multiplayer remote puppets are SERVER-owned: their HP is echoed from
+    // the network and their death/respawn arrives as server messages. The
+    // local lifecycle must never death-tag or timer-respawn them (main.ts
+    // additionally gates this whole pipeline off in multiplayer mode —
+    // this exclusion is defense-in-depth for any future call site).
+    if (hasComponent(ecsWorld, RemotePlayer, eid)) continue;
 
     if (hasComponent(ecsWorld, RespawnPending, eid)) {
       // Entity is dead, count down respawn timer

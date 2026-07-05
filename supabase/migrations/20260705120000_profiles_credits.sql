@@ -34,6 +34,18 @@ create policy "users can update own profile"
   with check (auth.uid() = id);
 
 -- Column-level guard: reject any client-side change to `credits`.
+--
+-- IMPORTANT (QA finding on PR #193): SECURITY DEFINER does NOT change
+-- `current_setting('role')` — a client-invoked RPC still reports
+-- 'authenticated', so a role check alone would also block the legitimate
+-- spend/grant RPCs below. Those RPCs therefore set a TRANSACTION-SCOPED
+-- flag (`set_config(..., is_local => true)`, auto-cleared at COMMIT/ABORT)
+-- immediately before their UPDATE; the trigger accepts either that flag
+-- or a genuine service_role session. Clients cannot set the flag to any
+-- effect: `set_config` inside their own transaction doesn't survive into
+-- an RPC (which runs its own function scope) and a raw UPDATE with the
+-- flag set still can't bypass RLS row checks or the RPCs' balance logic —
+-- the flag only exists so OUR definer functions can pass this trigger.
 create or replace function public.protect_credits()
 returns trigger
 language plpgsql
@@ -41,6 +53,7 @@ security definer
 as $$
 begin
   if new.credits is distinct from old.credits
+     and coalesce(current_setting('bladeboyz.credit_write', true), '') <> 'allowed'
      and current_setting('role', true) <> 'service_role' then
     raise exception 'credits can only be changed server-side';
   end if;
@@ -129,6 +142,7 @@ begin
   if current_setting('role', true) <> 'service_role' then
     raise exception 'grant_credits is service-role only';
   end if;
+  perform set_config('bladeboyz.credit_write', 'allowed', true);
   update public.profiles
     set credits = credits + p_delta
     where id = p_profile_id
@@ -160,6 +174,7 @@ begin
   if p_delta <= 0 then
     raise exception 'spend amount must be positive';
   end if;
+  perform set_config('bladeboyz.credit_write', 'allowed', true);
   update public.profiles
     set credits = credits - p_delta
     where id = auth.uid() and credits >= p_delta
@@ -172,6 +187,14 @@ begin
   return new_balance;
 end;
 $$;
+
+-- Permission hardening: the in-body role check on grant_credits is
+-- belt-and-braces; the real gate is EXECUTE. Definer functions default to
+-- PUBLIC execute — revoke and re-grant deliberately.
+revoke execute on function public.grant_credits(uuid, integer, text, jsonb) from public, anon, authenticated;
+grant execute on function public.grant_credits(uuid, integer, text, jsonb) to service_role;
+revoke execute on function public.spend_credits(integer, text, jsonb) from public, anon;
+grant execute on function public.spend_credits(integer, text, jsonb) to authenticated;
 
 -- ── skins (freemium groundwork) ─────────────────────────────────────────
 -- Catalog + ownership. Purchasing a skin = spend_credits + insert into
@@ -231,6 +254,9 @@ begin
   return new_balance;
 end;
 $$;
+
+revoke execute on function public.purchase_skin(text) from public, anon;
+grant execute on function public.purchase_skin(text) to authenticated;
 
 -- Starter catalog.
 insert into public.skins (id, name, description, price_credits, body_color) values

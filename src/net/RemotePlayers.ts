@@ -41,7 +41,7 @@ import { colliderToHitbox } from '../ecs/systems/TracerSystem';
 import { weaponModelFactories } from '../rendering/WeaponModels';
 import { weaponIdToName } from '../ecs/systems/CombatSystem';
 import { CombatState } from '../combat/states';
-import { GROUND_TOP_Y } from '../core/types';
+import { GROUND_TOP_Y, CHARACTER_CONTROLLER_OFFSET } from '../core/types';
 import type { GameWorld } from '../core/types';
 import type { NetPlayerState } from './protocol';
 
@@ -76,10 +76,15 @@ export function createRemotePlayer(
   world: GameWorld,
   netId: string,
   name: string,
-  spawn: { x: number; z: number; yaw: number },
+  spawn: { x: number; z: number; yaw: number; holdBelowArena?: boolean },
 ): number {
   const eid = addEntity(world.ecs);
-  const y = GROUND_TOP_Y + 0.02;
+  // `holdBelowArena`: roster-join puppets whose real position is unknown
+  // until their first state sample park 30 m under the floor so their
+  // hitboxes can't soak local tracer hits at a bogus origin position.
+  const y = spawn.holdBelowArena
+    ? -30
+    : GROUND_TOP_Y + CHARACTER_CONTROLLER_OFFSET;
 
   addComponent(world.ecs, Position, eid);
   addComponent(world.ecs, PreviousPosition, eid);

@@ -60,6 +60,7 @@ import {
   PreviousRotation,
   Health,
   KnockbackState,
+  DeadTag,
   meshRegistry,
 } from './ecs/components';
 import { lerp } from './utils/math';
@@ -83,6 +84,7 @@ import { ViewmodelDebugOverlay } from './hud/ViewmodelDebugOverlay';
 import { PickupPrompt } from './hud/PickupPrompt';
 import { CombatStateComp } from './ecs/components';
 import { COMBAT_STATE_NAMES } from './combat/states';
+import { hasComponent } from 'bitecs';
 import * as THREE from 'three';
 import type { GameWorld } from './core/types';
 import { GameState, GameStateManager } from './core/GameState';
@@ -571,6 +573,7 @@ async function main(): Promise<void> {
     yaw: Rotation.y[playerEid],
     hp: Health.current[playerEid],
     combatState: COMBAT_STATE_NAMES[CombatStateComp.state[playerEid]],
+    dead: hasComponent(world.ecs, DeadTag, playerEid),
     pointerLocked: document.pointerLockElement != null,
   });
   // Multiplayer verification helpers (headless browser drivers).
@@ -725,30 +728,20 @@ async function main(): Promise<void> {
     // Stamina system (reads combat state, handles regen/costs)
     staminaSystemTick(world.ecs);
 
-    // Health system (processes damage, handles death/respawn timer).
-    // Issue #130: capture `died`/`respawned` arrays. healthSystemTick is
-    // pure detection — it adds DeadTag + RespawnPending and ticks the
-    // respawn countdown.
-    //
-    // Issue #134: processRespawns consumes `respawned` to teleport, restore
-    // HP/stamina, equip default weapon, and remove the lifecycle tags.
-    //
-    // Issue #121: drop-on-death lives in `dropEquippedWeapon` (called from
-    // `processDeaths` below); `weaponPickupSystem` ticks AFTER the death
-    // pipeline so freshly-dropped pickups are visible to the despawn-sweep
-    // path and to the KeyE pickup attempt this tick (though the corpse
-    // can't press E for itself — the killer can walk over immediately).
-    const { died, respawned } = healthSystemTick(world.ecs);
-
-    // Death-cleanup hook. Emits DeathEvent, increments Score, resets FSM,
-    // zeros velocity, calls dropEquippedWeapon stub. Restricted to entities
-    // with the Player or Bot tag — dummies opt out.
-    processDeaths(died, world);
-
-    // Respawn-cleanup hook. Picks a spawn point (weighted away from live
-    // combatants), teleports the entity, restores HP/Stamina, equips the
-    // default starter, removes DeadTag+RespawnPending, emits RespawnEvent.
-    processRespawns(respawned, world);
+    // Health system + death/respawn pipeline — PRACTICE/local modes only.
+    // In multiplayer the SERVER owns HP, deaths, and respawns: the hp/death/
+    // respawn message handlers in NetworkSystem drive DeadTag/RespawnPending
+    // on the local player, and remote puppets never enter the local
+    // lifecycle at all (they'd get death-tagged and locally teleported,
+    // fighting the server's position stream — QA blocker on PR #193).
+    if (gameMode !== 'multiplayer') {
+      const { died, respawned } = healthSystemTick(world.ecs);
+      processDeaths(died, world);
+      processRespawns(respawned, world);
+    } else {
+      // Display-only respawn countdown for the DeathScreen.
+      network.tickLocalLifecycle();
+    }
 
     // Step physics
     world.physicsWorld.step();
