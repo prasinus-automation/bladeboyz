@@ -49,20 +49,20 @@ export const dagger: WeaponConfig = {
   // Fast recovery enables rapid follow-ups.
 
   recovery: {
-    [Direction.Left]: 20,      // ~333ms
-    [Direction.Right]: 20,     // ~333ms
-    [Direction.Overhead]: 26,  // ~433ms
-    [Direction.Stab]: 18,      // ~300ms
+    [Direction.Left]: 12,
+    [Direction.Right]: 12,
+    [Direction.Overhead]: 15,
+    [Direction.Stab]: 10,
   },
 
   // -- Combo recovery durations (ticks) ------------------
   // Very fast combo recovery rewards aggressive play.
 
   comboRecovery: {
-    [Direction.Left]: 13,      // ~217ms
-    [Direction.Right]: 13,     // ~217ms
-    [Direction.Overhead]: 18,  // ~300ms
-    [Direction.Stab]: 12,      // ~200ms
+    [Direction.Left]: 5,
+    [Direction.Right]: 5,
+    [Direction.Overhead]: 6,
+    [Direction.Stab]: 4,
   },
 
   // -- Parry window (ticks) ------------------------------
@@ -85,10 +85,14 @@ export const dagger: WeaponConfig = {
   // Light weapon = very free turning.
 
   turncap: {
-    windup: 0.10,
-    release: 0.05,
-    recovery: 0.07,
-    hitStun: 0.005, // nearly locked — staggered
+    windup: 0.18,
+    release: 0.08,
+    // Recovery is UNCAPPED (2026-07 fluidity pass): once the blade is
+    // done, aim is free — the old cap read as "mouse stuck in molasses"
+    // for the whole post-swing window. Release keeps the drag/accel cap.
+    recovery: Infinity,
+    // 0.02 rad/tick ≈ 69°/s while staggered — dazed, not frozen.
+    hitStun: 0.02,
   },
 
   // -- Tracer points (local space) -----------------------
@@ -106,7 +110,7 @@ export const dagger: WeaponConfig = {
 
   blockStaminaDrain: 8,
   parryStunTicks: 40,
-  hitStunTicks: 30,
+  hitStunTicks: 22,
 
   // ── Knockback ─────────────────────────────────────────
   // A dagger pokes; it does not launch.

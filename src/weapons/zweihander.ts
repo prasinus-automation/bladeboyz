@@ -33,17 +33,17 @@ export const zweihander: WeaponConfig = {
   },
 
   recovery: {
-    [Direction.Left]: 42,
-    [Direction.Right]: 42,
-    [Direction.Overhead]: 52,
-    [Direction.Stab]: 38,
+    [Direction.Left]: 25,
+    [Direction.Right]: 25,
+    [Direction.Overhead]: 31,
+    [Direction.Stab]: 23,
   },
 
   comboRecovery: {
-    [Direction.Left]: 30,
-    [Direction.Right]: 30,
-    [Direction.Overhead]: 38,
-    [Direction.Stab]: 26,
+    [Direction.Left]: 11,
+    [Direction.Right]: 11,
+    [Direction.Overhead]: 14,
+    [Direction.Stab]: 10,
   },
 
   parryWindow: 10,
@@ -57,10 +57,14 @@ export const zweihander: WeaponConfig = {
   },
 
   turncap: {
-    windup: 0.06,
-    release: 0.02,
-    recovery: 0.04,
-    hitStun: 0.005,
+    windup: 0.1,
+    release: 0.03,
+    // Recovery is UNCAPPED (2026-07 fluidity pass): once the blade is
+    // done, aim is free — the old cap read as "mouse stuck in molasses"
+    // for the whole post-swing window. Release keeps the drag/accel cap.
+    recovery: Infinity,
+    // 0.02 rad/tick ≈ 69°/s while staggered — dazed, not frozen.
+    hitStun: 0.02,
   },
 
   // 1.9m of blade — five tracer points for coverage at the long reach.
@@ -76,7 +80,7 @@ export const zweihander: WeaponConfig = {
 
   blockStaminaDrain: 18,
   parryStunTicks: 70,
-  hitStunTicks: 55,
+  hitStunTicks: 32,
 
   // Heavy shove with real lift — two-hander momentum.
   knockback: { force: 7.0, upward: 3.0 },

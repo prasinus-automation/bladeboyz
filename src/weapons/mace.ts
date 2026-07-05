@@ -48,19 +48,19 @@ export const mace: WeaponConfig = {
   // Very long recovery. Missing a swing is costly.
 
   recovery: {
-    [Direction.Left]: 34,      // ~567ms
-    [Direction.Right]: 34,     // ~567ms
-    [Direction.Overhead]: 46,  // ~767ms
-    [Direction.Stab]: 32,      // ~533ms
+    [Direction.Left]: 20,
+    [Direction.Right]: 20,
+    [Direction.Overhead]: 27,
+    [Direction.Stab]: 19,
   },
 
   // -- Combo recovery durations (ticks) ------------------
 
   comboRecovery: {
-    [Direction.Left]: 23,      // ~383ms
-    [Direction.Right]: 23,     // ~383ms
-    [Direction.Overhead]: 32,  // ~533ms
-    [Direction.Stab]: 21,      // ~350ms
+    [Direction.Left]: 9,
+    [Direction.Right]: 9,
+    [Direction.Overhead]: 12,
+    [Direction.Stab]: 8,
   },
 
   // -- Parry window (ticks) ------------------------------
@@ -82,10 +82,14 @@ export const mace: WeaponConfig = {
   // Heavier weapon = more restricted turning.
 
   turncap: {
-    windup: 0.06,
-    release: 0.02,
-    recovery: 0.04,
-    hitStun: 0.005, // nearly locked — staggered
+    windup: 0.12,
+    release: 0.04,
+    // Recovery is UNCAPPED (2026-07 fluidity pass): once the blade is
+    // done, aim is free — the old cap read as "mouse stuck in molasses"
+    // for the whole post-swing window. Release keeps the drag/accel cap.
+    recovery: Infinity,
+    // 0.02 rad/tick ≈ 69°/s while staggered — dazed, not frozen.
+    hitStun: 0.02,
   },
 
   // -- Tracer points (local space) -----------------------
@@ -104,7 +108,7 @@ export const mace: WeaponConfig = {
 
   blockStaminaDrain: 25,
   parryStunTicks: 68,
-  hitStunTicks: 50,
+  hitStunTicks: 30,
 
   // ── Knockback ─────────────────────────────────────────
   // Blunt crusher — knocks targets clean off their feet.

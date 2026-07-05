@@ -34,17 +34,17 @@ export const scythe: WeaponConfig = {
   },
 
   recovery: {
-    [Direction.Left]: 38,
-    [Direction.Right]: 38,
-    [Direction.Overhead]: 44,
-    [Direction.Stab]: 36,
+    [Direction.Left]: 23,
+    [Direction.Right]: 23,
+    [Direction.Overhead]: 26,
+    [Direction.Stab]: 22,
   },
 
   comboRecovery: {
-    [Direction.Left]: 26,
-    [Direction.Right]: 26,
-    [Direction.Overhead]: 32,
-    [Direction.Stab]: 28,
+    [Direction.Left]: 10,
+    [Direction.Right]: 10,
+    [Direction.Overhead]: 12,
+    [Direction.Stab]: 10,
   },
 
   parryWindow: 10,
@@ -58,10 +58,14 @@ export const scythe: WeaponConfig = {
   },
 
   turncap: {
-    windup: 0.065,
-    release: 0.025,
-    recovery: 0.045,
-    hitStun: 0.005,
+    windup: 0.11,
+    release: 0.035,
+    // Recovery is UNCAPPED (2026-07 fluidity pass): once the blade is
+    // done, aim is free — the old cap read as "mouse stuck in molasses"
+    // for the whole post-swing window. Release keeps the drag/accel cap.
+    recovery: Infinity,
+    // 0.02 rad/tick ≈ 69°/s while staggered — dazed, not frozen.
+    hitStun: 0.02,
   },
 
   // The blade sits perpendicular to the shaft tip — tracers follow the
@@ -79,7 +83,7 @@ export const scythe: WeaponConfig = {
 
   blockStaminaDrain: 14,
   parryStunTicks: 65,
-  hitStunTicks: 50,
+  hitStunTicks: 30,
 
   knockback: { force: 5.5, upward: 2.5 },
 };
