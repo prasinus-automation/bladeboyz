@@ -33,17 +33,17 @@ export const warhammer: WeaponConfig = {
   },
 
   recovery: {
-    [Direction.Left]: 46,
-    [Direction.Right]: 46,
-    [Direction.Overhead]: 55,
-    [Direction.Stab]: 40,
+    [Direction.Left]: 27,
+    [Direction.Right]: 27,
+    [Direction.Overhead]: 33,
+    [Direction.Stab]: 24,
   },
 
   comboRecovery: {
-    [Direction.Left]: 34,
-    [Direction.Right]: 34,
-    [Direction.Overhead]: 42,
-    [Direction.Stab]: 30,
+    [Direction.Left]: 12,
+    [Direction.Right]: 12,
+    [Direction.Overhead]: 15,
+    [Direction.Stab]: 11,
   },
 
   parryWindow: 10,
@@ -57,10 +57,14 @@ export const warhammer: WeaponConfig = {
   },
 
   turncap: {
-    windup: 0.055,
-    release: 0.02,
-    recovery: 0.04,
-    hitStun: 0.005,
+    windup: 0.09,
+    release: 0.028,
+    // Recovery is UNCAPPED (2026-07 fluidity pass): once the blade is
+    // done, aim is free — the old cap read as "mouse stuck in molasses"
+    // for the whole post-swing window. Release keeps the drag/accel cap.
+    recovery: Infinity,
+    // 0.02 rad/tick ≈ 69°/s while staggered — dazed, not frozen.
+    hitStun: 0.02,
   },
 
   // Short-ish haft, all the danger concentrated in the head.
@@ -74,7 +78,7 @@ export const warhammer: WeaponConfig = {
 
   blockStaminaDrain: 22,
   parryStunTicks: 75,
-  hitStunTicks: 60,
+  hitStunTicks: 34,
 
   // The whole point of this weapon. Launch angle worthy of a highlight reel.
   knockback: { force: 11.0, upward: 7.0 },

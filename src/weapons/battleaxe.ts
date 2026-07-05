@@ -50,20 +50,20 @@ export const battleaxe: WeaponConfig = {
   // Extremely long. A whiffed swing is practically a death sentence.
 
   recovery: {
-    [Direction.Left]: 38,      // ~633ms
-    [Direction.Right]: 38,     // ~633ms
-    [Direction.Overhead]: 50,  // ~833ms
-    [Direction.Stab]: 35,      // ~583ms
+    [Direction.Left]: 22,
+    [Direction.Right]: 22,
+    [Direction.Overhead]: 30,
+    [Direction.Stab]: 21,
   },
 
   // -- Combo recovery durations (ticks) ------------------
   // Still slow but shorter than full recovery to reward aggression.
 
   comboRecovery: {
-    [Direction.Left]: 25,      // ~417ms
-    [Direction.Right]: 25,     // ~417ms
-    [Direction.Overhead]: 35,  // ~583ms
-    [Direction.Stab]: 23,      // ~383ms
+    [Direction.Left]: 10,
+    [Direction.Right]: 10,
+    [Direction.Overhead]: 13,
+    [Direction.Stab]: 9,
   },
 
   // -- Parry window (ticks) ------------------------------
@@ -86,10 +86,14 @@ export const battleaxe: WeaponConfig = {
   // Heaviest weapon = most restricted turning.
 
   turncap: {
-    windup: 0.05,
-    release: 0.015,
-    recovery: 0.03,
-    hitStun: 0.005, // nearly locked — staggered
+    windup: 0.1,
+    release: 0.03,
+    // Recovery is UNCAPPED (2026-07 fluidity pass): once the blade is
+    // done, aim is free — the old cap read as "mouse stuck in molasses"
+    // for the whole post-swing window. Release keeps the drag/accel cap.
+    recovery: Infinity,
+    // 0.02 rad/tick ≈ 69°/s while staggered — dazed, not frozen.
+    hitStun: 0.02,
   },
 
   // -- Tracer points (local space) -----------------------
@@ -109,7 +113,7 @@ export const battleaxe: WeaponConfig = {
 
   blockStaminaDrain: 30,
   parryStunTicks: 75,
-  hitStunTicks: 55,
+  hitStunTicks: 32,
 
   // ── Knockback ─────────────────────────────────────────
   // Full-commitment cleave — sends victims airborne.

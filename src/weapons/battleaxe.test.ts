@@ -90,6 +90,7 @@ describe('Battleaxe weapon config', () => {
     const cfg = weaponConfigs['Battleaxe'];
     expect(cfg.parryRecovery).toBe(16);
     expect(cfg.blockBreakStunTicks).toBe(42);
-    expect(cfg.turncap.hitStun).toBe(0.005);
+    // 2026-07 fluidity pass: hitStun cap raised 0.005 → 0.02 (dazed, not frozen).
+    expect(cfg.turncap.hitStun).toBe(0.02);
   });
 });

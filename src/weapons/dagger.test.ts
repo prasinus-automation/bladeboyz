@@ -90,6 +90,7 @@ describe('Dagger weapon config', () => {
     const cfg = weaponConfigs['Dagger'];
     expect(cfg.parryRecovery).toBe(8);
     expect(cfg.blockBreakStunTicks).toBe(24);
-    expect(cfg.turncap.hitStun).toBe(0.005);
+    // 2026-07 fluidity pass: hitStun cap raised 0.005 → 0.02 (dazed, not frozen).
+    expect(cfg.turncap.hitStun).toBe(0.02);
   });
 });

@@ -16,12 +16,18 @@ import { CombatState } from '../../combat/states';
 import { CombatInput, fsmRegistry } from '../../combat/CombatFSM';
 import type { WeaponConfig } from '../../weapons/WeaponConfig';
 
-/** Stamina regen rate per second */
-const STAMINA_REGEN_PER_SECOND = 5;
+/**
+ * Stamina regen rate per second. 20/s (2026-07 fluidity pass — was 5/s,
+ * which took 20 seconds to refill an empty bar: fights devolved into
+ * standing around waiting for the meter). At 20/s a drained bar is back
+ * in ~5s and a couple of swings recover between exchanges — stamina
+ * paces the fight without parking it.
+ */
+const STAMINA_REGEN_PER_SECOND = 20;
 /** Stamina regen per tick (at 60Hz) */
 const STAMINA_REGEN_PER_TICK = STAMINA_REGEN_PER_SECOND / 60;
-/** Ticks of idle before regen starts (1 second at 60Hz) */
-const REGEN_DELAY_TICKS = 60;
+/** Ticks of pause before regen starts (0.75 s at 60Hz — was a full second). */
+const REGEN_DELAY_TICKS = 45;
 
 /** Query entities that have both Stamina and CombatStateComponent */
 const staminaQuery = defineQuery([Stamina, CombatStateComponent]);
