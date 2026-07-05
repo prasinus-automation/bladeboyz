@@ -10,7 +10,7 @@ import { staminaSystemTick } from './ecs/systems/StaminaSystem';
 import { healthSystemTick } from './ecs/systems/HealthSystem';
 import { processDeaths } from './ecs/systems/processDeaths';
 import { EventBus } from './events/EventBus';
-import { awardGoldOnKill } from './economy/goldEconomy';
+import { awardGold, awardGoldOnKill } from './economy/goldEconomy';
 import { flushGoldWrites } from './economy/goldPersistence';
 import { createPlayer } from './ecs/entities/createPlayer';
 import { createArena } from './arena/createArena';
@@ -512,6 +512,23 @@ async function main(): Promise<void> {
 
   // ─── Expose inventory query for debugging ───
   (window as any).getInventory = () => getInventory(world.playerEntity);
+
+  // ─── Dev gold faucet ───
+  // Testing seam for the shop flow: with no bots/players to kill yet, gold
+  // income is zero (dummies are excluded from the death pipeline), so the
+  // 200-gold starting balance is otherwise a hard cap. Routes through
+  // `awardGold` — the single economy chokepoint — so the Wallet the shop
+  // reads, the HUD counter, the ECS `Gold` slot, and localStorage
+  // persistence all update exactly like a real kill reward. `reason:
+  // 'admin'` is the metadata label goldEconomy defines for this (it is a
+  // label, not an authorization — same trust level as `setWeapon`, which
+  // already bypasses the shop entirely). Remove both together when a
+  // server-authoritative economy lands (#92).
+  (window as any).addGold = (amount = 500): number => {
+    const balance = awardGold(world.playerEntity, amount, 'admin');
+    console.log(`Gold +${amount} → ${balance}`);
+    return balance;
+  };
 
   // ─── Diagnostic helpers (FP-weapon-visibility investigation, post-#181) ───
   // Track removal via a new GitHub issue when the FP weapon bug is resolved.
