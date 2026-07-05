@@ -37,7 +37,12 @@ jobs:
             /tmp/image.tar.gz \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/${{ env.PROJECT_NAME }}.tar.gz
 
-          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << DEPLOY_SCRIPT
+          # Quoted delimiter: the script must reach the remote shell verbatim.
+          # ${{ }} interpolation happens at the Actions layer either way, but an
+          # unquoted heredoc also lets the RUNNER's bash expand $(...) — and in
+          # heredoc context command substitution keeps its newlines, which
+          # turned `for i in $(seq 1 15)` into a remote syntax error.
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'DEPLOY_SCRIPT'
             set -euo pipefail
             docker load < /tmp/${{ env.PROJECT_NAME }}.tar.gz
             rm /tmp/${{ env.PROJECT_NAME }}.tar.gz
