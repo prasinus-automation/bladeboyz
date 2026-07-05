@@ -64,6 +64,9 @@ const sourceFiles = import.meta.glob('/src/**/*.ts', {
 const ALLOWED_FILES = new Set<string>([
   '/src/ecs/entities/createPlayer.ts',
   '/src/ecs/entities/createTrainingDummy.ts',
+  // Init write only (warmup bot factory, #119) — same category as the
+  // player/dummy factories above.
+  '/src/ecs/entities/createWarmupBot.ts',
   '/src/ecs/systems/CombatSystem.ts',
   '/src/ecs/systems/StaminaSystem.ts',
   '/src/ecs/systems/processDeaths.ts',

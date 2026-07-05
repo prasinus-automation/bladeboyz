@@ -18,6 +18,7 @@ export const DEBUG_DUMMY_KEY_CODES: ReadonlySet<string> = new Set([
   'KeyY',
   'KeyJ',
   'KeyK',
+  'KeyB',
 ]);
 
 /** True if `code` is one of the debug dummy keys. */

@@ -40,6 +40,7 @@ bladeboyz/
 │   │   │   ├── NpcDamageObserver.ts # Floating damage numbers + auto-regen book-keeping for any IsNPC entity; renamed from DummyDamageObserver in #114
 │   │   │   ├── HitReactSystem.ts # Clears expired HitReactComp entries (active=1 → 0 once tick >= spawnedAtTick + durationTicks) (#120)
 │   │   │   ├── KnockbackSystem.ts # Ballistic knockback for non-player entities (dummies fly on heavy hits); player knockback folds into MovementSystem's character controller (2026-07 combat overhaul)
+│   │   │   ├── BotAISystem.ts   # Warmup-bot brain (#119): Approach/Engage/Reposition + obstacle detour, writes MovementIntent + FSM Attack inputs
 │   │   │   ├── processDeaths.ts # Death-cleanup hook: emits DeathEvent, increments Score, resets FSM, zeros Velocity, calls dropEquippedWeapon stub (#130)
 │   │   │   ├── processRespawns.ts # Respawn-cleanup hook: picks spawn point, teleports Position/PreviousPosition/Rotation + Rapier body, restores HP/Stamina, equips default starter, removes DeadTag/RespawnPending, emits RespawnEvent (#134)
 │   │   │   ├── AnimationSystem.ts # Layered procedural animator: snapshot phase-t slerp + arc swings + hit-react overlay; defensive vs missing MovementState (#128)
@@ -49,6 +50,7 @@ bladeboyz/
 │   │   │   ├── createPlayer.ts  # Player factory: kinematic body + capsule (offset upward), MovementIntent component, Y resolved by spawnAtGround
 │   │   │   ├── createTrainingDummy.ts # Training dummy factory: fixed body + capsule (same offset as player), Y resolved by spawnAtGround; carries `IsNPC` + `IsTrainingDummy` tags + npcRegistry entry (#114)
 │   │   │   ├── createShopkeep.ts # Static non-combatant NPC (Position/Rotation/CharacterModel only) + shopkeepRegistry side-table (#113)
+│   │   │   ├── createWarmupBot.ts # Warmup bot factory + remover + B-toggle (#119): full combatant stack driven by BotAISystem; kills pay 25 gold
 │   │   │   ├── createWeaponPickup.ts # Ground weapon pickup factory + remover (#109, foundation for #94; behavior lives in `WeaponPickupSystem.ts` per #121)
 │   │   │   └── ...
 │   │   ├── npcRegistry.ts       # Side-table for non-numeric NPC metadata (kind, spawnPos, spawnYaw, spawnTick) — replaces the legacy `activeDummies` array (#114)

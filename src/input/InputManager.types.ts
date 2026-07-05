@@ -70,6 +70,7 @@ export enum InputAction {
   // Debug (training dummy controls)
   DebugSpawnDummy,        // edge: JustPressed on KeyJ
   DebugResetDummies,      // edge: JustPressed on KeyK
+  DebugToggleBot,         // edge: JustPressed on KeyB (spawn/despawn warmup bot, #119)
   DebugToggleDummyBlock,  // edge: JustPressed on KeyT
   DebugCycleBlockDir,     // edge: JustPressed on KeyY
 
