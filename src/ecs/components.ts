@@ -341,14 +341,12 @@ export const HitReactComp = defineComponent({
  * - `targetEid`: entity the bot chases (the local player today; a
  *   networked player eid post-#92).
  * - `mode`: 0 = Approach, 1 = Engage, 2 = Reposition (spec §4 mini-FSM).
- * - `lastDecisionTick` / `lastSwingTick`: fixed-tick stamps pacing the
- *   decision cadence and swing cooldown.
+ * - `lastSwingTick`: fixed-tick stamp pacing the swing cooldown.
  * - `meleeRange`: distance (m) at which Approach hands over to Engage.
  */
 export const BotBrain = defineComponent({
   targetEid: Types.ui32,
   mode: Types.ui8,
-  lastDecisionTick: Types.ui32,
   lastSwingTick: Types.ui32,
   meleeRange: Types.f32,
   // Obstacle detour (the arena has pillars; the spec's "no pathfinding on

@@ -26,6 +26,7 @@ import { defineQuery, hasComponent } from 'bitecs';
 import {
   Bot,
   BotBrain,
+  Player,
   Position,
   Rotation,
   MovementIntent,
@@ -55,6 +56,7 @@ export const enum BotMode {
 }
 
 const botQuery = defineQuery([Bot, BotBrain, Position, MovementIntent]);
+const targetCandidateQuery = defineQuery([Player, Position]);
 
 /**
  * Deterministic per-(tick, eid) direction pick. Knuth multiplicative hash —
@@ -83,10 +85,38 @@ export function createBotAISystem(world: GameWorld): () => void {
       // sentinel — bitECS eids start at 0 and the local player IS entity 0
       // in practice, so `target === 0` would make every bot ignore the
       // player and stand still.
-      const target = BotBrain.targetEid[eid];
-      const targetGone =
+      let target = BotBrain.targetEid[eid];
+      let targetGone =
         !hasComponent(world.ecs, Position, target) ||
         hasComponent(world.ecs, DeadTag, target);
+
+      // Retarget on despawn (AC #9): if the assigned target no longer
+      // exists, acquire the nearest living Player-tagged entity. A DEAD
+      // target is NOT retargeted away from — it respawns in 3 s and the
+      // bot should keep hunting the same player (spec: warmup partner).
+      if (targetGone && !hasComponent(world.ecs, Position, target)) {
+        const candidates = targetCandidateQuery(world.ecs);
+        let best = -1;
+        let bestD = Infinity;
+        for (let c = 0; c < candidates.length; c++) {
+          const cand = candidates[c];
+          if (cand === eid) continue;
+          if (hasComponent(world.ecs, DeadTag, cand)) continue;
+          const d =
+            (Position.x[cand] - Position.x[eid]) ** 2 +
+            (Position.z[cand] - Position.z[eid]) ** 2;
+          if (d < bestD) {
+            bestD = d;
+            best = cand;
+          }
+        }
+        if (best >= 0) {
+          BotBrain.targetEid[eid] = best;
+          target = best;
+          targetGone = false;
+        }
+      }
+
       if (hasComponent(world.ecs, DeadTag, eid) || knocked || targetGone) {
         MovementIntent.moveX[eid] = 0;
         MovementIntent.moveZ[eid] = 0;
@@ -161,10 +191,14 @@ export function createBotAISystem(world: GameWorld): () => void {
       // transition API as a player click; stamina drains identically.
       if (dist <= meleeRange) {
         const fsm = fsmRegistry.get(eid);
+        // lastSwingTick 0 = "never swung" (fixed ticks start at 1) — a
+        // freshly spawned bot engages immediately instead of waiting out
+        // a phantom cooldown against tick 0.
+        const lastSwing = BotBrain.lastSwingTick[eid];
         if (
           fsm &&
           fsm.state === CombatState.Idle &&
-          tick - BotBrain.lastSwingTick[eid] >= SWING_COOLDOWN_TICKS
+          (lastSwing === 0 || tick - lastSwing >= SWING_COOLDOWN_TICKS)
         ) {
           fsm.transition(CombatInput.Attack, pickSwingDirection(tick, eid));
           BotBrain.lastSwingTick[eid] = tick;

@@ -167,7 +167,6 @@ export function createWarmupBot(
 
   BotBrain.targetEid[eid] = opts.targetEid;
   BotBrain.mode[eid] = 0; // Approach
-  BotBrain.lastDecisionTick[eid] = 0;
   BotBrain.lastSwingTick[eid] = 0;
   BotBrain.meleeRange[eid] = meleeRange;
   BotBrain.prevX[eid] = x;

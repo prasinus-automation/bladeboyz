@@ -226,7 +226,10 @@ function buildHarness(botPos: { x: number; z: number }): BotHarness {
   };
 }
 
-describe('warmup bot end-to-end (real physics, real AI)', () => {
+// Heavy real-physics E2E: hundreds of fixed ticks of real Rapier per case.
+// Under full-suite parallel CPU contention these blow the default 5 s
+// budget (QA repro on PR #192) — give them an explicit generous timeout.
+describe('warmup bot end-to-end (real physics, real AI)', { timeout: 30_000 }, () => {
   it('approaches the player from across the arena, lands hits, and can kill', () => {
     const h = buildHarness({ x: 0, z: -8 });
 
