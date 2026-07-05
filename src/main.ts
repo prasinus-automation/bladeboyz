@@ -17,6 +17,7 @@ import { createArena } from './arena/createArena';
 import { processRespawns } from './ecs/systems/processRespawns';
 import {
   createTrainingDummy,
+  removeTrainingDummy,
   resetAllTrainingDummies,
   toggleTrainingDummyBlock,
   cycleTrainingDummyBlockDirection,
@@ -24,7 +25,12 @@ import {
   getTrainingDummyEids,
 } from './ecs/entities/createTrainingDummy';
 import { createShopkeep } from './ecs/entities/createShopkeep';
-import { toggleWarmupBot, getWarmupBotEids } from './ecs/entities/createWarmupBot';
+import { NetClient } from './net/NetClient';
+import { NetworkSystem } from './net/NetworkSystem';
+import { removeAllRemotePlayers, getRemotePlayerEids } from './net/RemotePlayers';
+import { MatchHUD } from './hud/MatchHUD';
+import { initAuth, getAuthState } from './auth/session';
+import { toggleWarmupBot, getWarmupBotEids, removeWarmupBot } from './ecs/entities/createWarmupBot';
 import { createBotAISystem } from './ecs/systems/BotAISystem';
 import {
   interactionSystem,
@@ -86,7 +92,7 @@ import { COMBAT_STATE_NAMES } from './combat/states';
 import { hasComponent } from 'bitecs';
 import * as THREE from 'three';
 import type { GameWorld } from './core/types';
-import { GameStateManager } from './core/GameState';
+import { GameState, GameStateManager } from './core/GameState';
 import { MenuManager } from './hud/MenuManager';
 import { MainMenu } from './hud/MainMenu';
 import { PauseMenu } from './hud/PauseMenu';
@@ -301,18 +307,66 @@ async function main(): Promise<void> {
   // just alias them in the snapshot — no copy needed.
   const _boneEulers: Record<string, THREE.Euler> = {};
 
-  // Spawn initial training dummy (Y resolved by spawnAtGround raycast)
-  createTrainingDummy(world, { spawnPos: { x: 0, z: -4 }, color: 0xcc4444 });
-  dummySpawnIdx = 1;
+  // ── Game modes (multiplayer era) ──
+  // Practice NPCs (training dummy + shopkeep) are spawned lazily when the
+  // player first enters PRACTICE BOTS — a multiplayer match must not
+  // contain local-only combat targets.
+  let gameMode: 'none' | 'practice' | 'multiplayer' = 'none';
+  let practiceNpcsSpawned = false;
 
-  // Spawn shopkeep NPC behind the SW shop counter. Coordinates come from
-  // the arena's documented `shopkeepStall.npcAnchor` so the NPC sits on
-  // the right side of the counter (behind it) rather than the v0
-  // arbitrary `(8, _, 8)` location.
-  // NOTE: SPAWN_HEIGHT is the deprecated alias of GROUND_TOP_Y (= 0.1) per
-  // #104's feet-origin convention. The npcAnchor's y already matches.
-  const npc = arena.shopkeepStall.npcAnchor;
-  createShopkeep(world, npc.x, npc.y, npc.z, { name: 'Shopkeep' });
+  // Supabase auth (guest-mode no-op when env is missing).
+  initAuth();
+
+  // Multiplayer plumbing. NetworkSystem mutates the world from server
+  // messages; MatchHUD renders its matchState (timer / Tab scoreboard /
+  // match-end standings).
+  const netClient = new NetClient();
+
+  function spawnPracticeNpcs(): void {
+    if (practiceNpcsSpawned) return;
+    practiceNpcsSpawned = true;
+    createTrainingDummy(world, { spawnPos: { x: 0, z: -4 }, color: 0xcc4444 });
+    dummySpawnIdx = 1;
+    const npc = arena.shopkeepStall.npcAnchor;
+    createShopkeep(world, npc.x, npc.y, npc.z, { name: 'Shopkeep' });
+  }
+
+  function removePracticeNpcs(): void {
+    // Warmup bots are practice-only local combatants — despawn regardless
+    // of the lazy-spawn flag (the player may have toggled one with B).
+    for (const beid of getWarmupBotEids(world)) {
+      removeWarmupBot(world, beid);
+    }
+    if (!practiceNpcsSpawned) return;
+    practiceNpcsSpawned = false;
+    for (const eid of getTrainingDummyEids(world)) {
+      removeTrainingDummy(world, eid);
+    }
+    // Shopkeep is static + non-combat; leaving it out of MP matters less,
+    // but remove for a clean arena. (createShopkeep has no query — track
+    // via interaction registry not needed at this scale; skipped v1.)
+  }
+
+  function enterPractice(): void {
+    if (gameMode === 'multiplayer') {
+      netClient.disconnect();
+      removeAllRemotePlayers(world);
+      matchHUD.setActive(false);
+    }
+    spawnPracticeNpcs();
+    gameMode = 'practice';
+  }
+
+  function enterMultiplayerFFA(): void {
+    removePracticeNpcs();
+    const auth = getAuthState();
+    netClient.connect({
+      name: auth.profile?.username,
+      token: auth.accessToken ?? undefined,
+    });
+    matchHUD.setActive(true);
+    gameMode = 'multiplayer';
+  }
 
   // Input + movement systems (input writes MovementIntent; movement consumes it)
   const inputSystem = createInputSystem(world, input, cameraController);
@@ -325,6 +379,16 @@ async function main(): Promise<void> {
 
   // Create combat system (reads input, drives per-entity FSMs)
   const combatSystem = createCombatSystem(world.ecs, input, cameraController);
+
+  // Multiplayer: server-message application + state sends + claim
+  // interception (see src/net/NetworkSystem.ts for the trust model).
+  const network = new NetworkSystem(world, netClient, playerEid);
+  const matchHUD = new MatchHUD(() =>
+    gameMode === 'multiplayer' ? network.matchState : null,
+  );
+
+  // Menu → mode hooks (called synchronously inside button click handlers).
+  // Assigned after mainMenu construction below.
 
   // HUD & debug
   const debugOverlay = new DebugOverlay();
@@ -361,10 +425,18 @@ async function main(): Promise<void> {
   // The eventual override below (`|| shopPanel.isOpen`) doesn't touch our
   // path — we're already accounted for by `isAnyOpen()`.
   const mainMenu = new MainMenu(input, gameStateManager, menuManager);
-  // Reference `mainMenu` once to keep the binding live and silence the
-  // unused-variable lint. The MenuManager / GameStateManager subscriptions
-  // keep the menu reacting to state changes for the lifetime of the page.
-  void mainMenu;
+  mainMenu.onPractice = () => enterPractice();
+  mainMenu.onMultiplayerFFA = () => enterMultiplayerFFA();
+
+  // Leaving to the main menu (pause → Quit) tears down a live match.
+  gameStateManager.subscribe((state) => {
+    if (state === GameState.MAIN_MENU && gameMode === 'multiplayer') {
+      netClient.disconnect();
+      removeAllRemotePlayers(world);
+      matchHUD.setActive(false);
+      gameMode = 'none';
+    }
+  });
 
   // Pause menu (#111). Opens on ESC during PLAYING — MenuManager owns the ESC
   // listener and dispatches to the registered `pause` handler. Resume button
@@ -428,6 +500,15 @@ async function main(): Promise<void> {
         document.pointerLockElement,
         world.renderer.domElement,
       )
+    ) {
+      return;
+    }
+
+    // Dummy/bot debug keys are practice-mode tools — in a multiplayer
+    // match they'd spawn local-only combatants nobody else can see.
+    if (
+      gameMode !== 'practice' &&
+      (e.code === 'KeyT' || e.code === 'KeyY' || e.code === 'KeyJ' || e.code === 'KeyK' || e.code === 'KeyB')
     ) {
       return;
     }
@@ -512,8 +593,17 @@ async function main(): Promise<void> {
     yaw: Rotation.y[playerEid],
     hp: Health.current[playerEid],
     combatState: COMBAT_STATE_NAMES[CombatStateComp.state[playerEid]],
+    dead: hasComponent(world.ecs, DeadTag, playerEid),
     pointerLocked: document.pointerLockElement != null,
   });
+  // Multiplayer verification helpers (headless browser drivers).
+  (window as any).__getMatchState = () => ({ ...network.matchState, mode: gameMode });
+  (window as any).__getRemotes = () =>
+    getRemotePlayerEids(world).map((eid) => ({
+      eid,
+      hp: Health.current[eid],
+      pos: { x: Position.x[eid], y: Position.y[eid], z: Position.z[eid] },
+    }));
   (window as any).__getBots = () =>
     getWarmupBotEids(world).map((eid) => ({
       eid,
@@ -662,33 +752,31 @@ async function main(): Promise<void> {
     // Movement system — consumes MovementIntent, writes Position via Rapier
     movementSystem(FIXED_TIMESTEP);
 
+    // Multiplayer: interpolate remote puppets toward the newest server
+    // states (before hitboxSystem so their hitboxes track), and stream the
+    // local player's state to the server at CLIENT_SEND_HZ.
+    if (gameMode === 'multiplayer') {
+      network.updateRemotes();
+      network.sendLocalState();
+    }
+
     // Stamina system (reads combat state, handles regen/costs)
     staminaSystemTick(world.ecs);
 
-    // Health system (processes damage, handles death/respawn timer).
-    // Issue #130: capture `died`/`respawned` arrays. healthSystemTick is
-    // pure detection — it adds DeadTag + RespawnPending and ticks the
-    // respawn countdown.
-    //
-    // Issue #134: processRespawns consumes `respawned` to teleport, restore
-    // HP/stamina, equip default weapon, and remove the lifecycle tags.
-    //
-    // Issue #121: drop-on-death lives in `dropEquippedWeapon` (called from
-    // `processDeaths` below); `weaponPickupSystem` ticks AFTER the death
-    // pipeline so freshly-dropped pickups are visible to the despawn-sweep
-    // path and to the KeyE pickup attempt this tick (though the corpse
-    // can't press E for itself — the killer can walk over immediately).
-    const { died, respawned } = healthSystemTick(world.ecs);
-
-    // Death-cleanup hook. Emits DeathEvent, increments Score, resets FSM,
-    // zeros velocity, calls dropEquippedWeapon stub. Restricted to entities
-    // with the Player or Bot tag — dummies opt out.
-    processDeaths(died, world);
-
-    // Respawn-cleanup hook. Picks a spawn point (weighted away from live
-    // combatants), teleports the entity, restores HP/Stamina, equips the
-    // default starter, removes DeadTag+RespawnPending, emits RespawnEvent.
-    processRespawns(respawned, world);
+    // Health system + death/respawn pipeline — PRACTICE/local modes only.
+    // In multiplayer the SERVER owns HP, deaths, and respawns: the hp/death/
+    // respawn message handlers in NetworkSystem drive DeadTag/RespawnPending
+    // on the local player, and remote puppets never enter the local
+    // lifecycle at all (they'd get death-tagged and locally teleported,
+    // fighting the server's position stream — QA blocker on PR #193).
+    if (gameMode !== 'multiplayer') {
+      const { died, respawned } = healthSystemTick(world.ecs);
+      processDeaths(died, world);
+      processRespawns(respawned, world);
+    } else {
+      // Display-only respawn countdown for the DeathScreen.
+      network.tickLocalLifecycle();
+    }
 
     // Step physics
     world.physicsWorld.step();
@@ -713,6 +801,12 @@ async function main(): Promise<void> {
     // HitReactComp on a target this tick; the hit-react clear pass runs
     // after so it doesn't immediately wipe a fresh entry.
     TracerSystem(world, FIXED_TIMESTEP);
+    // Multiplayer: convert DamageEvents on remote players into server
+    // claims (and judge blocks attacker-side) BEFORE DamageSystem — a
+    // server-owned entity must never take local HP writes.
+    if (gameMode === 'multiplayer') {
+      network.interceptClaims();
+    }
     DamageSystem(world, FIXED_TIMESTEP);
     hitReactSystemTick(world.ecs);
 
@@ -766,6 +860,7 @@ async function main(): Promise<void> {
     pickupPrompt.update(playerEid);
     debugOverlay.update(dt, playerEid, cameraController);
     hud.update(dt, playerEid);
+    matchHUD.update();
 
     // --debug-viewmodel overlay update. setVisible(false) makes update() a
     // no-op, so the only cost when disabled is the boolean check below
@@ -828,6 +923,20 @@ async function main(): Promise<void> {
         alpha,
       );
     }
+    // Remote players (multiplayer): lerp position + take yaw directly
+    // (already interpolated at fixed rate by remotePlayerSystem).
+    for (const reid of getRemotePlayerEids(world)) {
+      const modelData = meshRegistry.get(reid);
+      if (modelData) {
+        modelData.group.position.set(
+          lerp(PreviousPosition.x[reid], Position.x[reid], alpha),
+          lerp(PreviousPosition.y[reid], Position.y[reid], alpha),
+          lerp(PreviousPosition.z[reid], Position.z[reid], alpha),
+        );
+        modelData.group.rotation.y = Rotation.y[reid];
+      }
+    }
+
     // Warmup bots move every tick — interpolate position AND yaw so they
     // glide instead of snapping at 60 Hz (#119).
     for (const beid of getWarmupBotEids(world)) {

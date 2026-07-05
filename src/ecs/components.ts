@@ -333,6 +333,16 @@ export const HitReactComp = defineComponent({
 });
 
 /**
+ * Tag: entity is a replicated REMOTE player (multiplayer). Position/yaw
+ * come from the network interpolation buffer (`src/net/RemotePlayers.ts`),
+ * combat state from the server's state stream. Remote players have
+ * hitboxes (local tracers hit them → damage claims) but no TracerTag (their
+ * swings are resolved by their own client), no MovementIntent, and none of
+ * the local lifecycle tags — the server owns their HP/death/respawn.
+ */
+export const RemotePlayer = defineComponent();
+
+/**
  * BotBrain — per-bot AI state (warmup bots, #119 / spec §4). Attached only
  * to entities that also carry the `Bot` tag. `BotAISystem` reads/writes
  * this each fixed tick and translates decisions into `MovementIntent`

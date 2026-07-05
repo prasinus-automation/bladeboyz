@@ -1,26 +1,21 @@
 /**
- * MainMenu — the entry overlay shown when the page first loads.
+ * MainMenu — the landing overlay (#106 foundation, multiplayer-era layout).
  *
- * Issue #106 (part of #98 "HUD and menus pass"). Replaces the old
- * `#click-to-play` text-only overlay as the game's entry point. The page now
- * loads into `GameState.MAIN_MENU` (the GameStateManager default) and the
- * player must click **Play** to transition to `PLAYING`. The legacy
- * `#click-to-play` div is kept as the "lost pointer lock mid-game" hint —
- * see `InputManager._onPointerLockChange` for that flow.
+ * Landing view: BLADEBOYZ title + four actions —
+ *   MULTIPLAYER   → in-overlay submenu (Quick Play FFA … more modes later)
+ *   PRACTICE BOTS → single-player arena (dummies, shopkeep, B-key bot)
+ *   SHOP          → info panel (in-game weapon shop + upcoming skins)
+ *   BUY CREDITS   → credits panel (balance from the Supabase profile; real
+ *                   purchases arrive with the Stripe webhook — see
+ *                   docs/supabase-setup.md §5)
+ * plus an auth widget (sign in / create account / signed-in status) backed
+ * by `src/auth/session.ts`, which no-ops into guest mode when Supabase env
+ * isn't configured.
  *
- * Visibility is driven by `GameStateManager`: shown in `MAIN_MENU`, hidden
- * otherwise. The menu also registers with `MenuManager` as `'main'` so the
- * click-to-play suppression composition (`menuManager.isAnyOpen()`) keeps the
- * old text overlay from flashing in behind us on initial load.
- *
- * **Pointer-lock policy** (browser-mandated):
- *   `input.requestPointerLock()` MUST run synchronously inside the Play
- *   button's `click` handler. Browsers reject lock requests whose call stack
- *   doesn't trace back to a user gesture. State changes must come AFTER the
- *   lock request, not before — see the click handler below.
- *
- * Layout uses `theme.ts` constants exclusively. Title is plain `monospace`
- * with letter-spacing — no web fonts, no external font files.
+ * Lifecycle contract is unchanged from #106: registers as ModalKind 'main'
+ * with MenuManager, subscribes to GameStateManager (MAIN_MENU ⇄ visible),
+ * and every game-entering click calls `input.requestPointerLock()`
+ * SYNCHRONOUSLY before flipping state (browser user-gesture requirement).
  */
 
 import { GameState, GameStateManager } from '../core/GameState';
@@ -28,21 +23,37 @@ import { APP_VERSION } from '../core/version';
 import { theme } from './theme';
 import type { InputManager } from '../input/InputManager';
 import type { MenuManager } from './MenuManager';
+import {
+  getAuthState,
+  onAuthChange,
+  signIn,
+  signUp,
+  signOut,
+  type AuthState,
+} from '../auth/session';
+
+type SubPanel = 'none' | 'multiplayer' | 'shop' | 'credits' | 'auth';
 
 export class MainMenu {
-  /** Full-screen flex-centered overlay. */
   private container: HTMLDivElement;
-  private playButton: HTMLButtonElement;
+  private buttonColumn: HTMLDivElement;
+  private subPanel: HTMLDivElement;
+  private authBar: HTMLDivElement;
   private _isVisible = false;
   private _unsubGameState: () => void;
+  private _unsubAuth: () => void;
   private _disposed = false;
+  private activePanel: SubPanel = 'none';
+
+  /** Set by main.ts — invoked from inside the user-gesture click handlers. */
+  onPractice: (() => void) | null = null;
+  onMultiplayerFFA: (() => void) | null = null;
 
   constructor(
     private input: InputManager,
     private gameState: GameStateManager,
     private menuManager: MenuManager,
   ) {
-    // Root container — flex-centered fullscreen overlay.
     this.container = document.createElement('div');
     this.container.id = 'main-menu';
     this.container.style.cssText = `
@@ -52,7 +63,7 @@ export class MainMenu {
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 32px;
+      gap: 24px;
       background: ${theme.bg.backdrop};
       color: ${theme.text.primary};
       font-family: ${theme.font};
@@ -60,8 +71,6 @@ export class MainMenu {
       user-select: none;
     `;
 
-    // ── Title ──
-    // Plain monospace with wide letter-spacing — no web font dependency.
     const title = document.createElement('div');
     title.id = 'main-menu-title';
     title.textContent = 'BLADEBOYZ';
@@ -75,67 +84,76 @@ export class MainMenu {
     `;
     this.container.appendChild(title);
 
-    // ── Play button ──
-    this.playButton = document.createElement('button');
-    this.playButton.id = 'main-menu-play-button';
-    this.playButton.type = 'button';
-    this.playButton.textContent = 'PLAY';
-    this.playButton.style.cssText = `
-      font-family: ${theme.font};
-      font-size: 24px;
-      letter-spacing: 4px;
-      padding: 16px 64px;
-      background: ${theme.bg.subtle};
-      color: ${theme.text.primary};
-      border: 2px solid ${theme.border.default};
-      cursor: pointer;
-      transition: border-color 0.15s, color 0.15s;
+    // ── Landing buttons ──
+    this.buttonColumn = document.createElement('div');
+    this.buttonColumn.id = 'main-menu-buttons';
+    this.buttonColumn.style.cssText = `
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-items: stretch;
+      min-width: 340px;
     `;
-    // Hover: accent border + text. Use programmatic listeners (rather than CSS
-    // :hover) so the file stays self-contained and consistent with the rest
-    // of the HUD's inline-style pattern.
-    this.playButton.addEventListener('mouseenter', () => {
-      this.playButton.style.borderColor = theme.border.accent;
-      this.playButton.style.color = theme.text.accent;
+    this.container.appendChild(this.buttonColumn);
+
+    this.addButton('menu-btn-multiplayer', 'MULTIPLAYER', () => {
+      this.showPanel('multiplayer');
     });
-    this.playButton.addEventListener('mouseleave', () => {
-      this.playButton.style.borderColor = theme.border.default;
-      this.playButton.style.color = theme.text.primary;
-    });
-    // **Synchronous pointer-lock request inside the click handler.**
-    // Browsers reject `requestPointerLock` outside a user-gesture stack
-    // frame, so we MUST call it before any awaiting / state-change side
-    // effects. The state flip then closes the menu (via our subscriber).
-    this.playButton.addEventListener('click', () => {
+    this.addButton('menu-btn-practice', 'PRACTICE BOTS', () => {
+      // Synchronous pointer-lock inside the gesture, then mode + state.
       this.input.requestPointerLock();
+      this.onPractice?.();
       this.gameState.state = GameState.PLAYING;
     });
-    this.container.appendChild(this.playButton);
+    this.addButton('menu-btn-shop', 'SHOP', () => this.showPanel('shop'));
+    this.addButton('menu-btn-credits', 'BUY CREDITS', () =>
+      this.showPanel('credits'),
+    );
 
-    // ── Controls hint ──
-    // 2-3 lines of muted text. Sourced manually (not from the full
-    // `keybinds.ts` table) so we don't render the entire 17-row list — that's
-    // the Controls overlay's job in #3. These are the six most important
-    // actions a new player needs to start moving and fighting.
+    // ── Sub panel (swapped content under the buttons) ──
+    this.subPanel = document.createElement('div');
+    this.subPanel.id = 'menu-sub';
+    this.subPanel.style.cssText = `
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+      align-items: stretch;
+      min-width: 340px;
+      max-width: 460px;
+      padding: 16px;
+      border: 1px solid ${theme.border.default};
+      background: ${theme.bg.panel};
+    `;
+    this.container.appendChild(this.subPanel);
+
+    // ── Auth bar ──
+    this.authBar = document.createElement('div');
+    this.authBar.id = 'menu-auth';
+    this.authBar.style.cssText = `
+      font-size: 13px;
+      color: ${theme.text.secondary};
+      letter-spacing: 1px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    `;
+    this.container.appendChild(this.authBar);
+
     const controlsHint = document.createElement('div');
     controlsHint.id = 'main-menu-controls';
     controlsHint.style.cssText = `
-      font-size: 14px;
+      font-size: 13px;
       color: ${theme.text.muted};
       text-align: center;
       line-height: 1.6;
       letter-spacing: 1px;
     `;
-    // Two lines, six bindings. Bullet-separated for compactness.
     controlsHint.innerHTML = [
-      'WASD move &bull; Mouse look &bull; LMB attack',
-      'RMB block &bull; E interact &bull; I inventory &bull; ESC pause',
+      'WASD move &bull; Mouse look &bull; LMB attack &bull; RMB block',
+      'E interact &bull; I inventory &bull; TAB scoreboard &bull; ESC pause',
     ].join('<br>');
     this.container.appendChild(controlsHint);
 
-    // ── Version label ──
-    // Bottom-right corner, absolutely positioned inside the flex container
-    // so it doesn't push the centered group around.
     const versionLabel = document.createElement('div');
     versionLabel.id = 'main-menu-version';
     versionLabel.textContent = `v${APP_VERSION}`;
@@ -151,18 +169,11 @@ export class MainMenu {
 
     document.body.appendChild(this.container);
 
-    // Register with MenuManager. The `close` handler is the canonical entry
-    // point: when the state transitions away from MAIN_MENU we hide the DOM
-    // and tell MenuManager. The `open` handler is provided for symmetry but
-    // is not currently used by MenuManager (ESC in `'main'` is a deliberate
-    // no-op per #101 spec) — kept so a future quit-confirm flow can call it.
     this.menuManager.register('main', {
       close: () => this.close(),
       open: () => this.show(),
     });
 
-    // Subscribe to GameStateManager so we react to programmatic state changes
-    // (e.g. someone calls `gameStateManager.state = MAIN_MENU` from elsewhere).
     this._unsubGameState = this.gameState.subscribe((state) => {
       if (state === GameState.MAIN_MENU) {
         this.show();
@@ -171,22 +182,300 @@ export class MainMenu {
       }
     });
 
-    // Initial sync — show on construction iff state is already MAIN_MENU
-    // (the GameStateManager default). If the caller has already flipped to
-    // PLAYING before constructing us, stay hidden.
+    this._unsubAuth = onAuthChange(() => this.renderAuthBar());
+    this.renderAuthBar();
+
     if (this.gameState.state === GameState.MAIN_MENU) {
       this.show();
     }
   }
 
-  /** Whether the menu overlay is currently visible. */
+  // ── Widgets ────────────────────────────────────────────
+
+  private addButton(
+    id: string,
+    label: string,
+    onClick: () => void,
+  ): HTMLButtonElement {
+    const btn = this.makeButton(id, label, onClick);
+    this.buttonColumn.appendChild(btn);
+    return btn;
+  }
+
+  private makeButton(
+    id: string,
+    label: string,
+    onClick: () => void,
+  ): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.id = id;
+    btn.type = 'button';
+    btn.textContent = label;
+    btn.style.cssText = `
+      font-family: ${theme.font};
+      font-size: 18px;
+      letter-spacing: 3px;
+      padding: 12px 32px;
+      background: ${theme.bg.subtle};
+      color: ${theme.text.primary};
+      border: 2px solid ${theme.border.default};
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    `;
+    btn.addEventListener('mouseenter', () => {
+      btn.style.borderColor = theme.border.accent;
+      btn.style.color = theme.text.accent;
+    });
+    btn.addEventListener('mouseleave', () => {
+      btn.style.borderColor = theme.border.default;
+      btn.style.color = theme.text.primary;
+    });
+    btn.addEventListener('click', onClick);
+    return btn;
+  }
+
+  private label(text: string, muted = false): HTMLDivElement {
+    const el = document.createElement('div');
+    el.textContent = text;
+    el.style.cssText = `
+      font-size: 13px;
+      line-height: 1.5;
+      letter-spacing: 1px;
+      color: ${muted ? theme.text.muted : theme.text.secondary};
+    `;
+    return el;
+  }
+
+  private inputField(id: string, placeholder: string, type = 'text'): HTMLInputElement {
+    const el = document.createElement('input');
+    el.id = id;
+    el.type = type;
+    el.placeholder = placeholder;
+    el.style.cssText = `
+      font-family: ${theme.font};
+      font-size: 14px;
+      padding: 10px 12px;
+      background: ${theme.bg.subtle};
+      color: ${theme.text.primary};
+      border: 1px solid ${theme.border.default};
+      outline: none;
+    `;
+    return el;
+  }
+
+  // ── Sub panels ─────────────────────────────────────────
+
+  private showPanel(panel: SubPanel): void {
+    this.activePanel = this.activePanel === panel ? 'none' : panel;
+    this.subPanel.innerHTML = '';
+    if (this.activePanel === 'none') {
+      this.subPanel.style.display = 'none';
+      return;
+    }
+    this.subPanel.style.display = 'flex';
+    switch (this.activePanel) {
+      case 'multiplayer':
+        this.renderMultiplayerPanel();
+        break;
+      case 'shop':
+        this.renderShopPanel();
+        break;
+      case 'credits':
+        this.renderCreditsPanel();
+        break;
+      case 'auth':
+        this.renderAuthPanel();
+        break;
+      default:
+        break;
+    }
+  }
+
+  private renderMultiplayerPanel(): void {
+    const auth = getAuthState();
+    const who = auth.profile
+      ? `Playing as ${auth.profile.username}`
+      : 'Playing as guest — sign in for a persistent name';
+    this.subPanel.appendChild(this.label(who, !auth.profile));
+
+    const ffa = this.makeButton('menu-btn-ffa', 'QUICK PLAY — FFA', () => {
+      this.input.requestPointerLock();
+      this.onMultiplayerFFA?.();
+      this.gameState.state = GameState.PLAYING;
+    });
+    this.subPanel.appendChild(ffa);
+    this.subPanel.appendChild(
+      this.label('Free-for-all in the arena. 15-minute matches. More modes soon.', true),
+    );
+    this.subPanel.appendChild(
+      this.makeButton('menu-btn-mp-back', 'BACK', () => this.showPanel('none')),
+    );
+  }
+
+  private renderShopPanel(): void {
+    this.subPanel.appendChild(this.label('WEAPONS — in-match shop'));
+    this.subPanel.appendChild(
+      this.label(
+        'Earn gold from kills, then press E at the shopkeep (SW corner of the arena) to buy from all 10 weapons.',
+        true,
+      ),
+    );
+    this.subPanel.appendChild(this.label('SKINS — coming soon'));
+    this.subPanel.appendChild(
+      this.label(
+        'Crimson Steel · Midnight · Goldenboy. Purchasable with credits to support development.',
+        true,
+      ),
+    );
+    this.subPanel.appendChild(
+      this.makeButton('menu-btn-shop-back', 'BACK', () => this.showPanel('none')),
+    );
+  }
+
+  private renderCreditsPanel(): void {
+    const auth = getAuthState();
+    if (!auth.configured) {
+      this.subPanel.appendChild(
+        this.label('Accounts are not configured on this deployment.', true),
+      );
+    } else if (!auth.profile) {
+      this.subPanel.appendChild(
+        this.label('Sign in to view your credit balance.', true),
+      );
+      this.subPanel.appendChild(
+        this.makeButton('menu-btn-credits-signin', 'SIGN IN', () =>
+          this.showPanel('auth'),
+        ),
+      );
+    } else {
+      const bal = this.label(`CREDITS: ${auth.profile.credits}`);
+      bal.id = 'menu-credits-balance';
+      bal.style.fontSize = '18px';
+      this.subPanel.appendChild(bal);
+      this.subPanel.appendChild(
+        this.label(
+          'Credit purchases are coming soon (Stripe). Credits will buy skins and other cosmetics — never gameplay power.',
+          true,
+        ),
+      );
+    }
+    this.subPanel.appendChild(
+      this.makeButton('menu-btn-credits-back', 'BACK', () => this.showPanel('none')),
+    );
+  }
+
+  private renderAuthPanel(): void {
+    const auth = getAuthState();
+    if (!auth.configured) {
+      this.subPanel.appendChild(
+        this.label('Supabase env not configured — see docs/supabase-setup.md.', true),
+      );
+      this.subPanel.appendChild(
+        this.makeButton('menu-btn-auth-back', 'BACK', () => this.showPanel('none')),
+      );
+      return;
+    }
+
+    const email = this.inputField('auth-email', 'email', 'email');
+    const password = this.inputField('auth-password', 'password', 'password');
+    const username = this.inputField('auth-username', 'username (for new accounts)');
+    const status = this.label('', true);
+    status.id = 'auth-status';
+
+    this.subPanel.appendChild(email);
+    this.subPanel.appendChild(password);
+    this.subPanel.appendChild(username);
+
+    this.subPanel.appendChild(
+      this.makeButton('menu-btn-signin', 'SIGN IN', () => {
+        status.textContent = 'Signing in…';
+        void signIn(email.value.trim(), password.value).then((r) => {
+          status.textContent = r.message;
+          if (r.ok) this.showPanel('none');
+        });
+      }),
+    );
+    this.subPanel.appendChild(
+      this.makeButton('menu-btn-signup', 'CREATE ACCOUNT', () => {
+        status.textContent = 'Creating account…';
+        void signUp(email.value.trim(), password.value, username.value.trim()).then(
+          (r) => {
+            status.textContent = r.message;
+          },
+        );
+      }),
+    );
+    this.subPanel.appendChild(status);
+    this.subPanel.appendChild(
+      this.makeButton('menu-btn-auth-back', 'BACK', () => this.showPanel('none')),
+    );
+  }
+
+  private renderAuthBar(): void {
+    const auth: AuthState = getAuthState();
+    this.authBar.innerHTML = '';
+    if (!auth.configured) {
+      const span = document.createElement('span');
+      span.id = 'auth-guest-label';
+      span.textContent = 'Guest mode (accounts not configured)';
+      this.authBar.appendChild(span);
+      this.refreshAuthDependentPanel();
+      return;
+    }
+    if (auth.profile) {
+      const span = document.createElement('span');
+      span.id = 'auth-signed-in-label';
+      span.textContent = `Signed in as ${auth.profile.username} · ${auth.profile.credits} credits`;
+      this.authBar.appendChild(span);
+      const out = document.createElement('button');
+      out.id = 'menu-btn-signout';
+      out.textContent = 'sign out';
+      out.style.cssText = `
+        font-family: ${theme.font};
+        font-size: 12px;
+        background: none;
+        border: none;
+        color: ${theme.text.accent};
+        cursor: pointer;
+        text-decoration: underline;
+      `;
+      out.addEventListener('click', () => void signOut());
+      this.authBar.appendChild(out);
+    } else {
+      const btn = document.createElement('button');
+      btn.id = 'menu-btn-auth';
+      btn.textContent = 'SIGN IN / CREATE ACCOUNT';
+      btn.style.cssText = `
+        font-family: ${theme.font};
+        font-size: 13px;
+        letter-spacing: 2px;
+        background: none;
+        border: 1px solid ${theme.border.default};
+        padding: 8px 16px;
+        color: ${theme.text.secondary};
+        cursor: pointer;
+      `;
+      btn.addEventListener('click', () => this.showPanel('auth'));
+      this.authBar.appendChild(btn);
+    }
+    this.refreshAuthDependentPanel();
+  }
+
+  /** Re-render an open panel whose content depends on auth state. */
+  private refreshAuthDependentPanel(): void {
+    if (this.activePanel === 'credits' || this.activePanel === 'multiplayer') {
+      const p = this.activePanel;
+      this.activePanel = 'none';
+      this.showPanel(p);
+    }
+  }
+
+  // ── Lifecycle (unchanged contract) ─────────────────────
+
   get isVisible(): boolean {
     return this._isVisible;
   }
 
-  /**
-   * Show the menu and notify MenuManager. Idempotent.
-   */
   show(): void {
     if (this._isVisible || this._disposed) return;
     this._isVisible = true;
@@ -194,25 +483,21 @@ export class MainMenu {
     this.menuManager.notifyOpen('main');
   }
 
-  /**
-   * Hide the menu and notify MenuManager. Idempotent. Called by:
-   *   - the Play-button click path (via the GameState subscriber, after the
-   *     state flips PLAYING),
-   *   - the GameState subscriber on any non-MAIN_MENU transition,
-   *   - `MenuManager.close('main')` if anything ever wires that up.
-   */
   close(): void {
     if (!this._isVisible || this._disposed) return;
     this._isVisible = false;
     this.container.style.display = 'none';
+    this.subPanel.innerHTML = '';
+    this.subPanel.style.display = 'none';
+    this.activePanel = 'none';
     this.menuManager.notifyClose('main');
   }
 
-  /** Tear down DOM + subscriptions. Matches the dispose pattern in other HUD modules. */
   dispose(): void {
     if (this._disposed) return;
     this._disposed = true;
     this._unsubGameState();
+    this._unsubAuth();
     this.menuManager.unregister('main');
     this.container.remove();
   }

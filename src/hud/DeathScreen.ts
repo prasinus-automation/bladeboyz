@@ -34,6 +34,7 @@ import type { GameWorld } from '../core/types';
 import { EventBus } from '../events/EventBus';
 import type { DeathEventPayload, RespawnEventPayload } from '../events/types';
 import { weaponIdToName } from '../ecs/systems/CombatSystem';
+import { getRemoteName } from '../net/RemotePlayers';
 
 /**
  * Resolve a display name for an entity id.
@@ -57,6 +58,11 @@ export function getDisplayName(world: GameWorld, eid: number): string {
   if (eid === 0) return 'the void';
   if (eid === world.playerEntity) return 'You';
   if (hasComponent(world.ecs, IsTrainingDummy, eid)) return `Dummy ${eid}`;
+  // Multiplayer: remote players carry their server-verified display name.
+  {
+    const remoteName = getRemoteName(eid);
+    if (remoteName !== null) return remoteName;
+  }
   if (hasComponent(world.ecs, Bot, eid)) return `Bot ${eid}`;
   if (hasComponent(world.ecs, Player, eid)) return 'Player';
   return 'Unknown';

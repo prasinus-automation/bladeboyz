@@ -64,6 +64,11 @@ const sourceFiles = import.meta.glob('/src/**/*.ts', {
 const ALLOWED_FILES = new Set<string>([
   '/src/ecs/entities/createPlayer.ts',
   '/src/ecs/entities/createTrainingDummy.ts',
+  // Multiplayer remote puppets: init write + server-state sync. Remote
+  // players have NO local FSM — the server's state stream IS their
+  // combat-state authority, so the direct component write is the sync
+  // mechanism (same category as CombatSystem's FSM→ECS mirror).
+  '/src/net/RemotePlayers.ts',
   // Init write only (warmup bot factory, #119) — same category as the
   // player/dummy factories above.
   '/src/ecs/entities/createWarmupBot.ts',
