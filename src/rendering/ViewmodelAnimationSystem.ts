@@ -36,7 +36,8 @@ import { getViewmodelPose } from '../animation/ViewmodelAnimationData';
 import {
   applyPoseLayer,
   smoothstepEase,
-  CROSSFADE_DURATION_SEC,
+  combatPhaseBlend,
+  crossfadeDurationFor,
 } from '../animation/poseBlending';
 import {
   computeArcSwingPose,
@@ -205,7 +206,7 @@ export function viewmodelAnimationSystem(
   // ── Crossfade timer ──
   entityState.crossfadeT = Math.min(
     1,
-    entityState.crossfadeT + dt / CROSSFADE_DURATION_SEC,
+    entityState.crossfadeT + dt / crossfadeDurationFor(combatState),
   );
   const crossfadeT = entityState.crossfadeT;
 
@@ -240,10 +241,12 @@ export function viewmodelAnimationSystem(
     );
   } else {
     // Pure keyframe slerp — Idle, Windup, Recovery, Blocking, Parry, HitStun.
-    // effectiveT = smoothstep(max(phaseT, crossfadeT)) covers both
-    // fixed-duration states (use phaseT) and no-duration states (use
-    // crossfadeT) per docs/animation-architecture.md §6.
-    const effectiveT = smoothstepEase(Math.max(phaseT, crossfadeT));
+    // Per-state time curves via combatPhaseBlend (#goal-2026-07 fluidity
+    // pass): Windup draws across its WHOLE phase, Recovery follows through
+    // past guard and settles; reactive states keep the crossfade race.
+    // Mirrors AnimationSystem's combat layer exactly so FP and TP stay in
+    // lockstep (BladeTimingParity).
+    const effectiveT = combatPhaseBlend(combatState, phaseT, crossfadeT);
     applyPoseLayer(
       viewmodel.bones,
       prevSnapshot,

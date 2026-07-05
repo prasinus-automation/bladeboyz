@@ -3,9 +3,13 @@ import * as THREE from 'three';
 import {
   applyPoseLayer,
   smoothstepEase,
+  easeOutBack,
+  combatPhaseBlend,
+  crossfadeDurationFor,
   CROSSFADE_DURATION_SEC,
 } from './poseBlending';
 import type { Pose } from './AnimationData';
+import { CombatState } from '../combat/states';
 
 describe('poseBlending', () => {
   describe('CROSSFADE_DURATION_SEC', () => {
@@ -245,6 +249,58 @@ describe('poseBlending', () => {
 
       expect(a.quaternion.equals(new THREE.Quaternion())).toBe(false);
       expect(b.quaternion.equals(new THREE.Quaternion())).toBe(false);
+    });
+  });
+
+  describe('easeOutBack (#goal-2026-07 follow-through curve)', () => {
+    it('is exact at the endpoints', () => {
+      expect(easeOutBack(0)).toBe(0);
+      expect(easeOutBack(1)).toBe(1);
+    });
+
+    it('clamps outside [0, 1]', () => {
+      expect(easeOutBack(-1)).toBe(0);
+      expect(easeOutBack(2)).toBe(1);
+    });
+
+    it('overshoots 1 in the settle region (the follow-through)', () => {
+      let peak = 0;
+      for (let t = 0; t <= 1; t += 0.01) peak = Math.max(peak, easeOutBack(t));
+      expect(peak).toBeGreaterThan(1.0);
+      expect(peak).toBeLessThan(1.12); // subtle, not rubbery
+    });
+  });
+
+  describe('combatPhaseBlend (#goal-2026-07 per-state time curves)', () => {
+    it('Windup ignores the crossfade race — the draw fills the whole phase', () => {
+      // Legacy max(phaseT, crossfadeT) hit 1.0 within 80ms; now a windup
+      // 20% through its phase is 20%-ish drawn even with crossfade done.
+      const early = combatPhaseBlend(CombatState.Windup, 0.2, 1.0);
+      expect(early).toBeLessThan(0.2); // smoothstep(0.2) = 0.104
+      expect(combatPhaseBlend(CombatState.Windup, 1, 1)).toBe(1);
+    });
+
+    it('Recovery overshoots past the target before settling (follow-through)', () => {
+      let peak = 0;
+      for (let t = 0; t <= 1; t += 0.01) {
+        peak = Math.max(peak, combatPhaseBlend(CombatState.Recovery, t, 1.0));
+      }
+      expect(peak).toBeGreaterThan(1.0);
+      expect(combatPhaseBlend(CombatState.Recovery, 1, 1)).toBe(1);
+    });
+
+    it('reactive states keep the crossfade race (block snaps fast)', () => {
+      // phaseT 0 but crossfade done → fully blended.
+      expect(combatPhaseBlend(CombatState.Blocking, 0, 1)).toBe(1);
+      expect(combatPhaseBlend(CombatState.Idle, 0, 0.5)).toBeCloseTo(0.5 * 0.5 * (3 - 2 * 0.5), 6);
+    });
+  });
+
+  describe('crossfadeDurationFor', () => {
+    it('parry is snappier and hit-stun heavier than the default', () => {
+      expect(crossfadeDurationFor(CombatState.Parry)).toBeLessThan(CROSSFADE_DURATION_SEC);
+      expect(crossfadeDurationFor(CombatState.HitStun)).toBeGreaterThan(CROSSFADE_DURATION_SEC);
+      expect(crossfadeDurationFor(CombatState.Windup)).toBe(CROSSFADE_DURATION_SEC);
     });
   });
 });

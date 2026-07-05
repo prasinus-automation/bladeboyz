@@ -50,7 +50,8 @@ import {
 import {
   applyPoseLayer,
   smoothstepEase,
-  CROSSFADE_DURATION_SEC,
+  combatPhaseBlend,
+  crossfadeDurationFor,
 } from '../../animation/poseBlending';
 import {
   computeArcSwingPose,
@@ -350,9 +351,14 @@ export function animationSystem(world: GameWorld, dt: number): void {
 
     // ── 3. Crossfade timer ──
     let crossfadeT = AnimationComp.crossfadeT[eid];
-    crossfadeT = Math.min(1, crossfadeT + dt / CROSSFADE_DURATION_SEC);
+    crossfadeT = Math.min(1, crossfadeT + dt / crossfadeDurationFor(state));
     AnimationComp.crossfadeT[eid] = crossfadeT;
     const effectiveT = smoothstepEase(Math.max(phaseT, crossfadeT));
+    // Combat layers get per-state time curves (full-duration windup draw,
+    // follow-through recovery) — see combatPhaseBlend. Movement layers
+    // keep the crossfade-raced effectiveT: legs settling into a stance
+    // SHOULD snap in 80ms regardless of the combat phase length.
+    const combatBlendT = combatPhaseBlend(state, phaseT, crossfadeT);
 
     // ── 4. Layer ownership ──
     const movKey = movementKeyFromState(speedFactor, isGrounded, isCrouching);
@@ -449,17 +455,19 @@ export function animationSystem(world: GameWorld, dt: number): void {
         bones,
         prevSnapshot,
         combatPose,
-        effectiveT,
+        combatBlendT,
         nonArmCombat,
       );
     } else {
       // Pure keyframe slerp — covers Idle (IDLE_POSE), Windup, Recovery,
-      // Blocking, Parry, HitStun.
+      // Blocking, Parry, HitStun. Windup/Recovery ride the per-state time
+      // curves (combatPhaseBlend) so the draw fills its whole phase and
+      // the recovery follows through past guard before settling.
       applyPoseLayer(
         bones,
         prevSnapshot,
         combatPose,
-        effectiveT,
+        combatBlendT,
         combatOwned,
       );
     }

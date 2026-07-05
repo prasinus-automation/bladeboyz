@@ -56,12 +56,35 @@ describe('arcSwing', () => {
       expect(pose.forearm_R?.x).toBeCloseTo(params.forearmEnd.x ?? 0, 6);
     });
 
-    it('returns midpoint values at t=0.5', () => {
+    it('slash at t=0.5 lags the linear midpoint (accelerating velocity profile)', () => {
+      // #goal-2026-07 fluidity pass: slashes run t^swingExponent (Longsword
+      // baseline 1.35), so at half time the blade has covered LESS than half
+      // the arc — it loads early and accelerates through contact.
       const pose = computeArcSwingPose(Direction.Overhead, 0.5);
       const params = ARC_SWING_PARAMS[Direction.Overhead as number];
-      const expectedX =
-        ((params.shoulderStart.x ?? 0) + (params.shoulderEnd.x ?? 0)) / 2;
+      const start = params.shoulderStart.x ?? 0;
+      const end = params.shoulderEnd.x ?? 0;
+      const expectedX = start + (end - start) * Math.pow(0.5, 1.35);
       expect(pose.shoulder_R?.x).toBeCloseTo(expectedX, 6);
+      // Strictly between start and the linear midpoint.
+      const linearMid = (start + end) / 2;
+      const covered = Math.abs((pose.shoulder_R?.x ?? 0) - start);
+      expect(covered).toBeLessThan(Math.abs(linearMid - start));
+      expect(covered).toBeGreaterThan(0);
+    });
+
+    it('heavier weapons cover a smaller fraction of their arc at half time', () => {
+      // Normalized progress along each weapon's OWN arc at t=0.5 equals
+      // 0.5^swingExponent — arc endpoint scaling cancels out.
+      const progressAtHalf = (weapon: 'Dagger' | 'Warhammer'): number => {
+        const z0 = computeArcSwingPose(Direction.Left, weapon, 0).shoulder_R?.z ?? 0;
+        const z5 = computeArcSwingPose(Direction.Left, weapon, 0.5).shoulder_R?.z ?? 0;
+        const z1 = computeArcSwingPose(Direction.Left, weapon, 1).shoulder_R?.z ?? 0;
+        return (z5 - z0) / (z1 - z0);
+      };
+      expect(progressAtHalf('Dagger')).toBeCloseTo(Math.pow(0.5, 1.15), 5);
+      expect(progressAtHalf('Warhammer')).toBeCloseTo(Math.pow(0.5, 1.8), 5);
+      expect(progressAtHalf('Dagger')).toBeGreaterThan(progressAtHalf('Warhammer'));
     });
 
     it('clamps t below 0', () => {
@@ -240,8 +263,12 @@ describe('arcSwing', () => {
     it('3-arg form (direction, weaponName, t) returns the same pose as the cached table', () => {
       const pose = computeArcSwingPose(Direction.Overhead, 'Mace', 0.5);
       const params = ARC_SWING_PARAMS_PER_WEAPON.Mace[Direction.Overhead as number];
-      const expectedShoulderX =
-        ((params.shoulderStart.x ?? 0) + (params.shoulderEnd.x ?? 0)) / 2;
+      // Slashes run t^swingExponent (Mace: 1.55) — see the velocity-profile
+      // block in computeArcSwingPose.
+      const tt = Math.pow(0.5, 1.55);
+      const start = params.shoulderStart.x ?? 0;
+      const end = params.shoulderEnd.x ?? 0;
+      const expectedShoulderX = start + (end - start) * tt;
       expect(pose.shoulder_R?.x).toBeCloseTo(expectedShoulderX, 6);
     });
 
