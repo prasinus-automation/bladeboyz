@@ -74,6 +74,7 @@ export const keybinds: ReadonlyArray<Keybind> = [
   { action: 'debugDummyDir',    key: 'KeyY',  group: 'Interface',  label: 'Cycle dummy block dir'},
   { action: 'debugSpawnDummy',  key: 'KeyJ',  group: 'Interface',  label: 'Spawn training dummy' },
   { action: 'debugResetDummies',key: 'KeyK',  group: 'Interface',  label: 'Reset all dummies'    },
+  { action: 'debugToggleBot',   key: 'KeyB',  group: 'Interface',  label: 'Toggle warmup bot'    },
 ];
 
 /** Lookup helper — returns `undefined` if no binding for the action. */
@@ -220,6 +221,7 @@ export const DEFAULT_KEYBINDS: Readonly<Record<InputAction, string | string[]>> 
   // Debug — dummy controls
   [InputAction.DebugSpawnDummy]: 'KeyJ',
   [InputAction.DebugResetDummies]: 'KeyK',
+  [InputAction.DebugToggleBot]: 'KeyB',
   [InputAction.DebugToggleDummyBlock]: 'KeyT',
   [InputAction.DebugCycleBlockDir]: 'KeyY',
 

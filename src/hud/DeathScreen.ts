@@ -28,7 +28,8 @@
  */
 
 import { hasComponent } from 'bitecs';
-import { DeadTag, RespawnPending, Player, IsTrainingDummy } from '../ecs/components';
+import {
+  Bot, DeadTag, RespawnPending, Player, IsTrainingDummy } from '../ecs/components';
 import type { GameWorld } from '../core/types';
 import { EventBus } from '../events/EventBus';
 import type { DeathEventPayload, RespawnEventPayload } from '../events/types';
@@ -62,6 +63,7 @@ export function getDisplayName(world: GameWorld, eid: number): string {
     const remoteName = getRemoteName(eid);
     if (remoteName !== null) return remoteName;
   }
+  if (hasComponent(world.ecs, Bot, eid)) return `Bot ${eid}`;
   if (hasComponent(world.ecs, Player, eid)) return 'Player';
   return 'Unknown';
 }

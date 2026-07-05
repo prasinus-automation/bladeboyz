@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import { defineQuery } from 'bitecs';
-import { Health, meshRegistry, IsTrainingDummy } from '../ecs/components';
+import { Health, meshRegistry, IsNPC } from '../ecs/components';
 import type { GameWorld } from '../core/types';
 
-const trainingDummyQuery = defineQuery([IsTrainingDummy]);
+// IsNPC ∧ Health covers dummies AND warmup bots (#119); the shopkeep has
+// neither component. Was IsTrainingDummy-only before bots existed.
+const npcHealthQuery = defineQuery([IsNPC, Health]);
 
 /**
  * DummyHealthBar — renders floating health bars above each dummy's head.
@@ -70,7 +72,7 @@ export class DummyHealthBar {
     const width = window.innerWidth;
     const height = window.innerHeight;
     const proj = new THREE.Vector3();
-    const dummies = trainingDummyQuery(this.world.ecs);
+    const dummies = npcHealthQuery(this.world.ecs);
     // Build a set for O(1) lookup when reaping stale bars below.
     const liveSet = new Set<number>(dummies);
 

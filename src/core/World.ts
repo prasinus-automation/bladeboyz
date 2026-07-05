@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { createWorld } from 'bitecs';
+import { createWorld, addEntity } from 'bitecs';
 import type { GameWorld } from './types';
 import { DEFAULT_FOV, CAMERA_NEAR, CAMERA_FAR, GRAVITY } from './types';
 
@@ -13,6 +13,17 @@ export async function createGameWorld(canvas?: HTMLCanvasElement): Promise<GameW
 
   // ECS world
   const ecs = createWorld();
+
+  // Reserve entity 0 as the NULL entity (never used for anything real).
+  // The event schema documents `eid 0` as the "no entity" sentinel —
+  // `DeathEvent.killerEid === 0` means environmental death, `BotBrain
+  // .targetEid === 0` would mean no target, `getDisplayName(0)` renders
+  // "the void". Without this reservation the FIRST real entity (the local
+  // player, in practice) got id 0 and every one of those checks
+  // misclassified it — most visibly: player kills paid no gold because
+  // `awardGoldOnKill` mapped killerEid 0 to "environmental". Standard ECS
+  // null-entity convention; do not remove or reuse this entity.
+  addEntity(ecs);
 
   // Three.js
   const scene = new THREE.Scene();

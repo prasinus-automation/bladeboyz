@@ -153,6 +153,7 @@ The shop releases pointer lock and pauses input on open, the same way the invent
 | **Y** | Cycle dummy block direction (Overhead → Stab → Left → Right) |
 | **J** | Spawn additional training dummy |
 | **K** | Reset all training dummies (full health, idle state) |
+| **B** | Toggle the warmup bot (spawn / despawn) |
 
 Training dummies are **NPC entities** with the `IsNPC` and `IsTrainingDummy`
 ECS tags. The legacy `activeDummies` global array was retired in #114; every
@@ -162,6 +163,24 @@ for systems that should also pick up future warmup bots). Each dummy has a
 fixed-body capsule collider whose feet are snapped to the ground via
 `spawnAtGround()` — they're solid obstacles you collide with, not floating
 overlays. The full design lives in
+[`docs/training-dummies-and-bots-spec.md`](docs/training-dummies-and-bots-spec.md).
+
+### Warmup Bot (B)
+
+Press **B** to spawn a single warmup bot (press again to despawn). The bot
+is a full combatant driven by `BotAISystem` through the same seams as the
+player — `MovementIntent` for movement, the Combat FSM for swings:
+
+- **Approach** — walks straight at you from across the arena (detouring
+  around pillars when it gets stuck on one).
+- **Engage** — inside ~1.3 m it stops and swings roughly once a second,
+  in deterministic pseudo-random directions.
+- **Reposition** — backs off if you body-block it.
+
+It does **not** block, parry, or dodge — it's a moving target that hits
+back. Killing it pays **25 gold** (bots are currently the only gold
+income), shows in the killfeed, and it respawns at a spawn point 3 s
+later to keep coming. Full spec: §4 of
 [`docs/training-dummies-and-bots-spec.md`](docs/training-dummies-and-bots-spec.md).
 
 ### Debug Controls

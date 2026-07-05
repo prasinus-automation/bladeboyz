@@ -20,7 +20,7 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { createWorld } from 'bitecs';
+import { createWorld, addEntity } from 'bitecs';
 
 import type { GameWorld } from '../core/types';
 import { FIXED_TIMESTEP } from '../core/types';
@@ -113,8 +113,13 @@ function makeWorld(): GameWorld {
     groundBody,
   );
 
+  const ecs = createWorld();
+  // Reserve eid 0 as the NULL entity — mirrors createGameWorld. The event
+  // schema's "0 = no entity" sentinel (killerEid, targetEid) is only sound
+  // if nothing real ever gets id 0.
+  addEntity(ecs);
   return {
-    ecs: createWorld(),
+    ecs,
     scene: new THREE.Scene(),
     renderer: null as unknown as THREE.WebGLRenderer,
     rapier: RAPIER,
@@ -273,7 +278,10 @@ beforeEach(() => {
   clearRegistries();
 });
 
-describe('combat end-to-end (real Rapier, real scene graph)', () => {
+// Heavy real-physics E2E: hundreds of fixed ticks of real Rapier per case.
+// Under full-suite parallel CPU contention these blow the default 5 s
+// budget (QA repro on PR #192) — give them an explicit generous timeout.
+describe('combat end-to-end (real Rapier, real scene graph)', { timeout: 30_000 }, () => {
   it('overhead longsword swing damages a dummy standing in front', () => {
     // Player at origin faces -Z (yaw 0). Dummy 1.2m in front.
     const h = buildHarness({ dummyPos: { x: 0, z: -1.2 } });

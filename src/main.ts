@@ -30,6 +30,8 @@ import { NetworkSystem } from './net/NetworkSystem';
 import { removeAllRemotePlayers, getRemotePlayerEids } from './net/RemotePlayers';
 import { MatchHUD } from './hud/MatchHUD';
 import { initAuth, getAuthState } from './auth/session';
+import { toggleWarmupBot, getWarmupBotEids, removeWarmupBot } from './ecs/entities/createWarmupBot';
+import { createBotAISystem } from './ecs/systems/BotAISystem';
 import {
   interactionSystem,
   getNearbyInteractable,
@@ -61,6 +63,9 @@ import {
   Health,
   KnockbackState,
   DeadTag,
+  MovementIntent,
+  MovementState,
+  BotBrain,
   meshRegistry,
 } from './ecs/components';
 import { lerp } from './utils/math';
@@ -327,6 +332,11 @@ async function main(): Promise<void> {
   }
 
   function removePracticeNpcs(): void {
+    // Warmup bots are practice-only local combatants — despawn regardless
+    // of the lazy-spawn flag (the player may have toggled one with B).
+    for (const beid of getWarmupBotEids(world)) {
+      removeWarmupBot(world, beid);
+    }
     if (!practiceNpcsSpawned) return;
     practiceNpcsSpawned = false;
     for (const eid of getTrainingDummyEids(world)) {
@@ -361,6 +371,11 @@ async function main(): Promise<void> {
   // Input + movement systems (input writes MovementIntent; movement consumes it)
   const inputSystem = createInputSystem(world, input, cameraController);
   const movementSystem = createMovementSystem(world, cameraController);
+
+  // Warmup-bot AI (#119) — writes MovementIntent + FSM Attack inputs for
+  // Bot-tagged entities. Must run after inputSystem (same seam) and before
+  // combat/movement so they consume this tick's decisions.
+  const botAISystem = createBotAISystem(world);
 
   // Create combat system (reads input, drives per-entity FSMs)
   const combatSystem = createCombatSystem(world.ecs, input, cameraController);
@@ -516,6 +531,11 @@ async function main(): Promise<void> {
         resetAllTrainingDummies(world);
         showNotification('All dummies reset');
         break;
+      case 'KeyB': {
+        const active = toggleWarmupBot(world, playerEid);
+        showNotification(active ? 'Warmup bot: ON' : 'Warmup bot: OFF');
+        break;
+      }
       case 'KeyI': {
         // Defensive: close the shop if KeyI was pressed while it was open.
         // InventoryPanel handles its own toggle on its own listener
@@ -583,6 +603,18 @@ async function main(): Promise<void> {
       eid,
       hp: Health.current[eid],
       pos: { x: Position.x[eid], y: Position.y[eid], z: Position.z[eid] },
+    }));
+  (window as any).__getBots = () =>
+    getWarmupBotEids(world).map((eid) => ({
+      eid,
+      hp: Health.current[eid],
+      pos: { x: Position.x[eid], y: Position.y[eid], z: Position.z[eid] },
+      dead: hasComponent(world.ecs, DeadTag, eid),
+      intent: { x: MovementIntent.moveX[eid], z: MovementIntent.moveZ[eid] },
+      mode: BotBrain.mode[eid],
+      targetEid: BotBrain.targetEid[eid],
+      grounded: MovementState.grounded[eid],
+      yaw: Rotation.y[eid],
     }));
   (window as any).__getNpcs = () =>
     getTrainingDummyEids(world).map((eid) => ({
@@ -710,6 +742,9 @@ async function main(): Promise<void> {
     // Translate raw input → MovementIntent for the player. Must run before
     // combat/movement so they see this tick's intent.
     inputSystem(FIXED_TIMESTEP);
+
+    // Bot decisions — MovementIntent + swing inputs for warmup bots (#119).
+    botAISystem();
 
     // Combat system (reads input, ticks FSMs, syncs ECS components)
     combatSystem();
@@ -902,6 +937,19 @@ async function main(): Promise<void> {
       }
     }
 
+    // Warmup bots move every tick — interpolate position AND yaw so they
+    // glide instead of snapping at 60 Hz (#119).
+    for (const beid of getWarmupBotEids(world)) {
+      const modelData = meshRegistry.get(beid);
+      if (modelData) {
+        modelData.group.position.set(
+          lerp(PreviousPosition.x[beid], Position.x[beid], alpha),
+          lerp(PreviousPosition.y[beid], Position.y[beid], alpha),
+          lerp(PreviousPosition.z[beid], Position.z[beid], alpha),
+        );
+        modelData.group.rotation.y = Rotation.y[beid];
+      }
+    }
     // Iterate every training dummy via the IsTrainingDummy tag query (the
     // legacy `activeDummies` array is gone — issue #114). Bots and other
     // future moving NPCs that need lerp-sync should join this loop via the

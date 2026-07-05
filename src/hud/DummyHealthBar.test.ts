@@ -21,6 +21,9 @@ function tagAsTrainingDummy(world: GameWorld): number {
   const eid = addEntity(world.ecs);
   addComponent(world.ecs, IsNPC, eid);
   addComponent(world.ecs, IsTrainingDummy, eid);
+  // The health-bar query is [IsNPC, Health] (covers warmup bots too, #119) —
+  // real factories always add Health; the fixture must match.
+  addComponent(world.ecs, Health, eid);
   return eid;
 }
 
