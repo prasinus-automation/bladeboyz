@@ -105,6 +105,11 @@ export const mace: WeaponConfig = {
   blockStaminaDrain: 25,
   parryStunTicks: 68,
   hitStunTicks: 50,
+
+  // ── Knockback ─────────────────────────────────────────
+  // Blunt crusher — knocks targets clean off their feet.
+
+  knockback: { force: 6.0, upward: 4.0 },
 };
 
 registerWeapon(mace);

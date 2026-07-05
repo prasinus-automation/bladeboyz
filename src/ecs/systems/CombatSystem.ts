@@ -40,7 +40,24 @@ const playerQuery = defineQuery([CombatStateComponent, Player]);
 
 // ── Weapon ID → name mapping ─────────────────────────────
 
-export const weaponIdToName: string[] = ['Longsword', 'Mace', 'Dagger', 'Battleaxe'];
+/**
+ * Numeric weapon-id → name table. APPEND ONLY — ids 0..3 are the launch
+ * weapons and the index doubles as the wire format for `weaponId` fields
+ * (CombatStateComponent, WeaponPickup, DamageDealt payloads). Reordering
+ * or inserting mid-table breaks every serialized/persisted weaponId.
+ */
+export const weaponIdToName: string[] = [
+  'Longsword',
+  'Mace',
+  'Dagger',
+  'Battleaxe',
+  'Zweihander',
+  'Warhammer',
+  'Spear',
+  'Katana',
+  'Scythe',
+  'Yeeter',
+];
 
 /** Look up weapon config by numeric ID */
 function getWeaponConfigById(id: number) {

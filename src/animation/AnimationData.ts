@@ -118,22 +118,22 @@ export const IDLE_POSE: Pose = {
 
 const ATTACK_ANIMATIONS: Record<number, CombatAnimation> = {
   // ── Left Swing ──
+  // A Left slash sweeps the arm from the player's RIGHT side across the
+  // front to the left. Chamber = arm raised out to the right (+z on
+  // shoulder_R) with the chest wound so the right shoulder pulls BACK
+  // (chest -y). Matches the arc-swing Release start {x: 1.35, z: 1.25}.
   [Direction.Left as number]: {
     windup: {
-      // Sword pulled to the right, torso rotated right
-      chest: { y: 40 * DEG },
-      shoulder_R: { x: -20 * DEG, z: -60 * DEG, y: 30 * DEG },
-      upper_arm_R: { x: -70 * DEG, z: -30 * DEG },
-      forearm_R: { x: -20 * DEG },
+      chest: { y: -35 * DEG },
+      shoulder_R: { x: 72 * DEG, z: 68 * DEG },
+      forearm_R: { x: -25 * DEG },
       shoulder_L: { x: -10 * DEG, z: 15 * DEG },
       upper_arm_L: { x: -20 * DEG },
     },
     release: {
-      // Sweep left — torso rotates left, arm sweeps across
-      chest: { y: -40 * DEG },
-      shoulder_R: { x: -10 * DEG, z: 40 * DEG, y: -40 * DEG },
-      upper_arm_R: { x: -50 * DEG, z: 30 * DEG },
-      forearm_R: { x: -10 * DEG },
+      // Chest unwinds through the swing — the right shoulder drives
+      // forward-left. Right-arm bones are owned by the arc during Release.
+      chest: { y: 35 * DEG },
       shoulder_L: { x: -10 * DEG, z: 10 * DEG },
       upper_arm_L: { x: -20 * DEG },
     },
@@ -141,22 +141,19 @@ const ATTACK_ANIMATIONS: Record<number, CombatAnimation> = {
   },
 
   // ── Right Swing ──
+  // Mirror of Left: chamber pulls the arm across the body to the player's
+  // LEFT (-z on shoulder_R), chest wound with the right shoulder forward
+  // (chest +y), then unwinds right. Matches arc start {x: 1.35, z: -1.25}.
   [Direction.Right as number]: {
     windup: {
-      // Sword pulled to the left, torso rotated left
-      chest: { y: -40 * DEG },
-      shoulder_R: { x: -20 * DEG, z: 50 * DEG, y: -30 * DEG },
-      upper_arm_R: { x: -70 * DEG, z: 30 * DEG },
-      forearm_R: { x: -20 * DEG },
+      chest: { y: 35 * DEG },
+      shoulder_R: { x: 72 * DEG, z: -68 * DEG },
+      forearm_R: { x: -25 * DEG },
       shoulder_L: { x: -15 * DEG, z: 25 * DEG },
       upper_arm_L: { x: -30 * DEG },
     },
     release: {
-      // Sweep right — torso rotates right, arm sweeps across
-      chest: { y: 40 * DEG },
-      shoulder_R: { x: -10 * DEG, z: -50 * DEG, y: 40 * DEG },
-      upper_arm_R: { x: -50 * DEG, z: -30 * DEG },
-      forearm_R: { x: -10 * DEG },
+      chest: { y: -35 * DEG },
       shoulder_L: { x: -10 * DEG, z: 15 * DEG },
       upper_arm_L: { x: -20 * DEG },
     },
@@ -189,23 +186,25 @@ const ATTACK_ANIMATIONS: Record<number, CombatAnimation> = {
   },
 
   // ── Stab ──
+  // Chamber = arm low-forward with the elbow fully bent (blade pulled back
+  // at the hip) and the chest wound so the right shoulder pulls BACK
+  // (chest -y). The Release arc extends the elbow while the shoulder rises
+  // to near-horizontal — matches arc start {shoulder x: 0.5, forearm x: -1.5}.
   [Direction.Stab as number]: {
     windup: {
-      // Sword pulled back, arm chambered
-      chest: { y: 20 * DEG },
-      shoulder_R: { x: -60 * DEG, z: -15 * DEG },
-      upper_arm_R: { x: -20 * DEG },
-      forearm_R: { x: -90 * DEG },
+      chest: { y: -25 * DEG },
+      shoulder_R: { x: 28 * DEG, z: -8 * DEG },
+      forearm_R: { x: -88 * DEG },
       shoulder_L: { x: -40 * DEG, z: 20 * DEG },
       upper_arm_L: { x: -20 * DEG },
       forearm_L: { x: -30 * DEG },
     },
     release: {
-      // Thrust forward — arm extends
+      // Chest drives the right shoulder forward through the thrust. The
+      // yaw is small (5°) on purpose: it laterally displaces the thrust
+      // tip proportionally to weapon reach, and long weapons (Spear)
+      // would otherwise stab well left of the crosshair.
       chest: { y: 5 * DEG, x: 5 * DEG },
-      shoulder_R: { x: -80 * DEG, z: -5 * DEG },
-      upper_arm_R: { x: -10 * DEG },
-      forearm_R: { x: -5 * DEG },
       shoulder_L: { x: -20 * DEG, z: 15 * DEG },
       upper_arm_L: { x: -15 * DEG },
       forearm_L: { x: -10 * DEG },
@@ -223,20 +222,21 @@ const ATTACK_ANIMATIONS: Record<number, CombatAnimation> = {
 
 const BLOCK_POSES: Record<number, BlockPose> = {
   [Direction.Left as number]: {
-    // Sword angled to the left to catch incoming swings
-    chest: { y: -20 * DEG },
-    shoulder_R: { x: -60 * DEG, z: 30 * DEG, y: -20 * DEG },
-    upper_arm_R: { x: -40 * DEG },
+    // Guard held out FORWARD on the defender's left — where an attacker's
+    // Left slash (same-direction blocking, FSM v2 #139) arrives. Positive
+    // shoulder x raises the arm into the front hemisphere; the old -60°
+    // held the guard behind the defender's back.
+    chest: { y: 15 * DEG },
+    shoulder_R: { x: 60 * DEG, z: -35 * DEG },
     forearm_R: { x: -50 * DEG },
     shoulder_L: { x: -50 * DEG, z: 25 * DEG },
     upper_arm_L: { x: -30 * DEG },
     forearm_L: { x: -40 * DEG },
   },
   [Direction.Right as number]: {
-    // Sword angled to the right
-    chest: { y: 20 * DEG },
-    shoulder_R: { x: -60 * DEG, z: -40 * DEG, y: 20 * DEG },
-    upper_arm_R: { x: -40 * DEG },
+    // Mirror: guard forward on the defender's right.
+    chest: { y: -15 * DEG },
+    shoulder_R: { x: 60 * DEG, z: 35 * DEG },
     forearm_R: { x: -50 * DEG },
     shoulder_L: { x: -40 * DEG, z: 15 * DEG },
     upper_arm_L: { x: -20 * DEG },

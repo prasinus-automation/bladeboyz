@@ -58,8 +58,12 @@ const DEG = Math.PI / 180;
 const LONGSWORD_IDLE: Pose = {
   // X rotations are POSITIVE so the chain extends FORWARD (-Z camera-local)
   // from the shoulder, putting the hand + weapon in front of the camera.
-  upper_arm_R: { x: 30 * DEG, z: -8 * DEG },
-  forearm_R:   { x: 35 * DEG },
+  // Chain total ≈ 98°: hand sits lower-right INSIDE the fov-70 frustum.
+  // (The pre-2026-07 values totalled ~65° — the hand hung 0.69 m below
+  // the camera, under the frustum's bottom plane, and the weapon was
+  // invisible in first person. That was the #181 mystery.)
+  upper_arm_R: { x: 48 * DEG, z: -8 * DEG },
+  forearm_R:   { x: 50 * DEG },
   hand_R:      { x: 5 * DEG, z: -5 * DEG },
 };
 
@@ -204,8 +208,8 @@ const LONGSWORD_ANIMS: ViewmodelWeaponAnims = {
 // ── Mace — heavy, slower swings, extra wrist rotation ───
 
 const MACE_IDLE: Pose = {
-  upper_arm_R: { x: 28 * DEG, z: -10 * DEG },
-  forearm_R:   { x: 30 * DEG },
+  upper_arm_R: { x: 46 * DEG, z: -10 * DEG },
+  forearm_R:   { x: 48 * DEG },
   hand_R:      { x: 5 * DEG, z: -8 * DEG, y: 5 * DEG },
 };
 
@@ -336,8 +340,8 @@ const MACE_ANIMS: ViewmodelWeaponAnims = {
 // ── Dagger — quick, snappy motions, tight close-range ───
 
 const DAGGER_IDLE: Pose = {
-  upper_arm_R: { x: 22 * DEG, z: -5 * DEG },
-  forearm_R:   { x: 45 * DEG },
+  upper_arm_R: { x: 42 * DEG, z: -5 * DEG },
+  forearm_R:   { x: 58 * DEG },
   hand_R:      { x: 8 * DEG, z: -3 * DEG },
 };
 
@@ -470,8 +474,8 @@ const DAGGER_ANIMS: ViewmodelWeaponAnims = {
 // ── Battleaxe — exaggerated windups, devastating releases ──
 
 const BATTLEAXE_IDLE: Pose = {
-  upper_arm_R: { x: 32 * DEG, z: -12 * DEG },
-  forearm_R:   { x: 25 * DEG },
+  upper_arm_R: { x: 50 * DEG, z: -12 * DEG },
+  forearm_R:   { x: 45 * DEG },
   hand_R:      { x: 5 * DEG, z: -10 * DEG },
 };
 

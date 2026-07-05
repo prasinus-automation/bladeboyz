@@ -16,6 +16,7 @@ import {
   AnimationComp,
   HitReactComp,
   TracerTag,
+  KnockbackState,
   IsNPC,
   IsTrainingDummy,
   meshRegistry,
@@ -23,6 +24,7 @@ import {
 } from '../components';
 import { createCharacterModel } from '../../rendering/CharacterModel';
 import { createHitboxes } from '../systems/HitboxSystem';
+import { registerPhysicsBody } from '../systems/MovementSystem';
 import { weaponBoneMap } from '../systems/TracerSystem';
 import { spawnAtGround } from '../utils/spawnAtGround';
 import { CombatState } from '../../combat/states';
@@ -137,6 +139,7 @@ export function createTrainingDummy(
   addComponent(world.ecs, AnimationComp, eid);
   addComponent(world.ecs, HitReactComp, eid);
   addComponent(world.ecs, TracerTag, eid);
+  addComponent(world.ecs, KnockbackState, eid);
   // NPC tags — single source of truth for "is this entity a non-player
   // training dummy?". Replaces the legacy `activeDummies` array.
   addComponent(world.ecs, IsNPC, eid);
@@ -189,8 +192,10 @@ export function createTrainingDummy(
   const collider = world.physicsWorld.createCollider(colliderDesc, body);
   PhysicsBody.bodyHandle[eid] = body.handle;
   PhysicsBody.colliderHandle[eid] = collider.handle;
-  // NOTE: do NOT call registerPhysicsBody — that's for kinematic-controlled
-  // entities only (player). Dummies don't move; MovementSystem skips them.
+  // Registered so KnockbackSystem can teleport the body when the dummy is
+  // sent flying by a heavy hit. MovementSystem still skips dummies — its
+  // query requires MovementIntent, which dummies don't have.
+  registerPhysicsBody(eid, body, collider);
 
   const { group, skeleton, bones } = createCharacterModel(color);
   group.position.set(x, feetY, z);

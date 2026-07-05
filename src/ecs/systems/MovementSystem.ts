@@ -10,6 +10,7 @@ import {
   PhysicsBody,
   MovementState,
   MovementIntent,
+  KnockbackState,
   DeadTag,
 } from '../components';
 import { CameraController } from '../../rendering/CameraController';
@@ -194,6 +195,40 @@ export function createMovementSystem(world: GameWorld, cameraController: CameraC
       // Ground detection from previous tick
       const wasGrounded = MovementState.grounded[eid] === 1;
 
+      // ── Knockback (per-weapon hit displacement, #goal-2026-07) ──
+      // DamageSystem writes an impulse into KnockbackState; we fold it into
+      // the character-controller movement so wall/prop collisions still
+      // resolve. While `ticksRemaining > 0` the victim has NO movement
+      // control (that's the "get launched and tumble" feel) — input is
+      // consumed but contributes zero displacement, and jump is ignored.
+      const hasKnockback = hasComponent(world.ecs, KnockbackState, eid);
+      let kbX = 0;
+      let kbZ = 0;
+      let controlLocked = false;
+      if (hasKnockback) {
+        // Vertical impulse transfers into verticalVelocity ONCE, so the
+        // normal gravity/jump pipeline owns the Y axis from then on.
+        if (KnockbackState.vy[eid] > 0) {
+          MovementState.verticalVelocity[eid] = Math.max(
+            MovementState.verticalVelocity[eid],
+            KnockbackState.vy[eid],
+          );
+          KnockbackState.vy[eid] = 0;
+          MovementState.grounded[eid] = 0;
+        }
+        kbX = KnockbackState.vx[eid];
+        kbZ = KnockbackState.vz[eid];
+        controlLocked = KnockbackState.ticksRemaining[eid] > 0;
+
+        // Decay: strong friction on the ground, light drag in the air.
+        const decay = wasGrounded ? 0.86 : 0.98;
+        KnockbackState.vx[eid] = Math.abs(kbX) < 0.02 ? 0 : kbX * decay;
+        KnockbackState.vz[eid] = Math.abs(kbZ) < 0.02 ? 0 : kbZ * decay;
+        if (KnockbackState.ticksRemaining[eid] > 0) {
+          KnockbackState.ticksRemaining[eid] -= 1;
+        }
+      }
+
       // Vertical velocity: gravity + jump
       if (!wasGrounded) {
         MovementState.verticalVelocity[eid] += GRAVITY * FIXED_TIMESTEP;
@@ -202,8 +237,9 @@ export function createMovementSystem(world: GameWorld, cameraController: CameraC
         if (MovementState.verticalVelocity[eid] < 0) {
           MovementState.verticalVelocity[eid] = 0;
         }
-        // Edge-triggered jump
-        if (jumpIntent) {
+        // Edge-triggered jump (suppressed while knocked back — you can't
+        // jump mid-tumble).
+        if (jumpIntent && !controlLocked) {
           MovementState.verticalVelocity[eid] = JUMP_VELOCITY;
           MovementState.grounded[eid] = 0;
           MovementState.lastJumpTick[eid] = movementTick;
@@ -221,10 +257,13 @@ export function createMovementSystem(world: GameWorld, cameraController: CameraC
       // is a separate issue.
       Velocity.y[eid] = MovementState.verticalVelocity[eid];
 
-      // Compute desired movement (world space, scaled to one fixed-tick worth)
-      const desiredX = moveX * speed * FIXED_TIMESTEP;
+      // Compute desired movement (world space, scaled to one fixed-tick worth).
+      // Player input contributes nothing while control-locked by knockback;
+      // the knockback velocity rides on top either way.
+      const control = controlLocked ? 0 : 1;
+      const desiredX = (moveX * speed * control + kbX) * FIXED_TIMESTEP;
       const desiredY = MovementState.verticalVelocity[eid] * FIXED_TIMESTEP;
-      const desiredZ = moveZ * speed * FIXED_TIMESTEP;
+      const desiredZ = (moveZ * speed * control + kbZ) * FIXED_TIMESTEP;
 
       const desiredMovement = new world.rapier.Vector3(desiredX, desiredY, desiredZ);
 

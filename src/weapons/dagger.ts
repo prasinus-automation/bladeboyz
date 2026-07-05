@@ -107,6 +107,11 @@ export const dagger: WeaponConfig = {
   blockStaminaDrain: 8,
   parryStunTicks: 40,
   hitStunTicks: 30,
+
+  // ── Knockback ─────────────────────────────────────────
+  // A dagger pokes; it does not launch.
+
+  knockback: { force: 0.8, upward: 0 },
 };
 
 registerWeapon(dagger);

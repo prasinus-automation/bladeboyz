@@ -4,6 +4,7 @@ import {
   DamageEvent,
   CombatStateComponent,
   HitReactComp,
+  KnockbackState,
   Health,
   Position,
   Rotation,
@@ -15,7 +16,7 @@ import { Direction } from '../../combat/directions';
 import { fsmRegistry } from '../../combat/CombatFSM';
 import { weaponConfigMap } from './TracerSystem';
 import { getCurrentFixedTick } from '../../core/tickCounter';
-import type { WeaponConfig } from '../../weapons/WeaponConfig';
+import { DEFAULT_KNOCKBACK, type WeaponConfig } from '../../weapons/WeaponConfig';
 import { EventBus } from '../../events/EventBus';
 
 /** HitReact stagger duration (~200ms at 60Hz) */
@@ -228,6 +229,14 @@ function handleHit(
     populateHitReact(targetEid, attackerEid, damage, attackDir, config);
   }
 
+  // Physical knockback — the fun half of getting hit. Per-weapon force
+  // along attacker→target (plus an upward component) accumulates into
+  // KnockbackState; MovementSystem / KnockbackSystem integrate it and
+  // suppress the victim's control while `ticksRemaining > 0`.
+  if (hasComponent(world.ecs, KnockbackState, targetEid)) {
+    applyKnockback(targetEid, attackerEid, damage, attackDir, config);
+  }
+
   // Record kill-attribution. processDeaths reads this same tick to credit
   // a kill. Overwrite any older record — only the most-recent attacker is
   // credited (Mordhau / Chivalry convention).
@@ -251,6 +260,74 @@ function handleHit(
     isLethal: hpAfter <= 0 && Health.max[targetEid] > 0,
     tick,
   });
+}
+
+/**
+ * Apply per-weapon physical knockback to the target.
+ *
+ * Direction: horizontal attacker→target (unit), so a hit always shoves the
+ * victim away from the attacker. Falls back to the attacker's facing when
+ * the two entities overlap exactly.
+ *
+ * Magnitude: `weapon.knockback.force` scaled by how hard the hit landed
+ * (`damage / max-direction-damage`, floored at 0.6 so even limb taps from
+ * a warhammer feel weighty). Velocity ACCUMULATES across rapid hits —
+ * two quick maces juggle better than one — but `ticksRemaining` is set,
+ * not added, so control-loss doesn't stack unboundedly.
+ */
+function applyKnockback(
+  targetEid: number,
+  attackerEid: number,
+  damage: number,
+  attackDir: Direction,
+  config: WeaponConfig | undefined,
+): void {
+  const kb = config?.knockback ?? DEFAULT_KNOCKBACK;
+
+  // Horizontal unit vector attacker → target.
+  let ux = Position.x[targetEid] - Position.x[attackerEid];
+  let uz = Position.z[targetEid] - Position.z[attackerEid];
+  const len = Math.sqrt(ux * ux + uz * uz);
+  if (len > 1e-6) {
+    ux /= len;
+    uz /= len;
+  } else {
+    // Overlapping — shove along the attacker's facing (-Z at yaw 0).
+    const yaw = Rotation.y[attackerEid];
+    ux = -Math.sin(yaw);
+    uz = -Math.cos(yaw);
+  }
+
+  // Scale by hit quality (same normalization HitReact uses).
+  let scale = 1;
+  if (config) {
+    const dirDamage = config.damage[attackDir];
+    const maxDamage = Math.max(dirDamage.head, dirDamage.torso, dirDamage.limb);
+    if (maxDamage > 0) {
+      scale = Math.max(0.6, Math.min(1, damage / maxDamage));
+    }
+  }
+
+  KnockbackState.vx[targetEid] += ux * kb.force * scale;
+  KnockbackState.vz[targetEid] += uz * kb.force * scale;
+  // Upward: take the max rather than accumulating — repeated ground-level
+  // hits shouldn't rocket the victim into orbit, but a fresh heavy launch
+  // always registers.
+  KnockbackState.vy[targetEid] = Math.max(
+    KnockbackState.vy[targetEid],
+    kb.upward * scale,
+  );
+
+  // Control-loss window scales with launch speed: light shove ≈ untouched,
+  // heavy launch ≈ a full second of tumbling. Set, don't add.
+  const speed = Math.sqrt(
+    KnockbackState.vx[targetEid] ** 2 + KnockbackState.vz[targetEid] ** 2,
+  ) + KnockbackState.vy[targetEid];
+  const ticks = Math.min(90, Math.round(speed * 6));
+  KnockbackState.ticksRemaining[targetEid] = Math.max(
+    KnockbackState.ticksRemaining[targetEid],
+    ticks,
+  ) as number;
 }
 
 /**

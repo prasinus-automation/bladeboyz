@@ -16,6 +16,13 @@ export const weaponPrices: Record<string, number> = {
   Mace: 100,
   Longsword: 150,
   Battleaxe: 200,
+  Spear: 250,
+  Katana: 275,
+  Zweihander: 300,
+  Scythe: 325,
+  Warhammer: 350,
+  // Premium pricing for premium physics.
+  Yeeter: 500,
 };
 
 /**

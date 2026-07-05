@@ -41,8 +41,26 @@ describe('createPlayer defaults', () => {
     expect(weaponIdToName.indexOf('Dagger')).toBe(2);
   });
 
-  it('weaponIdToName contains all 4 weapons', () => {
-    expect(weaponIdToName).toEqual(['Longsword', 'Mace', 'Dagger', 'Battleaxe']);
+  it('weaponIdToName keeps the launch weapons in wire-format order and appends the arsenal', () => {
+    // Ids 0..3 are frozen (wire format); new weapons append only.
+    expect(weaponIdToName.slice(0, 4)).toEqual([
+      'Longsword',
+      'Mace',
+      'Dagger',
+      'Battleaxe',
+    ]);
+    expect(weaponIdToName).toEqual([
+      'Longsword',
+      'Mace',
+      'Dagger',
+      'Battleaxe',
+      'Zweihander',
+      'Warhammer',
+      'Spear',
+      'Katana',
+      'Scythe',
+      'Yeeter',
+    ]);
   });
 
   it('all weapons have model factories registered in WeaponModels', () => {

@@ -135,6 +135,20 @@ export function hitboxSystem(world: GameWorld): void {
     const colliderMap = hitboxColliderRegistry.get(eid);
     if (!colliderMap) continue;
 
+    // Sync the mesh group transform from ECS state BEFORE reading bone
+    // world matrices. The render loop lerps position/yaw for visual
+    // smoothness at variable rate, but physics queries (these hitboxes +
+    // TracerSystem's swept blades) run in fixedUpdate and need the
+    // CURRENT tick's transform — without this, the weapon bone never
+    // rotates with the player's aim and swings sweep the same world-space
+    // arc regardless of look direction.
+    modelData.group.position.set(
+      Position.x[eid],
+      Position.y[eid],
+      Position.z[eid],
+    );
+    modelData.group.rotation.y = Rotation.y[eid];
+
     const { skeleton, bones } = modelData;
 
     for (const def of HITBOX_DEFS) {

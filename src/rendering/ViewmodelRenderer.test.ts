@@ -135,9 +135,9 @@ describe('ViewmodelRenderer', () => {
       // Pre-#125 the bone was pre-rotated at construction; #125 moves grip
       // rotation onto WeaponModelResult.gripRotation. The test fakes here
       // omit grip data, so the renderer falls back to the legacy longsword
-      // value (Math.PI * 0.85 on X). This regression-guards that fallback.
+      // value (-Math.PI * 0.85 on X). This regression-guards that fallback.
       const weaponAttach = viewmodel.bones['weapon_attach'];
-      expect(weaponAttach.rotation.x).toBeCloseTo(Math.PI * 0.85);
+      expect(weaponAttach.rotation.x).toBeCloseTo(-Math.PI * 0.85);
       expect(weaponAttach.rotation.y).toBeCloseTo(0);
       expect(weaponAttach.rotation.z).toBeCloseTo(0);
     });
@@ -310,8 +310,8 @@ describe('ViewmodelRenderer', () => {
       viewmodel.syncWithCamera(worldCamera, 0.016, 0, 0);
 
       // With identity quaternion + zero velocity (no bob contribution),
-      // the offset is exactly ARM_OFFSET = (0.32, -0.30, -0.4).
-      expect(viewmodel.group.position.x).toBeCloseTo(0.32, 3);
+      // the offset is exactly ARM_OFFSET = (0.42, -0.30, -0.4).
+      expect(viewmodel.group.position.x).toBeCloseTo(0.42, 3);
       expect(viewmodel.group.position.y).toBeCloseTo(-0.3, 3);
       expect(viewmodel.group.position.z).toBeCloseTo(-0.4);
     });
@@ -724,8 +724,8 @@ describe('ViewmodelRenderer', () => {
         expect(weaponAttach.position.z).toBeCloseTo(0);
       });
 
-      it('falls back to legacy Math.PI * 0.85 rotation when factory omits gripRotation', () => {
-        // Offset supplied, rotation omitted → fallback (PI*0.85, 0, 0)
+      it('falls back to legacy -Math.PI * 0.85 rotation when factory omits gripRotation', () => {
+        // Offset supplied, rotation omitted → fallback (-PI*0.85, 0, 0)
         const factoryData = makeStableFactory(
           'NoRotation',
           new THREE.Vector3(0.1, 0.2, 0.3),
@@ -739,7 +739,7 @@ describe('ViewmodelRenderer', () => {
         });
 
         const weaponAttach = vm.bones['weapon_attach'];
-        expect(weaponAttach.rotation.x).toBeCloseTo(Math.PI * 0.85);
+        expect(weaponAttach.rotation.x).toBeCloseTo(-Math.PI * 0.85);
         expect(weaponAttach.rotation.y).toBeCloseTo(0);
         expect(weaponAttach.rotation.z).toBeCloseTo(0);
       });
@@ -803,10 +803,10 @@ describe('ViewmodelRenderer', () => {
         }
       });
 
-      it('Longsword preserves the legacy Math.PI * 0.85 grip rotation (no visual regression)', async () => {
+      it('Longsword uses the raised-pose grip rotation (-Math.PI * 0.85 — 2026-07 FP fix)', async () => {
         const { createLongswordModel } = await import('./CharacterModel');
         const result = createLongswordModel();
-        expect(result.gripRotation!.x).toBeCloseTo(Math.PI * 0.85);
+        expect(result.gripRotation!.x).toBeCloseTo(-Math.PI * 0.85);
         expect(result.gripRotation!.y).toBeCloseTo(0);
         expect(result.gripRotation!.z).toBeCloseTo(0);
         expect(result.gripOffset!.x).toBeCloseTo(0);
@@ -981,7 +981,7 @@ describe('ViewmodelRenderer', () => {
     it('returns a Vector3 with the FPS lower-right offset', () => {
       const offset = getArmOffset();
       expect(offset).toBeInstanceOf(THREE.Vector3);
-      expect(offset.x).toBeCloseTo(0.32);
+      expect(offset.x).toBeCloseTo(0.42);
       expect(offset.y).toBeCloseTo(-0.3);
       expect(offset.z).toBeCloseTo(-0.4);
     });

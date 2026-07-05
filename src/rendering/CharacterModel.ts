@@ -417,7 +417,7 @@ export function createLongswordModel(): WeaponModelResult {
   // around. Other weapons override these; iterate visually with #122's
   // `--debug-viewmodel` overlay if values feel off.
   const gripOffset = new THREE.Vector3(0, 0, 0);
-  const gripRotation = new THREE.Euler(Math.PI * 0.85, 0, 0);
+  const gripRotation = new THREE.Euler(-Math.PI * 0.85, 0, 0);
 
   return { group, tracerPoints, gripOffset, gripRotation };
 }

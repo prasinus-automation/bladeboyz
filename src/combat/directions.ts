@@ -60,9 +60,11 @@ export interface DirectionConfig {
   /**
    * Minimum movement magnitude to register a directional swing.
    * Below this threshold, the input is treated as a Stab. Measured against
-   * the *averaged* (per-sample) mouse delta returned by
-   * `InputManager.getAverageDelta` — units are pixels-per-sample, NOT
-   * total accumulated pixels (the v1 sum-based threshold).
+   * the TOTAL accumulated mouse delta over the buffer window
+   * (`InputManager.getAccumulatedDelta`) — units are pixels moved during
+   * the window. The earlier per-event-mean metric made detection depend
+   * on the mouse's report rate (high-Hz mice averaged tiny per-event
+   * deltas and every swing collapsed to Stab).
    */
   stabThreshold: number;
   /**
@@ -73,10 +75,14 @@ export interface DirectionConfig {
   axisRatio: number;
 }
 
-/** Sensible defaults — tuned so stab doesn't fire during normal aiming */
+/**
+ * Sensible defaults — tuned so stab doesn't fire during normal aiming.
+ * `stabThreshold: 30` total pixels over the 100 ms window ≈ a small but
+ * deliberate flick; passive aim drift stays under it.
+ */
 export const DEFAULT_DIRECTION_CONFIG: DirectionConfig = {
   bufferWindowMs: 100,
-  stabThreshold: 12,
+  stabThreshold: 30,
   axisRatio: 1.2,
 };
 
@@ -129,14 +135,14 @@ export function detectDirectionFromDeltas(
  * buffer. Used for both Attack and Block inputs — the spec collapsed the
  * two detection paths in v2 because the algorithm was identical anyway.
  *
- * @param inputManager  Provides `getAverageDelta(windowMs)` over recent samples.
+ * @param inputManager  Provides `getAccumulatedDelta(windowMs)` over recent samples.
  * @param config        Sensitivity settings (uses defaults if omitted).
  */
 export function detectDirection(
   inputManager: InputManager,
   config: DirectionConfig = DEFAULT_DIRECTION_CONFIG,
 ): Direction {
-  const { dx, dy } = inputManager.getAverageDelta(config.bufferWindowMs);
+  const { dx, dy } = inputManager.getAccumulatedDelta(config.bufferWindowMs);
   return detectDirectionFromDeltas(dx, dy, config);
 }
 

@@ -105,7 +105,29 @@ export interface WeaponConfig {
 
   /** HitStun ticks applied to the target on unblocked hit */
   hitStunTicks: number;
+
+  /**
+   * Physical knockback applied to the target on an unblocked hit.
+   * `force` is the horizontal launch speed (m/s, along attacker→target),
+   * `upward` the vertical launch speed (m/s). Heavy weapons send targets
+   * flying; light weapons barely nudge. While a target is being knocked
+   * back they lose movement control (see `KnockbackState` +
+   * `KnockbackSystem`).
+   *
+   * Optional for backward compatibility with test fixtures — omitted
+   * means `DEFAULT_KNOCKBACK` (a light longsword-ish shove).
+   */
+  knockback?: {
+    force: number;
+    upward: number;
+  };
 }
+
+/**
+ * Knockback used when a weapon config omits the `knockback` field.
+ * A light shove: visible feedback without displacement gameplay.
+ */
+export const DEFAULT_KNOCKBACK = { force: 1.5, upward: 0.5 } as const;
 
 // ── Registry ──────────────────────────────────────────────
 

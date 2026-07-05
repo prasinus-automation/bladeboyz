@@ -333,6 +333,26 @@ export const HitReactComp = defineComponent({
 });
 
 /**
+ * KnockbackState — physical displacement applied to a target on unblocked
+ * hits (per-weapon `WeaponConfig.knockback`). Written by DamageSystem;
+ * consumed by MovementSystem for player-controlled entities (added to the
+ * character-controller movement, input suppressed while `ticksRemaining > 0`)
+ * and by KnockbackSystem for non-player entities (ballistic integration +
+ * physics-body teleport, so training dummies literally go flying).
+ *
+ * `vx/vy/vz` is the current knockback velocity (m/s, world space).
+ * `ticksRemaining` doubles as the "lost control" timer — heavy weapons set
+ * it higher, so a warhammer launch keeps the victim tumbling with no
+ * steering until they land.
+ */
+export const KnockbackState = defineComponent({
+  vx: Types.f32,
+  vy: Types.f32,
+  vz: Types.f32,
+  ticksRemaining: Types.ui16,
+});
+
+/**
  * Animation state — tracks blending progress for the animation system.
  *
  * Issue #128 rebuild: replaces the per-layer `upperBlend`/`lowerBlend`
