@@ -333,6 +333,36 @@ export const HitReactComp = defineComponent({
 });
 
 /**
+ * BotBrain — per-bot AI state (warmup bots, #119 / spec §4). Attached only
+ * to entities that also carry the `Bot` tag. `BotAISystem` reads/writes
+ * this each fixed tick and translates decisions into `MovementIntent`
+ * (the documented AI seam) + CombatFSM `Attack` inputs.
+ *
+ * - `targetEid`: entity the bot chases (the local player today; a
+ *   networked player eid post-#92).
+ * - `mode`: 0 = Approach, 1 = Engage, 2 = Reposition (spec §4 mini-FSM).
+ * - `lastSwingTick`: fixed-tick stamp pacing the swing cooldown.
+ * - `meleeRange`: distance (m) at which Approach hands over to Engage.
+ */
+export const BotBrain = defineComponent({
+  targetEid: Types.ui32,
+  mode: Types.ui8,
+  lastSwingTick: Types.ui32,
+  meleeRange: Types.f32,
+  // Obstacle detour (the arena has pillars; the spec's "no pathfinding on
+  // flat ground" breaks the moment a bot beelines head-on into one — the
+  // character controller can't slide when travel is perpendicular to the
+  // face). prevX/prevZ track last-tick position; `stuckTicks` counts ticks
+  // of intending-to-move-but-not-moving; when it trips, the bot strafes
+  // perpendicular until `detourUntilTick` (sign in `detourSign`: 0/1).
+  prevX: Types.f32,
+  prevZ: Types.f32,
+  stuckTicks: Types.ui16,
+  detourUntilTick: Types.ui32,
+  detourSign: Types.ui8,
+});
+
+/**
  * KnockbackState — physical displacement applied to a target on unblocked
  * hits (per-weapon `WeaponConfig.knockback`). Written by DamageSystem;
  * consumed by MovementSystem for player-controlled entities (added to the

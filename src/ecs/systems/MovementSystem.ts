@@ -30,8 +30,12 @@ import {
   AUTOSTEP_MIN_WIDTH,
 } from '../../core/types';
 
-const playerQuery = defineQuery([
-  Player,
+// Everything with a MovementIntent moves through the character controller —
+// the human player AND AI-driven bots (#119). `MovementIntent` is the
+// documented AI/network seam; requiring the `Player` tag here would strand
+// bots motionless. Player-specific behavior (camera-yaw rotation sync) is
+// gated per-entity inside the loop.
+const movableQuery = defineQuery([
   Position,
   MovementIntent,
   MovementState,
@@ -73,6 +77,16 @@ export function registerPhysicsBody(
 ): void {
   bodyByEid.set(eid, body);
   colliderByEid.set(eid, collider);
+}
+
+/**
+ * Remove an entity's body/collider registration (bot despawn, future
+ * entity teardown). The caller is responsible for removing the body from
+ * the Rapier world first if it should stop colliding.
+ */
+export function unregisterPhysicsBody(eid: number): void {
+  bodyByEid.delete(eid);
+  colliderByEid.delete(eid);
 }
 
 /**
@@ -132,7 +146,7 @@ export function createMovementSystem(world: GameWorld, cameraController: CameraC
 
   return function movementSystem(_dt: number): void {
     movementTick++;
-    const entities = playerQuery(world.ecs);
+    const entities = movableQuery(world.ecs);
 
     for (let i = 0; i < entities.length; i++) {
       const eid = entities[i];
@@ -325,9 +339,14 @@ export function createMovementSystem(world: GameWorld, cameraController: CameraC
       Position.y[eid] = newPos.y;
       Position.z[eid] = newPos.z;
 
-      // Store camera yaw/pitch in entity rotation for animation/HUD
-      Rotation.y[eid] = cameraController.getYaw();
-      Rotation.x[eid] = cameraController.getPitch();
+      // Store camera yaw/pitch in entity rotation for animation/HUD —
+      // PLAYER-controlled entities only. Bots own their Rotation.y
+      // (BotAISystem aims them at their target); stomping it with the
+      // camera yaw would make every bot stare wherever the human looks.
+      if (hasComponent(world.ecs, Player, eid)) {
+        Rotation.y[eid] = cameraController.getYaw();
+        Rotation.x[eid] = cameraController.getPitch();
+      }
     }
   };
 }

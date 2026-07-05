@@ -20,7 +20,8 @@ describe('debugKeyGate (issue #172)', () => {
     });
 
     it('exposes the canonical set so callers can audit it', () => {
-      expect(DEBUG_DUMMY_KEY_CODES.size).toBe(4);
+      expect(DEBUG_DUMMY_KEY_CODES.size).toBe(5);
+      expect(DEBUG_DUMMY_KEY_CODES.has('KeyB')).toBe(true); // warmup bot toggle (#119)
     });
   });
 

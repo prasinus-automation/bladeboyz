@@ -24,6 +24,8 @@ import {
   getTrainingDummyEids,
 } from './ecs/entities/createTrainingDummy';
 import { createShopkeep } from './ecs/entities/createShopkeep';
+import { toggleWarmupBot, getWarmupBotEids } from './ecs/entities/createWarmupBot';
+import { createBotAISystem } from './ecs/systems/BotAISystem';
 import {
   interactionSystem,
   getNearbyInteractable,
@@ -54,6 +56,10 @@ import {
   PreviousRotation,
   Health,
   KnockbackState,
+  DeadTag,
+  MovementIntent,
+  MovementState,
+  BotBrain,
   meshRegistry,
 } from './ecs/components';
 import { lerp } from './utils/math';
@@ -77,6 +83,7 @@ import { ViewmodelDebugOverlay } from './hud/ViewmodelDebugOverlay';
 import { PickupPrompt } from './hud/PickupPrompt';
 import { CombatStateComp } from './ecs/components';
 import { COMBAT_STATE_NAMES } from './combat/states';
+import { hasComponent } from 'bitecs';
 import * as THREE from 'three';
 import type { GameWorld } from './core/types';
 import { GameStateManager } from './core/GameState';
@@ -311,6 +318,11 @@ async function main(): Promise<void> {
   const inputSystem = createInputSystem(world, input, cameraController);
   const movementSystem = createMovementSystem(world, cameraController);
 
+  // Warmup-bot AI (#119) — writes MovementIntent + FSM Attack inputs for
+  // Bot-tagged entities. Must run after inputSystem (same seam) and before
+  // combat/movement so they consume this tick's decisions.
+  const botAISystem = createBotAISystem(world);
+
   // Create combat system (reads input, drives per-entity FSMs)
   const combatSystem = createCombatSystem(world.ecs, input, cameraController);
 
@@ -438,6 +450,11 @@ async function main(): Promise<void> {
         resetAllTrainingDummies(world);
         showNotification('All dummies reset');
         break;
+      case 'KeyB': {
+        const active = toggleWarmupBot(world, playerEid);
+        showNotification(active ? 'Warmup bot: ON' : 'Warmup bot: OFF');
+        break;
+      }
       case 'KeyI': {
         // Defensive: close the shop if KeyI was pressed while it was open.
         // InventoryPanel handles its own toggle on its own listener
@@ -497,6 +514,18 @@ async function main(): Promise<void> {
     combatState: COMBAT_STATE_NAMES[CombatStateComp.state[playerEid]],
     pointerLocked: document.pointerLockElement != null,
   });
+  (window as any).__getBots = () =>
+    getWarmupBotEids(world).map((eid) => ({
+      eid,
+      hp: Health.current[eid],
+      pos: { x: Position.x[eid], y: Position.y[eid], z: Position.z[eid] },
+      dead: hasComponent(world.ecs, DeadTag, eid),
+      intent: { x: MovementIntent.moveX[eid], z: MovementIntent.moveZ[eid] },
+      mode: BotBrain.mode[eid],
+      targetEid: BotBrain.targetEid[eid],
+      grounded: MovementState.grounded[eid],
+      yaw: Rotation.y[eid],
+    }));
   (window as any).__getNpcs = () =>
     getTrainingDummyEids(world).map((eid) => ({
       eid,
@@ -623,6 +652,9 @@ async function main(): Promise<void> {
     // Translate raw input → MovementIntent for the player. Must run before
     // combat/movement so they see this tick's intent.
     inputSystem(FIXED_TIMESTEP);
+
+    // Bot decisions — MovementIntent + swing inputs for warmup bots (#119).
+    botAISystem();
 
     // Combat system (reads input, ticks FSMs, syncs ECS components)
     combatSystem();
@@ -795,6 +827,19 @@ async function main(): Promise<void> {
         Rotation.y[playerEid],
         alpha,
       );
+    }
+    // Warmup bots move every tick — interpolate position AND yaw so they
+    // glide instead of snapping at 60 Hz (#119).
+    for (const beid of getWarmupBotEids(world)) {
+      const modelData = meshRegistry.get(beid);
+      if (modelData) {
+        modelData.group.position.set(
+          lerp(PreviousPosition.x[beid], Position.x[beid], alpha),
+          lerp(PreviousPosition.y[beid], Position.y[beid], alpha),
+          lerp(PreviousPosition.z[beid], Position.z[beid], alpha),
+        );
+        modelData.group.rotation.y = Rotation.y[beid];
+      }
     }
     // Iterate every training dummy via the IsTrainingDummy tag query (the
     // legacy `activeDummies` array is gone — issue #114). Bots and other
