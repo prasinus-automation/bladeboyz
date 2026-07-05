@@ -122,10 +122,13 @@ export const longsword: WeaponConfig = {
   // Minimum 4 points for adequate coverage.
 
   tracerPoints: [
-    [0, 0.2, 0],   // just above the crossguard
-    [0, 0.5, 0],   // lower blade
-    [0, 0.9, 0],   // upper blade
-    [0, 1.3, 0],   // near the tip
+    // Synced to createLongswordModel's blade (#goal-2026-07 hit-accuracy
+    // pass): the old tip at y=1.3 dealt damage 0.27m past the visible
+    // blade (visual tip y=1.03). Guarded by TracerVisualParity.test.ts.
+    [0, 0.23, 0],  // just above the crossguard
+    [0, 0.497, 0], // lower blade
+    [0, 0.763, 0], // upper blade
+    [0, 1.03, 0],  // tip (matches the mesh)
   ],
 
   // ── Range ─────────────────────────────────────────────

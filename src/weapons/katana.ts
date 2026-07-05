@@ -69,10 +69,13 @@ export const katana: WeaponConfig = {
   },
 
   tracerPoints: [
-    [0, 0.25, 0],
-    [0, 0.55, 0],
-    [0, 0.85, 0],
-    [0, 1.15, 0],
+    // Synced to createKatanaModel's CURVED blade (#goal-2026-07
+    // hit-accuracy pass) — the x offsets follow the curve the mesh
+    // actually renders. Guarded by TracerVisualParity.test.ts.
+    [0.02, 0.29, 0],
+    [0.032, 0.573, 0],
+    [0.044, 0.857, 0],
+    [0.056, 1.14, 0],
   ],
 
   range: 1.3,

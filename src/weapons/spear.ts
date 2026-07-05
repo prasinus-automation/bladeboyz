@@ -69,10 +69,12 @@ export const spear: WeaponConfig = {
 
   // Business end only — the tip half of a very long shaft.
   tracerPoints: [
+    // Synced to createSpearModel's shaft+head (#goal-2026-07 hit-accuracy
+    // pass). Guarded by TracerVisualParity.test.ts.
     [0, 1.2, 0],
     [0, 1.6, 0],
     [0, 2.0, 0],
-    [0, 2.3, 0],
+    [0, 2.38, 0],
   ],
 
   range: 2.4,

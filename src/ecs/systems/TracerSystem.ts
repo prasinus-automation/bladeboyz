@@ -172,6 +172,14 @@ function processReleaseEntity(world: GameWorld, eid: number): void {
   // For each pair of adjacent tracer points, sweep between ticks
   const attackDir = CombatStateComponent.attackDirection[eid];
 
+  // Candidate regions collected across ALL of this tick's segment sweeps,
+  // resolved to the highest-value region per target AFTER the loop
+  // (#goal-2026-07 hit-accuracy pass). The old first-collider-wins commit
+  // made "which body part you hit" an artifact of segment iteration
+  // order — a blade visibly passing through the head could register the
+  // arm it grazed first.
+  _pendingRegions.clear();
+
   for (let t = 0; t < worldPositions.length - 1; t++) {
     // Swept quad vertices:
     // prev_i, curr_i, curr_i+1, prev_i+1
@@ -189,13 +197,42 @@ function processReleaseEntity(world: GameWorld, eid: number): void {
 
     // Sweep each tracer segment (from prevA→currA and prevB→currB)
     // Use the midpoint of the quad as the swept shape center
-    sweepTracerSegment(world, eid, prevA, currA, config, attackDir, tracerState);
-    sweepTracerSegment(world, eid, prevB, currB, config, attackDir, tracerState);
+    sweepTracerSegment(world, eid, prevA, currA, tracerState);
+    sweepTracerSegment(world, eid, prevB, currB, tracerState);
+  }
+
+  // Commit this tick's hits: one DamageEvent per target, best region wins
+  // (head > torso > limb).
+  for (const [targetEid, region] of _pendingRegions) {
+    tracerState.hitEntities.add(targetEid);
+    emitDamageEvent(world, targetEid, eid, config, attackDir, region);
   }
 
   // Store current positions as previous for next tick
   tracerState.prevPositions = worldPositions;
 }
+
+/**
+ * Damage-zone value of a body region for within-tick hit resolution:
+ * head > torso > limb. When one tick's sweep volume clips several regions
+ * of the same target, the player sees the blade hit "the" body part —
+ * award the one that pays the most, which is also the one the swing
+ * visually centers on in practice (head-height swings clip head+arm,
+ * leg-height swings clip leg only).
+ */
+function regionPriority(region: BodyRegion): number {
+  switch (region) {
+    case BodyRegion.Head:
+      return 3;
+    case BodyRegion.Torso:
+      return 2;
+    default:
+      return 1;
+  }
+}
+
+/** Per-tick candidate regions (targetEid → best region seen this tick). */
+const _pendingRegions = new Map<number, BodyRegion>();
 
 /**
  * Transform tracer points from weapon-local space to world space.
@@ -223,8 +260,6 @@ function sweepTracerSegment(
   attackerEid: number,
   prevPos: TracerWorldPos,
   currPos: TracerWorldPos,
-  config: WeaponConfig,
-  attackDir: number,
   tracerState: TracerEntityState,
 ): void {
   // Calculate sweep vector
@@ -295,18 +330,16 @@ function sweepTracerSegment(
       // Already hit this entity this swing?
       if (tracerState.hitEntities.has(hitboxInfo.ownerEid)) return true;
 
-      // Register the hit — first region wins, no multi-region per swing
-      tracerState.hitEntities.add(hitboxInfo.ownerEid);
-
-      // Create a DamageEvent entity for same-tick processing
-      emitDamageEvent(
-        world,
-        hitboxInfo.ownerEid,
-        attackerEid,
-        config,
-        attackDir,
-        hitboxInfo.bodyRegion,
-      );
+      // Record the candidate — the caller commits the best region per
+      // target after ALL of this tick's segments have swept (head >
+      // torso > limb; see regionPriority).
+      const prev = _pendingRegions.get(hitboxInfo.ownerEid);
+      if (
+        prev === undefined ||
+        regionPriority(hitboxInfo.bodyRegion) > regionPriority(prev)
+      ) {
+        _pendingRegions.set(hitboxInfo.ownerEid, hitboxInfo.bodyRegion);
+      }
 
       return true; // continue checking (other entities might be in the sweep)
     },

@@ -100,10 +100,12 @@ export const battleaxe: WeaponConfig = {
   // 4 points on the axe head (not the shaft).
 
   tracerPoints: [
-    [0, 0.85, 0],    // bottom of axe head
-    [0, 0.95, 0],    // lower axe head
-    [0, 1.05, 0],    // upper axe head
-    [0, 1.15, 0],    // top of axe head
+    // Synced to createBattleaxeModel's head (#goal-2026-07 hit-accuracy
+    // pass). Guarded by TracerVisualParity.test.ts.
+    [0, 0.75, 0],    // bottom of axe head
+    [0, 0.85, 0],    // lower axe head
+    [0, 0.95, 0],    // upper axe head
+    [0, 1.05, 0],    // top of axe head
   ],
 
   // -- Range ---------------------------------------------
