@@ -41,8 +41,13 @@ export class CameraController {
   private mode: CameraMode = CameraMode.FirstPerson;
   private orbitDistance = THIRD_PERSON_DISTANCE;
 
-  // Turn rate limiter (defaults to Infinity = uncapped)
+  // Turn rate limiter in RADIANS PER FIXED TICK (1/60 s) — matches the
+  // WeaponConfig turncap units. Defaults to Infinity = uncapped.
   public maxTurnRate = Infinity;
+
+  // Timestamp of the previous processInput call, for frame-time scaling of
+  // the turn cap. -1 = no previous frame (first call uses one tick's worth).
+  private lastInputTime = -1;
 
   // Sensitivity
   public sensitivity = MOUSE_SENSITIVITY;
@@ -131,9 +136,29 @@ export class CameraController {
     let deltaYaw = -delta.x * this.sensitivity;
     let deltaPitch = -delta.y * this.sensitivity;
 
-    // Cap turn rate if configured
+    // Cap turn rate if configured.
+    //
+    // UNIT FIX (2026-07 fluidity pass): `maxTurnRate` is radians per FIXED
+    // TICK (1/60 s) — the same unit every `WeaponConfig.turncap` value is
+    // authored in (0.08 rad/tick ≈ 275°/s per the longsword comments).
+    // The old code multiplied by ANOTHER 1/60 as if converting rad/s →
+    // rad/tick, making every cap 60× harsher than designed — windup's
+    // "275°/s" was really ~4.6°/s, i.e. the mouse effectively froze during
+    // every swing phase. That was the single biggest "stuck after
+    // swinging" offender.
+    //
+    // processInput runs once per RENDER frame, so scale one tick's budget
+    // by the measured frame time (dt·60 ticks per frame): a 144 Hz frame
+    // gets a proportionally smaller slice and can't out-turn a 60 Hz one.
+    const now = performance.now();
+    const frameDt =
+      this.lastInputTime < 0
+        ? 1 / 60
+        : Math.min(0.05, Math.max(0, (now - this.lastInputTime) / 1000));
+    this.lastInputTime = now;
+
     if (isFinite(this.maxTurnRate)) {
-      const maxDelta = this.maxTurnRate * (1 / 60); // per tick
+      const maxDelta = this.maxTurnRate * (frameDt * 60);
       deltaYaw = Math.max(-maxDelta, Math.min(maxDelta, deltaYaw));
       deltaPitch = Math.max(-maxDelta, Math.min(maxDelta, deltaPitch));
     }

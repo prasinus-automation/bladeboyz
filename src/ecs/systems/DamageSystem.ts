@@ -319,11 +319,14 @@ function applyKnockback(
   );
 
   // Control-loss window scales with launch speed: light shove ≈ untouched,
-  // heavy launch ≈ a full second of tumbling. Set, don't add.
+  // heavy launch ≈ the flight itself. Set, don't add. This is an upper
+  // bound — MovementSystem hands control back EARLY once the victim is
+  // grounded and slow (2026-07 fluidity pass), so the cap only matters
+  // while genuinely airborne/sliding.
   const speed = Math.sqrt(
     KnockbackState.vx[targetEid] ** 2 + KnockbackState.vz[targetEid] ** 2,
   ) + KnockbackState.vy[targetEid];
-  const ticks = Math.min(90, Math.round(speed * 6));
+  const ticks = Math.min(60, Math.round(speed * 5));
   KnockbackState.ticksRemaining[targetEid] = Math.max(
     KnockbackState.ticksRemaining[targetEid],
     ticks,

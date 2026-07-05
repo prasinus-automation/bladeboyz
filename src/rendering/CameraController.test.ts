@@ -127,13 +127,17 @@ describe('CameraController', () => {
       expect(controller.getPitch()).toBeCloseTo(-MAX_PITCH, 2);
     });
 
-    it('respects maxTurnRate limiter', () => {
-      controller.maxTurnRate = 1.0; // 1 rad/s
+    it('respects maxTurnRate limiter (radians per fixed tick)', () => {
+      // maxTurnRate is rad/TICK — the WeaponConfig turncap unit. The first
+      // processInput call has no prior-frame timestamp, so it budgets
+      // exactly one tick's worth (2026-07 unit fix: the old code divided
+      // by 60 a second time, freezing the mouse during swings).
+      controller.maxTurnRate = 0.05; // rad/tick ≈ 172°/s
       input.getMouseDelta.mockReturnValue({ x: 10000, y: 0 });
 
       controller.processInput();
-      // maxDelta per tick = 1.0 * (1/60) ≈ 0.0167
-      expect(Math.abs(controller.getYaw())).toBeLessThanOrEqual(1.0 / 60 + 0.001);
+      expect(Math.abs(controller.getYaw())).toBeLessThanOrEqual(0.05 + 0.001);
+      expect(Math.abs(controller.getYaw())).toBeGreaterThan(0.05 - 0.01);
     });
   });
 

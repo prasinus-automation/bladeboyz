@@ -377,7 +377,9 @@ export class CombatFSM {
         return (
           s === CombatState.Idle ||
           s === CombatState.Recovery || // combo buffer
-          s === CombatState.Windup // morph (different direction)
+          s === CombatState.Release || // combo buffer (queued mid-swing)
+          s === CombatState.Windup || // morph (different direction)
+          s === CombatState.Blocking // attack straight out of a block
         );
       case CombatInput.Block:
         return s === CombatState.Idle || s === CombatState.Recovery;
@@ -567,6 +569,27 @@ export class CombatFSM {
       this._comboBuffered = true;
       this._comboDirection = direction;
       this._isComboRecovery = true;
+      // FLUIDITY (2026-07): shorten the CURRENT recovery too. Before this,
+      // `comboRecovery` only applied to the recovery AFTER the next swing —
+      // the first chained click still sat out the full recovery (up to a
+      // second of dead time), which read as "movement locked after
+      // swinging". Clamping the running phase down means the buffered
+      // swing fires within `comboRecovery` ticks of the click.
+      const comboTotal = this._weaponConfig.comboRecovery[this._direction];
+      if (comboTotal < this._phaseTotal) {
+        this._phaseTotal = Math.max(comboTotal, this._phaseElapsed + 1);
+      }
+      return true;
+    }
+    if (this._state === CombatState.Release) {
+      // Queue mid-swing (Mordhau-style input buffering): the click is
+      // remembered, the upcoming Recovery enters at `comboRecovery` length
+      // (because `_isComboRecovery` is set before `_enterRecovery` runs),
+      // and the chained swing fires the moment it ends. Without this the
+      // click was silently eaten and mashing felt unresponsive.
+      this._comboBuffered = true;
+      this._comboDirection = direction;
+      this._isComboRecovery = true;
       return true;
     }
     if (this._state === CombatState.Windup) {
@@ -574,6 +597,14 @@ export class CombatFSM {
       // Same direction = no-op (avoid burning the morph chance).
       if (direction === this._direction) return false;
       this._enterWindup(direction, /* isMorph */ true);
+      return true;
+    }
+    if (this._state === CombatState.Blocking) {
+      // Attack straight out of a block — dropping the guard and swinging is
+      // one input, not release-RMB-then-click. Clears block-entry flags via
+      // `_enterWindup`'s fresh-swing path (stamina charged as normal).
+      this._blockingEntryWasJustPress = false;
+      this._enterWindup(direction, /* isMorph */ false);
       return true;
     }
     // Idle → Windup

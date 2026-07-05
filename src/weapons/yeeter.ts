@@ -34,17 +34,17 @@ export const yeeter: WeaponConfig = {
   },
 
   recovery: {
-    [Direction.Left]: 55,
-    [Direction.Right]: 55,
-    [Direction.Overhead]: 65,
-    [Direction.Stab]: 48,
+    [Direction.Left]: 33,
+    [Direction.Right]: 33,
+    [Direction.Overhead]: 39,
+    [Direction.Stab]: 29,
   },
 
   comboRecovery: {
-    [Direction.Left]: 45,
-    [Direction.Right]: 45,
-    [Direction.Overhead]: 52,
-    [Direction.Stab]: 40,
+    [Direction.Left]: 15,
+    [Direction.Right]: 15,
+    [Direction.Overhead]: 18,
+    [Direction.Stab]: 13,
   },
 
   parryWindow: 8,
@@ -58,10 +58,14 @@ export const yeeter: WeaponConfig = {
   },
 
   turncap: {
-    windup: 0.045,
-    release: 0.015,
-    recovery: 0.03,
-    hitStun: 0.005,
+    windup: 0.08,
+    release: 0.022,
+    // Recovery is UNCAPPED (2026-07 fluidity pass): once the blade is
+    // done, aim is free — the old cap read as "mouse stuck in molasses"
+    // for the whole post-swing window. Release keeps the drag/accel cap.
+    recovery: Infinity,
+    // 0.02 rad/tick ≈ 69°/s while staggered — dazed, not frozen.
+    hitStun: 0.02,
   },
 
   // It's a log. The entire log is the hitbox.
@@ -77,7 +81,7 @@ export const yeeter: WeaponConfig = {
 
   blockStaminaDrain: 30,
   parryStunTicks: 80,
-  hitStunTicks: 65,
+  hitStunTicks: 38,
 
   // YEET. Force tuned so a clean hit clears several meters with hang time.
   knockback: { force: 16.0, upward: 10.0 },

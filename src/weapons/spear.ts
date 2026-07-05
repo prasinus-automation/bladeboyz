@@ -33,17 +33,17 @@ export const spear: WeaponConfig = {
   },
 
   recovery: {
-    [Direction.Left]: 34,
-    [Direction.Right]: 34,
-    [Direction.Overhead]: 38,
-    [Direction.Stab]: 26,
+    [Direction.Left]: 20,
+    [Direction.Right]: 20,
+    [Direction.Overhead]: 23,
+    [Direction.Stab]: 15,
   },
 
   comboRecovery: {
-    [Direction.Left]: 26,
-    [Direction.Right]: 26,
-    [Direction.Overhead]: 30,
-    [Direction.Stab]: 18,
+    [Direction.Left]: 9,
+    [Direction.Right]: 9,
+    [Direction.Overhead]: 10,
+    [Direction.Stab]: 6,
   },
 
   parryWindow: 12,
@@ -57,10 +57,14 @@ export const spear: WeaponConfig = {
   },
 
   turncap: {
-    windup: 0.07,
-    release: 0.025,
-    recovery: 0.05,
-    hitStun: 0.005,
+    windup: 0.13,
+    release: 0.05,
+    // Recovery is UNCAPPED (2026-07 fluidity pass): once the blade is
+    // done, aim is free — the old cap read as "mouse stuck in molasses"
+    // for the whole post-swing window. Release keeps the drag/accel cap.
+    recovery: Infinity,
+    // 0.02 rad/tick ≈ 69°/s while staggered — dazed, not frozen.
+    hitStun: 0.02,
   },
 
   // Business end only — the tip half of a very long shaft.
@@ -75,7 +79,7 @@ export const spear: WeaponConfig = {
 
   blockStaminaDrain: 10,
   parryStunTicks: 55,
-  hitStunTicks: 40,
+  hitStunTicks: 26,
 
   // A poke, however sharp, is not a shove.
   knockback: { force: 2.0, upward: 0.5 },

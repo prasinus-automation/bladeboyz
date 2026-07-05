@@ -54,10 +54,10 @@ export const longsword: WeaponConfig = {
   // Overhead has longest recovery to balance its high damage.
 
   recovery: {
-    [Direction.Left]: 30,      // ~500ms
-    [Direction.Right]: 30,     // ~500ms
-    [Direction.Overhead]: 40,  // ~667ms — punished if you miss
-    [Direction.Stab]: 28,      // ~467ms — quickest recovery
+    [Direction.Left]: 18,
+    [Direction.Right]: 18,
+    [Direction.Overhead]: 24,
+    [Direction.Stab]: 16,
   },
 
   // ── Combo recovery durations (ticks) ──────────────────
@@ -65,10 +65,10 @@ export const longsword: WeaponConfig = {
   // Encourages aggressive play with mix-up potential.
 
   comboRecovery: {
-    [Direction.Left]: 20,      // ~333ms
-    [Direction.Right]: 20,     // ~333ms
-    [Direction.Overhead]: 28,  // ~467ms
-    [Direction.Stab]: 18,      // ~300ms
+    [Direction.Left]: 8,
+    [Direction.Right]: 8,
+    [Direction.Overhead]: 10,
+    [Direction.Stab]: 7,
   },
 
   // ── Parry window (ticks) ──────────────────────────────
@@ -106,10 +106,14 @@ export const longsword: WeaponConfig = {
   //   0.005 rad/tick ≈ 0.3 rad/s ≈ 17°/s (hitStun: nearly locked — staggered)
 
   turncap: {
-    windup: 0.08,
-    release: 0.03,
-    recovery: 0.05,
-    hitStun: 0.005,
+    windup: 0.14,
+    release: 0.05,
+    // Recovery is UNCAPPED (2026-07 fluidity pass): once the blade is
+    // done, aim is free — the old cap read as "mouse stuck in molasses"
+    // for the whole post-swing window. Release keeps the drag/accel cap.
+    recovery: Infinity,
+    // 0.02 rad/tick ≈ 69°/s while staggered — dazed, not frozen.
+    hitStun: 0.02,
   },
 
   // ── Tracer points (local space) ───────────────────────
@@ -139,7 +143,7 @@ export const longsword: WeaponConfig = {
   parryStunTicks: 60,
 
   /** HitStun ticks applied to target on unblocked hit */
-  hitStunTicks: 45,
+  hitStunTicks: 28,
 
   // ── Knockback ─────────────────────────────────────────
   // Solid shove — visibly rocks the target back a step.

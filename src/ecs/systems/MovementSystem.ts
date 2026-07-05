@@ -227,6 +227,21 @@ export function createMovementSystem(world: GameWorld, cameraController: CameraC
         if (KnockbackState.ticksRemaining[eid] > 0) {
           KnockbackState.ticksRemaining[eid] -= 1;
         }
+
+        // FLUIDITY (2026-07): give control back the moment the tumble is
+        // effectively over — grounded and knockback speed below walking
+        // pace. Without this the lock timer kept eating input for up to a
+        // second AFTER the victim had already stopped sliding, which felt
+        // like the game was ignoring the keyboard. Being launched stays
+        // uncontrollable (that's the fun); lying still does not.
+        if (
+          controlLocked &&
+          wasGrounded &&
+          KnockbackState.vx[eid] ** 2 + KnockbackState.vz[eid] ** 2 < 1.0
+        ) {
+          KnockbackState.ticksRemaining[eid] = 0;
+          controlLocked = false;
+        }
       }
 
       // Vertical velocity: gravity + jump

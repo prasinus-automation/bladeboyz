@@ -34,17 +34,17 @@ export const katana: WeaponConfig = {
   },
 
   recovery: {
-    [Direction.Left]: 24,
-    [Direction.Right]: 24,
-    [Direction.Overhead]: 32,
-    [Direction.Stab]: 24,
+    [Direction.Left]: 14,
+    [Direction.Right]: 14,
+    [Direction.Overhead]: 19,
+    [Direction.Stab]: 14,
   },
 
   comboRecovery: {
-    [Direction.Left]: 12,
-    [Direction.Right]: 12,
-    [Direction.Overhead]: 18,
-    [Direction.Stab]: 12,
+    [Direction.Left]: 5,
+    [Direction.Right]: 5,
+    [Direction.Overhead]: 8,
+    [Direction.Stab]: 5,
   },
 
   parryWindow: 14,
@@ -58,10 +58,14 @@ export const katana: WeaponConfig = {
   },
 
   turncap: {
-    windup: 0.09,
-    release: 0.04,
-    recovery: 0.06,
-    hitStun: 0.005,
+    windup: 0.16,
+    release: 0.07,
+    // Recovery is UNCAPPED (2026-07 fluidity pass): once the blade is
+    // done, aim is free — the old cap read as "mouse stuck in molasses"
+    // for the whole post-swing window. Release keeps the drag/accel cap.
+    recovery: Infinity,
+    // 0.02 rad/tick ≈ 69°/s while staggered — dazed, not frozen.
+    hitStun: 0.02,
   },
 
   tracerPoints: [
@@ -75,7 +79,7 @@ export const katana: WeaponConfig = {
 
   blockStaminaDrain: 8,
   parryStunTicks: 55,
-  hitStunTicks: 40,
+  hitStunTicks: 24,
 
   knockback: { force: 1.5, upward: 0.3 },
 };
