@@ -462,6 +462,146 @@ export function createYeeterModel(): WeaponModelResult {
   return { group, tracerPoints, gripOffset, gripRotation };
 }
 
+
+// ── Rapier Model ────────────────────────────────────────────
+
+/**
+ * Create a procedural rapier model — thin grip, swept-hilt guard sphere,
+ * long needle blade. The blade is deliberately the thinnest in the
+ * arsenal; the silhouette IS the fantasy.
+ */
+export function createRapierModel(): WeaponModelResult {
+  const group = new THREE.Group();
+
+  const gripMat = new THREE.MeshStandardMaterial({
+    color: 0x4a3520,
+    flatShading: true,
+  });
+  const guardMat = new THREE.MeshStandardMaterial({
+    color: 0xc0a850,
+    flatShading: true,
+  });
+  const bladeMat = new THREE.MeshStandardMaterial({
+    color: 0xd8d8e0,
+    flatShading: true,
+  });
+
+  // Grip (thin cylinder)
+  const GRIP_RADIUS = 0.015;
+  const GRIP_LEN = 0.12;
+  const grip = new THREE.Mesh(
+    new THREE.CylinderGeometry(GRIP_RADIUS, GRIP_RADIUS, GRIP_LEN, 6),
+    gripMat,
+  );
+  grip.position.set(0, GRIP_LEN / 2, 0);
+  group.add(grip);
+
+  // Swept-hilt guard (small sphere shell around the hand)
+  const GUARD_RADIUS = 0.05;
+  const guard = new THREE.Mesh(
+    new THREE.SphereGeometry(GUARD_RADIUS, 6, 4),
+    guardMat,
+  );
+  guard.position.set(0, GRIP_LEN + 0.02, 0);
+  group.add(guard);
+
+  // Needle blade (long, very thin box)
+  const BLADE_W = 0.015;
+  const BLADE_H = 1.35;
+  const BLADE_D = 0.008;
+  const BLADE_BASE = 0.17;
+  const blade = new THREE.Mesh(
+    new THREE.BoxGeometry(BLADE_W, BLADE_H, BLADE_D),
+    bladeMat,
+  );
+  blade.position.set(0, BLADE_BASE + BLADE_H / 2, 0);
+  group.add(blade);
+
+  // Tracer points along the blade (base → tip; tip = 0.17 + 1.35 = 1.52)
+  const tracerPoints: THREE.Vector3[] = [
+    new THREE.Vector3(0, 0.2, 0),
+    new THREE.Vector3(0, 0.65, 0),
+    new THREE.Vector3(0, 1.1, 0),
+    new THREE.Vector3(0, 1.52, 0),
+  ];
+
+  // Viewmodel grip data (#125, doc §4.3). Held point-forward and low —
+  // a fencing guard, not a shoulder carry.
+  const gripOffset = new THREE.Vector3(0, 0, -0.01);
+  const gripRotation = new THREE.Euler(-Math.PI * 0.88, 0, 0.05);
+
+  return { group, tracerPoints, gripOffset, gripRotation };
+}
+
+// ── Halberd Model ───────────────────────────────────────────
+
+/**
+ * Create a procedural halberd model — long shaft, offset axe blade near
+ * the top, and a thrusting spike above it. Asymmetric like the battleaxe,
+ * so the ground pickup gets a Z roll (see PICKUP_ORIENTATIONS).
+ */
+export function createHalberdModel(): WeaponModelResult {
+  const group = new THREE.Group();
+
+  const shaftMat = new THREE.MeshStandardMaterial({
+    color: 0x6b4a2b,
+    flatShading: true,
+  });
+  const headMat = new THREE.MeshStandardMaterial({
+    color: 0x8a8f94,
+    flatShading: true,
+  });
+
+  // Shaft (long cylinder)
+  const SHAFT_RADIUS = 0.022;
+  const SHAFT_LEN = 2.0;
+  const shaft = new THREE.Mesh(
+    new THREE.CylinderGeometry(SHAFT_RADIUS, SHAFT_RADIUS, SHAFT_LEN, 6),
+    shaftMat,
+  );
+  shaft.position.set(0, SHAFT_LEN / 2, 0);
+  group.add(shaft);
+
+  // Axe blade (flat box, offset to +X like the battleaxe head)
+  const BLADE_W = 0.22;
+  const BLADE_H = 0.3;
+  const BLADE_D = 0.015;
+  const BLADE_CENTER_Y = 1.7;
+  const blade = new THREE.Mesh(
+    new THREE.BoxGeometry(BLADE_W, BLADE_H, BLADE_D),
+    headMat,
+  );
+  blade.position.set(0.13, BLADE_CENTER_Y, 0);
+  group.add(blade);
+
+  // Top spike (cone) — 2.0 base to 2.15 apex; the thrust point.
+  const SPIKE_H = 0.15;
+  const spike = new THREE.Mesh(
+    new THREE.ConeGeometry(0.03, SPIKE_H, 6),
+    headMat,
+  );
+  spike.position.set(0, SHAFT_LEN + SPIKE_H / 2, 0);
+  group.add(spike);
+
+  // Tracer points: upper shaft → axe blade leading edge (x-offset) →
+  // spike apex. Mirrored exactly by the Halberd weapon config
+  // (TracerVisualParity.test).
+  const tracerPoints: THREE.Vector3[] = [
+    new THREE.Vector3(0, 1.45, 0),
+    new THREE.Vector3(0.16, 1.62, 0),
+    new THREE.Vector3(0.16, 1.78, 0),
+    new THREE.Vector3(0, 1.95, 0),
+    new THREE.Vector3(0, 2.15, 0),
+  ];
+
+  // Viewmodel grip data (#125, doc §4.3). Gripped low on the shaft with
+  // the head far forward — reads as a two-handed polearm carry.
+  const gripOffset = new THREE.Vector3(0, -0.1, 0);
+  const gripRotation = new THREE.Euler(-Math.PI * 0.82, 0, 0.08);
+
+  return { group, tracerPoints, gripOffset, gripRotation };
+}
+
 // ── Weapon Model Factory Registry ───────────────────────────
 
 /**
@@ -483,6 +623,8 @@ export const weaponModelFactories: Record<string, WeaponModelFactory> = {
   'Katana': createKatanaModel,
   'Scythe': createScytheModel,
   'Yeeter': createYeeterModel,
+  'Rapier': createRapierModel,
+  'Halberd': createHalberdModel,
 };
 
 // ── Ground Pickup Model ─────────────────────────────────────
@@ -511,6 +653,8 @@ const PICKUP_ORIENTATIONS: Record<string, { x: number; y: number; z: number }> =
   'Warhammer':  { x: -Math.PI / 2, y: 0, z: Math.PI / 4 },
   // Scythe's perpendicular blade — roll so the blade lies flat, not standing.
   'Scythe':     { x: -Math.PI / 2, y: 0, z: Math.PI / 2 },
+  // Halberd's offset axe head — roll onto its broad face like the battleaxe.
+  'Halberd':    { x: -Math.PI / 2, y: 0, z: Math.PI / 4 },
   // Zweihander / Spear / Katana / Yeeter lie naturally on the default roll.
 };
 

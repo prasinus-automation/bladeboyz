@@ -60,6 +60,8 @@ describe('createPlayer defaults', () => {
       'Katana',
       'Scythe',
       'Yeeter',
+      'Rapier',
+      'Halberd',
     ]);
   });
 

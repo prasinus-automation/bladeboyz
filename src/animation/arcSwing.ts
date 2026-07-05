@@ -59,7 +59,9 @@ export type WeaponName =
   | 'Spear'
   | 'Katana'
   | 'Scythe'
-  | 'Yeeter';
+  | 'Yeeter'
+  | 'Rapier'
+  | 'Halberd';
 
 // ── Helpers ──────────────────────────────────────────────
 
@@ -279,6 +281,10 @@ const WEAPON_SCALING: Record<WeaponName, WeaponScaling> = {
   Scythe: { shoulder: 1.2, forearm: 1.0, hand: 1.0, spine: 1.5, swingExponent: 1.5 },
   // Yeeter: maximum wind-up, maximum theater.
   Yeeter: { shoulder: 1.4, forearm: 0.95, hand: 0.9, spine: 1.7, swingExponent: 1.75 },
+  // Rapier: wrist-and-point fencing — tiny shoulder arcs, all extension.
+  Rapier: { shoulder: 0.8, forearm: 1.15, hand: 1.1, spine: 0.3, swingExponent: 1.1 },
+  // Halberd: long-lever polearm chops with real body commitment.
+  Halberd: { shoulder: 1.2, forearm: 1.05, hand: 1.0, spine: 1.3, swingExponent: 1.65 },
 };
 
 /**
