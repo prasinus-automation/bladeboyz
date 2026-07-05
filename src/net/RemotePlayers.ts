@@ -34,6 +34,7 @@ import {
   IsNPC,
   meshRegistry,
   hitboxColliderRegistry,
+  MovementState,
 } from '../ecs/components';
 import { createCharacterModel } from '../rendering/CharacterModel';
 import { createHitboxes } from '../ecs/systems/HitboxSystem';
@@ -41,7 +42,7 @@ import { colliderToHitbox } from '../ecs/systems/TracerSystem';
 import { weaponModelFactories } from '../rendering/WeaponModels';
 import { weaponIdToName } from '../ecs/systems/CombatSystem';
 import { CombatState } from '../combat/states';
-import { GROUND_TOP_Y, CHARACTER_CONTROLLER_OFFSET } from '../core/types';
+import { GROUND_TOP_Y, CHARACTER_CONTROLLER_OFFSET, WALK_SPEED, FIXED_TIMESTEP } from '../core/types';
 import type { GameWorld } from '../core/types';
 import type { NetPlayerState } from './protocol';
 
@@ -99,6 +100,10 @@ export function createRemotePlayer(
   addComponent(world.ecs, AnimationComp, eid);
   addComponent(world.ecs, HitReactComp, eid);
   addComponent(world.ecs, RemotePlayer, eid);
+  // MovementState so AnimationSystem's locomotion layer animates remote
+  // legs (#goal-2026-07 locomotion pass) — without it speedFactor reads 0
+  // and remotes GLIDE across the arena in the idle leg pose.
+  addComponent(world.ecs, MovementState, eid);
   // IsNPC: reuses the non-local-combatant chrome — head health bar
   // ([IsNPC, Health] query) and floating damage numbers. Remote players
   // are NOT IsTrainingDummy (no auto-regen, no K-reset).
@@ -116,6 +121,11 @@ export function createRemotePlayer(
   Stamina.current[eid] = 100;
   Stamina.max[eid] = 100;
   CombatStateComponent.state[eid] = CombatState.Idle;
+  MovementState.grounded[eid] = 1;
+  MovementState.sprinting[eid] = 0;
+  MovementState.crouching[eid] = 0;
+  MovementState.speedFactor[eid] = 0;
+  MovementState.verticalVelocity[eid] = 0;
 
   // Distinct silhouette color per remote (hash of netId) — teal-to-purple
   // band, away from local blue / dummy red / bot orange.
@@ -222,6 +232,33 @@ export function pushRemoteState(eid: number, s: NetPlayerState, now: number): vo
 }
 
 /**
+ * Derive locomotion state from one tick of interpolated remote motion
+ * (#goal-2026-07 locomotion pass). Pure so it's unit-testable: takes the
+ * tick displacement and the current smoothed speed factor, returns the
+ * new MovementState values. Remote packets carry no gait flags — the
+ * planar velocity of the puppet is the ground truth the local viewer
+ * perceives anyway. The low-pass (0.3/tick) keeps sample jitter from
+ * making the legs stutter.
+ */
+export function deriveRemoteGait(
+  dx: number,
+  dy: number,
+  dz: number,
+  currentSpeedFactor: number,
+): { speedFactor: number; sprinting: 0 | 1; grounded: 0 | 1 } {
+  const planarSpeed = Math.sqrt(dx * dx + dz * dz) / FIXED_TIMESTEP;
+  const targetFactor = Math.min(1, planarSpeed / WALK_SPEED);
+  return {
+    speedFactor:
+      currentSpeedFactor + (targetFactor - currentSpeedFactor) * 0.3,
+    sprinting: planarSpeed > WALK_SPEED * 1.15 ? 1 : 0,
+    // Airborne when the puppet moves vertically faster than slope/step
+    // noise — drives the jump pose instead of moon-glide legs.
+    grounded: Math.abs(dy / FIXED_TIMESTEP) > 3 ? 0 : 1,
+  };
+}
+
+/**
  * Interpolate remote player positions/yaw toward `now - INTERP_DELAY_MS`.
  * Runs each fixed tick BEFORE hitboxSystem so hitboxes track the puppet.
  */
@@ -275,6 +312,17 @@ export function remotePlayerSystem(world: GameWorld, now: number): void {
     Position.y[eid] = y;
     Position.z[eid] = z;
     Rotation.y[eid] = yaw;
+
+    // ── Derive locomotion state from the interpolated motion ──
+    const gait = deriveRemoteGait(
+      Position.x[eid] - PreviousPosition.x[eid],
+      Position.y[eid] - PreviousPosition.y[eid],
+      Position.z[eid] - PreviousPosition.z[eid],
+      MovementState.speedFactor[eid],
+    );
+    MovementState.speedFactor[eid] = gait.speedFactor;
+    MovementState.sprinting[eid] = gait.sprinting;
+    MovementState.grounded[eid] = gait.grounded;
   }
 }
 

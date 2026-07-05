@@ -27,6 +27,8 @@ import '../weapons/spear';
 import '../weapons/katana';
 import '../weapons/scythe';
 import '../weapons/yeeter';
+import '../weapons/rapier';
+import '../weapons/halberd';
 
 describe('tracer points match the visible weapon geometry', () => {
   for (const name of weaponIdToName) {

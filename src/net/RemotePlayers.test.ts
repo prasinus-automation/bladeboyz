@@ -16,7 +16,7 @@ import {
   CombatStateComp,
   CombatStateComponent,
 } from '../ecs/components';
-import { pushRemoteState, remotePlayerRegistry } from './RemotePlayers';
+import { pushRemoteState, remotePlayerRegistry, deriveRemoteGait } from './RemotePlayers';
 import type { NetPlayerState } from './protocol';
 
 function makeRemotePuppet(pitch: number): { eid: number; state: NetPlayerState } {
@@ -57,5 +57,36 @@ describe('remote pitch parity (PR #199)', () => {
     pushRemoteState(eid, state, 2000);
     expect(Rotation.x[eid]).toBe(0);
     remotePlayerRegistry.delete(eid);
+  });
+});
+
+describe('deriveRemoteGait (#goal-2026-07 locomotion pass)', () => {
+  const TICK = 1 / 60;
+  const WALK = 4.5;
+
+  it('a stationary puppet decays toward speedFactor 0', () => {
+    const g = deriveRemoteGait(0, 0, 0, 1.0);
+    expect(g.speedFactor).toBeLessThan(1.0);
+    expect(g.sprinting).toBe(0);
+    expect(g.grounded).toBe(1);
+  });
+
+  it('walking pace converges to speedFactor 1 without sprint flag', () => {
+    let factor = 0;
+    for (let i = 0; i < 40; i++) {
+      factor = deriveRemoteGait(WALK * TICK, 0, 0, factor).speedFactor;
+    }
+    expect(factor).toBeGreaterThan(0.95);
+    expect(deriveRemoteGait(WALK * TICK, 0, 0, factor).sprinting).toBe(0);
+  });
+
+  it('sprint pace sets the sprint flag', () => {
+    const g = deriveRemoteGait(7.5 * TICK, 0, 0, 0.5);
+    expect(g.sprinting).toBe(1);
+  });
+
+  it('fast vertical motion reads as airborne; slope noise does not', () => {
+    expect(deriveRemoteGait(0, 9 * TICK, 0, 0).grounded).toBe(0);
+    expect(deriveRemoteGait(0, 0.5 * TICK, 0, 0).grounded).toBe(1);
   });
 });
