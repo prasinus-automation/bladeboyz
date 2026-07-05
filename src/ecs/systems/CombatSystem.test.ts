@@ -22,17 +22,40 @@ class MockInputManager {
   private _mouseButtons = new Set<number>();
   private _keys = new Set<string>();
   private _mouseDelta = { x: 0, y: 0 };
+  // Latched edges, mirroring the real InputManager (consume-on-read).
+  private _pressedMouse = new Set<number>();
+  private _releasedMouse = new Set<number>();
+  private _pressedKeys = new Set<string>();
 
   pressMouseButton(button: number): void {
     this._mouseButtons.add(button);
+    this._pressedMouse.add(button);
   }
 
   releaseMouseButton(button: number): void {
     this._mouseButtons.delete(button);
+    this._releasedMouse.add(button);
   }
 
   isMouseButtonDown(button: number): boolean {
     return this._mouseButtons.has(button);
+  }
+
+  consumeMousePress(button: number): boolean {
+    return this._pressedMouse.delete(button);
+  }
+
+  consumeMouseRelease(button: number): boolean {
+    return this._releasedMouse.delete(button);
+  }
+
+  pressKey(code: string): void {
+    this._keys.add(code);
+    this._pressedKeys.add(code);
+  }
+
+  consumeKeyPress(code: string): boolean {
+    return this._pressedKeys.delete(code);
   }
 
   isKeyDown(code: string): boolean {

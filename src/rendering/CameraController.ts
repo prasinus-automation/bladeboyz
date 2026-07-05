@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Position, PreviousPosition, Rotation, PreviousRotation, MovementState } from '../ecs/components';
+import { extrapolateRenderPosition, type RenderPosition } from './renderExtrapolation';
 import { InputManager } from '../input/InputManager';
 import {
   MOUSE_SENSITIVITY,
@@ -28,6 +29,7 @@ export const enum CameraMode {
  */
 // Reusable temp vector to avoid per-frame allocations in third-person mode
 const _tempTarget = new THREE.Vector3();
+const _renderPos: RenderPosition = { x: 0, y: 0, z: 0 };
 
 export class CameraController {
   private camera: THREE.PerspectiveCamera;
@@ -187,17 +189,15 @@ export class CameraController {
    * Called during render() with interpolation alpha.
    */
   updateCamera(playerEntity: number, alpha: number): void {
-    // Interpolate position
-    const prevX = PreviousPosition.x[playerEntity];
-    const prevY = PreviousPosition.y[playerEntity];
-    const prevZ = PreviousPosition.z[playerEntity];
-    const currX = Position.x[playerEntity];
-    const currY = Position.y[playerEntity];
-    const currZ = Position.z[playerEntity];
-
-    const x = prevX + (currX - prevX) * alpha;
-    const y = prevY + (currY - prevY) * alpha;
-    const z = prevZ + (currZ - prevZ) * alpha;
+    // Extrapolate position (renders "now" instead of one tick ago) — the
+    // camera look is per-frame and lag-free, so interpolating the position
+    // made the world drag a tick behind the aim. Shares the helper with the
+    // local player mesh sync in main.ts so camera and body stay in
+    // lockstep. See renderExtrapolation.ts for the descent special case.
+    extrapolateRenderPosition(playerEntity, alpha, _renderPos);
+    const x = _renderPos.x;
+    const y = _renderPos.y;
+    const z = _renderPos.z;
 
     // Determine eye height based on crouch state
     const isCrouching = MovementState.crouching[playerEntity] === 1;

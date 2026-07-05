@@ -151,15 +151,42 @@ describe('CameraController', () => {
       );
     });
 
-    it('interpolates position with alpha', () => {
+    it('extrapolates position with alpha (renders "now", not one tick ago)', () => {
       PreviousPosition.x[eid] = 0;
       Position.x[eid] = 10;
 
       controller.updateCamera(eid, 0.5);
-      // x should be lerped: 0 + (10-0)*0.5 = 5
+      // x extrapolates the last tick's velocity forward:
+      // 10 + (10-0)*0.5 = 15 (interpolation would give 5 — a tick behind)
       expect(camera.position.set).toHaveBeenCalledWith(
-        expect.closeTo(5, 1),
+        expect.closeTo(15, 1),
         expect.any(Number),
+        expect.any(Number),
+      );
+    });
+
+    it('interpolates (not extrapolates) descending Y so landings never render below the last committed height', () => {
+      PreviousPosition.y[eid] = 2;
+      Position.y[eid] = 1;
+
+      controller.updateCamera(eid, 0.5);
+      // Descending: y interpolates 2 + (1-2)*0.5 = 1.5, + eye height 1.6
+      expect(camera.position.set).toHaveBeenCalledWith(
+        expect.any(Number),
+        expect.closeTo(3.1, 1),
+        expect.any(Number),
+      );
+    });
+
+    it('extrapolates ascending Y (snappy jump launch)', () => {
+      PreviousPosition.y[eid] = 1;
+      Position.y[eid] = 2;
+
+      controller.updateCamera(eid, 0.5);
+      // Ascending: y extrapolates 2 + (2-1)*0.5 = 2.5, + eye height 1.6
+      expect(camera.position.set).toHaveBeenCalledWith(
+        expect.any(Number),
+        expect.closeTo(4.1, 1),
         expect.any(Number),
       );
     });

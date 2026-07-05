@@ -7,17 +7,12 @@ import type { GameWorld } from '../../core/types';
 const playerIntentQuery = defineQuery([Player, MovementIntent]);
 
 /**
- * Module-level edge-trigger state for jump. Single-player only — when the
- * day-2 multiplayer refactor lands, this becomes per-controller state.
- */
-let prevJumpKeyDown = false;
-
-/**
  * Reset module-level state. Used by tests to ensure clean isolation.
+ * Jump edge detection moved into InputManager's latched-edge sets
+ * (`consumeKeyPress`), so there is no module state left to reset — kept
+ * because test setups call it and future module state may return.
  */
-export function resetInputState(): void {
-  prevJumpKeyDown = false;
-}
+export function resetInputState(): void {}
 
 /**
  * InputSystem — translates raw `InputManager` queries into `MovementIntent`
@@ -53,7 +48,9 @@ export function createInputSystem(
     const dKey = input.isKeyDown('KeyD');
     const wantSprint = input.isKeyDown('ShiftLeft') || input.isKeyDown('ShiftRight');
     const wantCrouch = input.isKeyDown('ControlLeft') || input.isKeyDown('ControlRight');
-    const spaceDown = input.isKeyDown('Space');
+    // Latched edge: fires once per physical press, even if Space went
+    // down+up entirely between two ticks (state polling dropped those).
+    const jumpPressed = input.consumeKeyPress('Space');
 
     const forward = (wKey ? 1 : 0) - (sKey ? 1 : 0);
     const strafe = (dKey ? 1 : 0) - (aKey ? 1 : 0);
@@ -81,7 +78,7 @@ export function createInputSystem(
     const sprintGated =
       wantSprint && !wantCrouch && forward > 0 ? 1 : 0;
     const crouchFlag = wantCrouch ? 1 : 0;
-    const jumpEdge = spaceDown && !prevJumpKeyDown ? 1 : 0;
+    const jumpEdge = jumpPressed ? 1 : 0;
 
     for (let i = 0; i < entities.length; i++) {
       const eid = entities[i];
@@ -91,7 +88,5 @@ export function createInputSystem(
       MovementIntent.crouch[eid] = crouchFlag;
       MovementIntent.jumpRequested[eid] = jumpEdge;
     }
-
-    prevJumpKeyDown = spaceDown;
   };
 }

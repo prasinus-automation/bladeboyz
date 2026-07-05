@@ -13,6 +13,7 @@ import { createInputSystem, resetInputState } from './InputSystem';
 import {
   WALK_SPEED, SPRINT_MULTIPLIER, CROUCH_MULTIPLIER,
   GRAVITY, JUMP_VELOCITY, FIXED_TIMESTEP, ACCELERATION_TIME,
+  JUMP_BUFFER_TICKS, COYOTE_TICKS,
   MAX_SLOPE_CLIMB_ANGLE, MIN_SLOPE_SLIDE_ANGLE,
 } from '../../core/types';
 
@@ -86,6 +87,10 @@ function createTestEntity(
   MovementState.speedFactor[eid] = opts.speedFactor ?? 0;
   MovementState.verticalVelocity[eid] = 0;
   MovementState.lastJumpTick[eid] = -1;
+  // bitecs component arrays are global across worlds — reset the jump
+  // buffer/coyote bookkeeping so state can't leak between tests.
+  MovementState.lastGroundedTick[eid] = 0;
+  MovementState.jumpBufferTick[eid] = 0;
   MovementIntent.moveX[eid] = 0;
   MovementIntent.moveZ[eid] = 0;
   MovementIntent.sprint[eid] = 0;
@@ -270,6 +275,81 @@ describe('MovementSystem', () => {
       expect(MovementState.lastJumpTick[eid]).toBe(-1);
       movementSystem(FIXED_TIMESTEP);
       expect(MovementState.lastJumpTick[eid]).toBeGreaterThan(0);
+    });
+  });
+
+  /* ─── Jump buffering + coyote time (#goal-2026-07) ─── */
+
+  describe('jump buffer', () => {
+    it('a press while airborne executes on landing within JUMP_BUFFER_TICKS', () => {
+      const eid = setup({ jumpRequested: 1 }, 0, 0, { grounded: 0 });
+      mockController.computedGrounded.mockReturnValue(false);
+      movementSystem(FIXED_TIMESTEP); // airborne: press banked, no jump
+      expect(MovementState.verticalVelocity[eid]).not.toBe(JUMP_VELOCITY);
+
+      // Land two ticks later — controller reports grounded.
+      mockController.computedGrounded.mockReturnValue(true);
+      movementSystem(FIXED_TIMESTEP); // landing tick: grounded flag set
+      movementSystem(FIXED_TIMESTEP); // buffered press fires
+      expect(MovementState.verticalVelocity[eid]).toBe(JUMP_VELOCITY);
+    });
+
+    it('a press older than JUMP_BUFFER_TICKS is forgotten', () => {
+      const eid = setup({ jumpRequested: 1 }, 0, 0, { grounded: 0 });
+      mockController.computedGrounded.mockReturnValue(false);
+      // Stay airborne past the buffer window.
+      for (let i = 0; i < JUMP_BUFFER_TICKS + 2; i++) {
+        movementSystem(FIXED_TIMESTEP);
+      }
+      mockController.computedGrounded.mockReturnValue(true);
+      movementSystem(FIXED_TIMESTEP);
+      movementSystem(FIXED_TIMESTEP);
+      expect(MovementState.verticalVelocity[eid]).not.toBe(JUMP_VELOCITY);
+    });
+  });
+
+  describe('coyote time', () => {
+    it('a jump pressed just after walking off a ledge still fires', () => {
+      const eid = setup({}, 0, 0, { grounded: 1 });
+      movementSystem(FIXED_TIMESTEP); // grounded tick (records lastGroundedTick)
+
+      // Walk off the ledge: airborne now.
+      mockController.computedGrounded.mockReturnValue(false);
+      MovementState.grounded[eid] = 0;
+      movementSystem(FIXED_TIMESTEP); // 1 tick airborne, falling
+
+      MovementIntent.jumpRequested[eid] = 1;
+      movementSystem(FIXED_TIMESTEP); // within COYOTE_TICKS of last ground
+      expect(MovementState.verticalVelocity[eid]).toBe(JUMP_VELOCITY);
+    });
+
+    it('does NOT fire after COYOTE_TICKS have passed', () => {
+      const eid = setup({}, 0, 0, { grounded: 1 });
+      movementSystem(FIXED_TIMESTEP);
+
+      mockController.computedGrounded.mockReturnValue(false);
+      MovementState.grounded[eid] = 0;
+      for (let i = 0; i < COYOTE_TICKS + 1; i++) {
+        movementSystem(FIXED_TIMESTEP);
+      }
+
+      MovementIntent.jumpRequested[eid] = 1;
+      movementSystem(FIXED_TIMESTEP);
+      expect(MovementState.verticalVelocity[eid]).not.toBe(JUMP_VELOCITY);
+    });
+
+    it('does NOT grant a second boost after a real jump (no coyote double-jump)', () => {
+      const eid = setup({ jumpRequested: 1 }, 0, 0, { grounded: 1 });
+      // The jump leaves the ground, so the controller reports airborne
+      // from this tick's movement onward.
+      mockController.computedGrounded.mockReturnValue(false);
+      movementSystem(FIXED_TIMESTEP); // jumps off the ground
+      expect(MovementState.verticalVelocity[eid]).toBe(JUMP_VELOCITY);
+
+      // Immediately press again while rising, still inside the coyote window.
+      MovementIntent.jumpRequested[eid] = 1;
+      movementSystem(FIXED_TIMESTEP);
+      expect(MovementState.verticalVelocity[eid]).toBeLessThan(JUMP_VELOCITY);
     });
   });
 

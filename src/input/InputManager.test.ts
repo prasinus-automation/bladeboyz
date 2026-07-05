@@ -94,6 +94,60 @@ describe('InputManager', () => {
     });
   });
 
+  describe('latched edges (consume-on-read, sub-tick click fix)', () => {
+    it('consumeMousePress fires exactly once per press', () => {
+      fireEvent('document', 'mousedown', { button: 0 });
+      expect(input.consumeMousePress(0)).toBe(true);
+      expect(input.consumeMousePress(0)).toBe(false);
+    });
+
+    it('a press+release entirely between ticks still delivers its edge', () => {
+      // The sub-tick click: state polling would never see the button down.
+      fireEvent('document', 'mousedown', { button: 0 });
+      fireEvent('document', 'mouseup', { button: 0 });
+      expect(input.isMouseButtonDown(0)).toBe(false); // state already gone
+      expect(input.consumeMousePress(0)).toBe(true); // edge preserved
+      expect(input.consumeMouseRelease(0)).toBe(true);
+    });
+
+    it('consumeKeyPress fires exactly once per press, even after keyup', () => {
+      fireEvent('document', 'keydown', { code: 'Space' });
+      fireEvent('document', 'keyup', { code: 'Space' });
+      expect(input.consumeKeyPress('Space')).toBe(true);
+      expect(input.consumeKeyPress('Space')).toBe(false);
+    });
+
+    it('key auto-repeat does not re-latch the press edge', () => {
+      fireEvent('document', 'keydown', { code: 'Space' });
+      expect(input.consumeKeyPress('Space')).toBe(true);
+      fireEvent('document', 'keydown', { code: 'Space', repeat: true });
+      expect(input.consumeKeyPress('Space')).toBe(false);
+    });
+
+    it('consume returns false while paused, and pausing clears pending presses', () => {
+      fireEvent('document', 'mousedown', { button: 0 });
+      input.paused = true;
+      expect(input.consumeMousePress(0)).toBe(false);
+      input.paused = false;
+      expect(input.consumeMousePress(0)).toBe(false); // cleared by pause
+    });
+
+    it('pausing latches a release edge for held buttons (block must end)', () => {
+      fireEvent('document', 'mousedown', { button: 2 });
+      input.paused = true; // swallows the real mouseup
+      expect(input.consumeMouseRelease(2)).toBe(true);
+    });
+
+    it('presses arriving while paused are not latched', () => {
+      input.paused = true;
+      fireEvent('document', 'mousedown', { button: 0 });
+      fireEvent('document', 'keydown', { code: 'Space' });
+      input.paused = false;
+      expect(input.consumeMousePress(0)).toBe(false);
+      expect(input.consumeKeyPress('Space')).toBe(false);
+    });
+  });
+
   describe('mouse delta', () => {
     it('returns zero delta by default', () => {
       const delta = input.getMouseDelta();

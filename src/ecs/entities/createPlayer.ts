@@ -159,6 +159,8 @@ export function createPlayer(
   MovementState.speedFactor[eid] = 0;
   MovementState.verticalVelocity[eid] = 0;
   MovementState.lastJumpTick[eid] = -1;
+  MovementState.lastGroundedTick[eid] = 0;
+  MovementState.jumpBufferTick[eid] = 0;
   MovementIntent.moveX[eid] = 0;
   MovementIntent.moveZ[eid] = 0;
   MovementIntent.sprint[eid] = 0;

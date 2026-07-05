@@ -83,10 +83,35 @@ import '../weapons/dagger';
 import '../weapons/battleaxe';
 
 class FakeInput {
-  buttons = new Set<number>();
+  // Held-state + latched edges, mirroring the real InputManager. The
+  // `buttons` facade keeps `input.buttons.add/delete` call sites working
+  // while latching edges for CombatSystem's consume-on-read API.
+  private _held = new Set<number>();
+  private _pressed = new Set<number>();
+  private _released = new Set<number>();
+  buttons = {
+    add: (b: number) => {
+      this._held.add(b);
+      this._pressed.add(b);
+    },
+    delete: (b: number) => {
+      this._held.delete(b);
+      this._released.add(b);
+    },
+    has: (b: number) => this._held.has(b),
+  };
   avgDelta = { dx: 0, dy: 0 };
   isMouseButtonDown(btn: number): boolean {
-    return this.buttons.has(btn);
+    return this._held.has(btn);
+  }
+  consumeMousePress(btn: number): boolean {
+    return this._pressed.delete(btn);
+  }
+  consumeMouseRelease(btn: number): boolean {
+    return this._released.delete(btn);
+  }
+  consumeKeyPress(_code: string): boolean {
+    return false;
   }
   getAccumulatedDelta(): { dx: number; dy: number } {
     return { ...this.avgDelta };

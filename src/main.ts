@@ -3,6 +3,7 @@ import { GameLoop } from './core/GameLoop';
 import { InputManager } from './input/InputManager';
 import { shouldDispatchDebugKey } from './input/debugKeyGate';
 import { CameraController } from './rendering/CameraController';
+import { extrapolateRenderPosition } from './rendering/renderExtrapolation';
 import { createMovementSystem } from './ecs/systems/MovementSystem';
 import { createInputSystem } from './ecs/systems/InputSystem';
 import { createCombatSystem } from './ecs/systems/CombatSystem';
@@ -902,6 +903,10 @@ async function main(): Promise<void> {
     }
   };
 
+  // Scratch for the local player's extrapolated render position (no
+  // per-frame allocation).
+  const _localRenderPos = { x: 0, y: 0, z: 0 };
+
   loop.render = (alpha: number) => {
     // Sync skeletal mesh groups by interpolating between the previous tick
     // and current tick's positions. This prevents visible 60Hz snapping at
@@ -909,10 +914,16 @@ async function main(): Promise<void> {
     // fixedUpdate — so the mesh interpolates smoothly between physics ticks.
     const playerModelData = meshRegistry.get(playerEid);
     if (playerModelData) {
-      const px = lerp(PreviousPosition.x[playerEid], Position.x[playerEid], alpha);
-      const py = lerp(PreviousPosition.y[playerEid], Position.y[playerEid], alpha);
-      const pz = lerp(PreviousPosition.z[playerEid], Position.z[playerEid], alpha);
-      playerModelData.group.position.set(px, py, pz);
+      // Local player EXTRAPOLATES (renders "now" instead of one tick ago) —
+      // see renderExtrapolation.ts. Must stay in lockstep with
+      // cameraController.updateCamera, which uses the same helper, or the
+      // third-person camera would visibly lead its own body.
+      extrapolateRenderPosition(playerEid, alpha, _localRenderPos);
+      playerModelData.group.position.set(
+        _localRenderPos.x,
+        _localRenderPos.y,
+        _localRenderPos.z,
+      );
       // Body yaw follows aim. Plain lerp is safe (no wrap handling) because
       // CameraController yaw accumulates continuously — consecutive tick
       // values are always close. hitboxSystem writes the un-lerped value at

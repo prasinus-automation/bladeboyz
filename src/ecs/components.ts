@@ -140,6 +140,18 @@ export const MovementState = defineComponent({
   verticalVelocity: Types.f32,
   /** Tick of last successful jump (for jump cooldown / debug) */
   lastJumpTick: Types.i32,
+  /**
+   * Tick the entity was last grounded (coyote time, #goal-2026-07).
+   * 0 = never grounded. Lets a jump pressed just after walking off a
+   * ledge still fire within COYOTE_TICKS.
+   */
+  lastGroundedTick: Types.i32,
+  /**
+   * Tick of the most recent unconsumed jump request (jump buffering).
+   * 0 = none. A press up to JUMP_BUFFER_TICKS before landing executes on
+   * the landing tick instead of being eaten mid-air.
+   */
+  jumpBufferTick: Types.i32,
 });
 
 /**

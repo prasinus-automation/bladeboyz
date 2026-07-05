@@ -23,6 +23,8 @@ import {
   JUMP_VELOCITY,
   CHARACTER_CONTROLLER_OFFSET,
   ACCELERATION_TIME,
+  JUMP_BUFFER_TICKS,
+  COYOTE_TICKS,
   FIXED_TIMESTEP,
   MAX_SLOPE_CLIMB_ANGLE,
   MIN_SLOPE_SLIDE_ANGLE,
@@ -266,17 +268,38 @@ export function createMovementSystem(world: GameWorld, cameraController: CameraC
         if (MovementState.verticalVelocity[eid] < 0) {
           MovementState.verticalVelocity[eid] = 0;
         }
-        // Edge-triggered jump (suppressed while knocked back — you can't
-        // jump mid-tumble).
-        if (jumpIntent && !controlLocked) {
-          MovementState.verticalVelocity[eid] = JUMP_VELOCITY;
-          MovementState.grounded[eid] = 0;
-          MovementState.lastJumpTick[eid] = movementTick;
-        }
+        MovementState.lastGroundedTick[eid] = movementTick;
       }
-      // Consume the jump intent regardless of grounded — InputSystem will
-      // re-set it next tick if Space is still on the rising edge (it won't be
-      // unless the user lets go and presses again).
+
+      // ── Jump: buffered + coyote (#goal-2026-07 movement-feel pass) ──
+      // A press is remembered for JUMP_BUFFER_TICKS instead of being eaten
+      // when it lands a tick early, and remains valid for COYOTE_TICKS
+      // after walking off an edge. Suppressed while knocked back — you
+      // can't jump mid-tumble (and a press during the tumble is not
+      // banked either).
+      if (jumpIntent && !controlLocked) {
+        MovementState.jumpBufferTick[eid] = movementTick;
+      }
+      const buffered =
+        MovementState.jumpBufferTick[eid] > 0 &&
+        movementTick - MovementState.jumpBufferTick[eid] <= JUMP_BUFFER_TICKS;
+      // Coyote only applies while falling off a ledge — a jump must not
+      // grant a second boost mid-ascent, so the entity can't have jumped
+      // since it was last grounded and can't be moving upward.
+      const coyoteOk =
+        wasGrounded ||
+        (MovementState.lastGroundedTick[eid] > 0 &&
+          movementTick - MovementState.lastGroundedTick[eid] <= COYOTE_TICKS &&
+          MovementState.lastJumpTick[eid] < MovementState.lastGroundedTick[eid] &&
+          MovementState.verticalVelocity[eid] <= 0.01);
+      if (buffered && coyoteOk && !controlLocked) {
+        MovementState.verticalVelocity[eid] = JUMP_VELOCITY;
+        MovementState.grounded[eid] = 0;
+        MovementState.lastJumpTick[eid] = movementTick;
+        MovementState.jumpBufferTick[eid] = 0;
+      }
+      // Consume the jump intent — the buffer above owns retries now, so a
+      // one-tick MovementIntent pulse is all a controller needs to send.
       MovementIntent.jumpRequested[eid] = 0;
 
       // Transitional bridge: mirror verticalVelocity to legacy Velocity.y

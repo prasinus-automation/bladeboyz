@@ -90,6 +90,17 @@ export const JUMP_VELOCITY = 9.0;
 export const GROUND_CAST_DISTANCE = 0.15;
 export const CHARACTER_CONTROLLER_OFFSET = 0.02;
 
+/**
+ * Jump forgiveness (#goal-2026-07 movement-feel pass). A jump pressed up
+ * to JUMP_BUFFER_TICKS before landing fires on the landing tick instead of
+ * being eaten mid-air; a jump pressed up to COYOTE_TICKS after walking off
+ * an edge still fires. Both are standard platformer input-forgiveness —
+ * without them bhop chains drop whenever a press lands a frame early/late,
+ * which reads as "the game ignored my jump".
+ */
+export const JUMP_BUFFER_TICKS = 4; // ~67ms
+export const COYOTE_TICKS = 3; // 50ms
+
 /** Slope handling for the kinematic character controller */
 export const MAX_SLOPE_CLIMB_ANGLE = (45 * Math.PI) / 180;
 export const MIN_SLOPE_SLIDE_ANGLE = (30 * Math.PI) / 180;
@@ -111,5 +122,10 @@ export const THIRD_PERSON_DISTANCE = 5.0;
 export const THIRD_PERSON_MIN_DISTANCE = 2.0;
 export const THIRD_PERSON_MAX_DISTANCE = 15.0;
 
-/** Acceleration: time to reach full speed in seconds */
-export const ACCELERATION_TIME = 0.075; // 75ms
+/**
+ * Acceleration: time to reach full speed in seconds. Cut 0.075 → 0.04 in
+ * the #goal-2026-07 movement-feel pass — 75ms (4.5 ticks) of ramp read as
+ * input lag on direction changes; 40ms keeps a hint of weight without the
+ * mush. Deceleration is 2× this rate (see MovementSystem).
+ */
+export const ACCELERATION_TIME = 0.04; // 40ms
