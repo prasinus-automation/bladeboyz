@@ -416,6 +416,34 @@ export function getMovementParams(key: string): MovementAnimParams {
   return MOVEMENT_PARAMS[key] ?? MOVEMENT_PARAMS['idle'];
 }
 
+/** Gait numbers shared by walk and run, continuously blendable. */
+export interface GaitParams {
+  legSwing: number;
+  armSwing: number;
+  cycleSpeed: number;
+}
+
+/**
+ * Continuously blended walk↔run gait (#goal-2026-07 locomotion pass).
+ *
+ * `speedNorm` is the entity's planar speed normalized to sprint speed
+ * (plain walking ≈ 0.6, full sprint = 1.0). The old system picked walk
+ * OR run params at a hard speedFactor threshold, so stride length and
+ * cadence JUMPED mid-motion. This lerps the three gait numbers across
+ * the 0.55→1.0 band instead: pure walk gait at walking pace, pure run
+ * gait at sprint, smooth in between.
+ */
+export function getBlendedGaitParams(speedNorm: number): GaitParams {
+  const walk = MOVEMENT_PARAMS['walk'];
+  const run = MOVEMENT_PARAMS['run'];
+  const t = Math.max(0, Math.min(1, (speedNorm - 0.55) / 0.45));
+  return {
+    legSwing: walk.legSwing + (run.legSwing - walk.legSwing) * t,
+    armSwing: walk.armSwing + (run.armSwing - walk.armSwing) * t,
+    cycleSpeed: walk.cycleSpeed + (run.cycleSpeed - walk.cycleSpeed) * t,
+  };
+}
+
 // ── Upper/Lower body bone sets ───────────────────────────
 
 /** Bones controlled by combat (upper body) animations */

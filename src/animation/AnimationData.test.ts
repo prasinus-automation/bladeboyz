@@ -4,6 +4,7 @@ import {
   getAttackAnimation,
   getBlockPose,
   getMovementParams,
+  getBlendedGaitParams,
   IDLE_POSE,
   PARRY_POSE,
   STUNNED_POSE,
@@ -258,6 +259,38 @@ describe('AnimationData', () => {
         const pose = getBlockPose(dir as Direction);
         validatePose(pose, `block ${dir}`);
       }
+    });
+  });
+
+  describe('getBlendedGaitParams (#goal-2026-07 locomotion pass)', () => {
+    it('returns pure walk gait at walking pace (speedNorm 0.55 and below)', () => {
+      const walk = MOVEMENT_PARAMS['walk'];
+      for (const norm of [0, 0.3, 0.55]) {
+        const g = getBlendedGaitParams(norm);
+        expect(g.legSwing).toBeCloseTo(walk.legSwing, 6);
+        expect(g.cycleSpeed).toBeCloseTo(walk.cycleSpeed, 6);
+      }
+    });
+
+    it('returns pure run gait at sprint pace (speedNorm 1)', () => {
+      const run = MOVEMENT_PARAMS['run'];
+      const g = getBlendedGaitParams(1);
+      expect(g.legSwing).toBeCloseTo(run.legSwing, 6);
+      expect(g.armSwing).toBeCloseTo(run.armSwing, 6);
+      expect(g.cycleSpeed).toBeCloseTo(run.cycleSpeed, 6);
+    });
+
+    it('blends continuously in between — no threshold jump', () => {
+      const walk = MOVEMENT_PARAMS['walk'];
+      const run = MOVEMENT_PARAMS['run'];
+      const mid = getBlendedGaitParams(0.775); // halfway through the band
+      expect(mid.legSwing).toBeGreaterThan(walk.legSwing);
+      expect(mid.legSwing).toBeLessThan(run.legSwing);
+      expect(mid.legSwing).toBeCloseTo((walk.legSwing + run.legSwing) / 2, 6);
+      // Monotone: tiny speed changes make tiny gait changes.
+      const a = getBlendedGaitParams(0.7).legSwing;
+      const b = getBlendedGaitParams(0.71).legSwing;
+      expect(Math.abs(b - a)).toBeLessThan(0.02);
     });
   });
 });

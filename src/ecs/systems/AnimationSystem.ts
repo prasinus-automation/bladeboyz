@@ -44,10 +44,12 @@ import {
 import {
   getCombatPose,
   getMovementParams,
+  getBlendedGaitParams,
   LOWER_BODY_BONES,
   UPPER_BODY_BONES_EXCEPT_SPINE,
   type Pose,
 } from '../../animation/AnimationData';
+import { WALK_SPEED, SPRINT_SPEED } from '../../core/types';
 import {
   applyPoseLayer,
   smoothstepEase,
@@ -76,6 +78,12 @@ const RUN_SPEED_FACTOR_THRESHOLD = 0.85;
 /** Subtle idle breathing — amplitude (radians) and frequency (Hz). */
 const BREATH_AMPLITUDE = 0.008;
 const BREATH_FREQUENCY = 0.4;
+
+/**
+ * Planar speed of a plain (non-sprint) walk as a fraction of sprint
+ * speed — normalizes speedFactor into the gait-blend domain.
+ */
+const WALK_TO_SPRINT_RATIO = WALK_SPEED / SPRINT_SPEED;
 
 /**
  * Max chest lean from aim pitch during attack states (radians, ~34°).
@@ -409,14 +417,27 @@ export function animationSystem(world: GameWorld, dt: number): void {
     );
 
     // ── 5. Lower-body procedural ──
+    // Continuous walk↔run gait (#goal-2026-07 locomotion pass): stride
+    // length and cadence blend with actual pace instead of jumping at the
+    // old movKey threshold. speedNorm = planar speed / sprint speed, so
+    // plain walking sits at ~0.6 and full sprint at 1.0. Amplitude also
+    // eases in with speedFactor so the first stride doesn't snap.
+    const sprinting = hasMovement && MovementState.sprinting[eid] === 1;
+    const speedNorm = speedFactor * (sprinting ? 1 : WALK_TO_SPRINT_RATIO);
+    const gait = getBlendedGaitParams(speedNorm);
     if (movKey === 'walk' || movKey === 'run') {
       let walkCycle = AnimationComp.walkCycle[eid];
-      walkCycle += dt * movParams.cycleSpeed * speedFactor;
+      walkCycle += dt * gait.cycleSpeed * speedFactor;
       if (walkCycle > Math.PI * 2) walkCycle -= Math.PI * 2;
       AnimationComp.walkCycle[eid] = walkCycle;
 
       const legBones = intersectBones(movementOwned, LOWER_BODY_BONES);
-      applyWalkCycle(bones, walkCycle, movParams.legSwing, legBones);
+      applyWalkCycle(
+        bones,
+        walkCycle,
+        gait.legSwing * smoothstepEase(speedFactor),
+        legBones,
+      );
     } else {
       // Idle/crouch/jump base pose into legs (and spine if owned).
       const legBones = intersectBones(movementOwned, LOWER_BODY_BONES);
@@ -445,7 +466,7 @@ export function animationSystem(world: GameWorld, dt: number): void {
     if (state === CombatState.Idle && isMoving && (movKey === 'walk' || movKey === 'run')) {
       const armSwingPose = computeIdleArmSwingPose(
         AnimationComp.walkCycle[eid],
-        movParams.armSwing,
+        gait.armSwing * smoothstepEase(speedFactor),
       );
       applyPoseLayer(
         bones,
