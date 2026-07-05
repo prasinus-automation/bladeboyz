@@ -508,7 +508,8 @@ export function animationSystem(world: GameWorld, dt: number): void {
     // and the six body hitboxes read these same bones, so the DAMAGE
     // volume tilts with the visual automatically. Rotation.x is written
     // by MovementSystem for the local player (camera pitch, positive =
-    // looking up) and streamed for remotes; bots leave it 0.
+    // looking up) and streamed onto remote puppets via the `pitch` field
+    // of the state message (RemotePlayers.pushRemoteState); bots leave it 0.
     // Premultiplied AFTER the combat layer so it composes with (rather
     // than fights) the keyframe/arc pose; clamped so full-vertical aim
     // doesn't fold the model in half.

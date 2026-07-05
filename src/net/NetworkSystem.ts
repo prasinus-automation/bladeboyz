@@ -393,6 +393,10 @@ export class NetworkSystem {
       t: 'state',
       p: { x: Position.x[eid], y: Position.y[eid], z: Position.z[eid] },
       yaw: Rotation.y[eid],
+      // Camera pitch — MovementSystem stashes it in Rotation.x each tick.
+      // Remotes lean their chest by this so their swing renders at the
+      // height they're actually aiming (hit-accuracy pass, PR #199).
+      pitch: Rotation.x[eid],
       cs: {
         s: CombatStateComp.state[eid],
         d: CombatStateComp.direction[eid],

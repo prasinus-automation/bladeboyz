@@ -209,7 +209,15 @@ export class FfaRoom {
         ) {
           return [];
         }
-        player.state = { id, p: msg.p, yaw: msg.yaw, cs: msg.cs };
+        player.state = {
+          id,
+          p: msg.p,
+          yaw: msg.yaw,
+          // Relay pitch as-is; default 0 defends against a client that
+          // omits it (older bundle / hand-built test message).
+          pitch: Number.isFinite(msg.pitch) ? msg.pitch : 0,
+          cs: msg.cs,
+        };
         player.lastStateAt = now;
         return [];
       case 'claim':

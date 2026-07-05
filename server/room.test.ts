@@ -32,12 +32,12 @@ function joinTwo(room: FfaRoom): void {
   // Fresh position reports 3 m apart.
   room.handleMessage(
     'a',
-    { t: 'state', p: { x: 0, y: 0.1, z: 0 }, yaw: 0, cs: { s: 0, d: 0, pt: 0, w: 0 } },
+    { t: 'state', p: { x: 0, y: 0.1, z: 0 }, yaw: 0, pitch: 0, cs: { s: 0, d: 0, pt: 0, w: 0 } },
     T0,
   );
   room.handleMessage(
     'b',
-    { t: 'state', p: { x: 3, y: 0.1, z: 0 }, yaw: 0, cs: { s: 0, d: 0, pt: 0, w: 0 } },
+    { t: 'state', p: { x: 3, y: 0.1, z: 0 }, yaw: 0, pitch: 0, cs: { s: 0, d: 0, pt: 0, w: 0 } },
     T0,
   );
 }
@@ -110,6 +110,7 @@ describe('FfaRoom — damage claims', () => {
         t: 'state',
         p: { x: MAX_CLAIM_RANGE + 5, y: 0.1, z: 0 },
         yaw: 0,
+        pitch: 0,
         cs: { s: 0, d: 0, pt: 0, w: 0 },
       },
       T0 + 50,
