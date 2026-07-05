@@ -49,5 +49,15 @@ jobs:
               -p ${{ env.HOST_PORT }}:${{ env.CONTAINER_PORT }} \
               ${{ env.PROJECT_NAME }}:latest
             docker image prune -f
-            echo "Deployed ${{ env.PROJECT_NAME }} on port ${{ env.HOST_PORT }}"
+            echo "Waiting for ${{ env.PROJECT_NAME }} to pass its health check..."
+            for i in $(seq 1 15); do
+              if curl -sf http://localhost:${{ env.HOST_PORT }}/healthz > /dev/null; then break; fi
+              sleep 2
+            done
+            if ! curl -sf http://localhost:${{ env.HOST_PORT }}/healthz > /dev/null; then
+              echo "Health check FAILED — container logs:"
+              docker logs --tail 50 ${{ env.PROJECT_NAME }}
+              exit 1
+            fi
+            echo "Deployed ${{ env.PROJECT_NAME }} on port ${{ env.HOST_PORT }} (healthy)"
           DEPLOY_SCRIPT
