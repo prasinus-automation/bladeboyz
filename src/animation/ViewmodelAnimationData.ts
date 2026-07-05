@@ -604,6 +604,1080 @@ const BATTLEAXE_ANIMS: ViewmodelWeaponAnims = {
   hitStun: BATTLEAXE_HITSTUN,
 };
 
+// ── Zweihander — a fence post with edges. Enormous chambers, the
+// highest overhead silhouette in the game, wide flat-footed blocks. ──
+
+const ZWEIHANDER_IDLE: Pose = {
+  upper_arm_R: { x: 52 * DEG, z: -14 * DEG },
+  forearm_R:   { x: 58 * DEG },
+  hand_R:      { z: -4 * DEG },
+};
+
+const ZWEIHANDER_ATTACKS: Record<number, CombatAnimation> = {
+  [Direction.Left as number]: {
+    // Massive cross-body chamber — the whole frame loads the cut.
+    windup: {
+      upper_arm_R: { x: 58 * DEG, y: -30 * DEG, z: 58 * DEG },
+      forearm_R:   { x: 25 * DEG },
+      hand_R:      { z: -18 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 38 * DEG, y: 38 * DEG, z: -58 * DEG },
+      forearm_R:   { x: 42 * DEG },
+      hand_R:      { z: 20 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 32 * DEG, z: -14 * DEG },
+      forearm_R:   { x: 46 * DEG },
+      hand_R:      { z: -4 * DEG },
+    },
+  },
+  [Direction.Right as number]: {
+    // Mirror of Left.
+    windup: {
+      upper_arm_R: { x: 58 * DEG, y: 30 * DEG, z: -58 * DEG },
+      forearm_R:   { x: 25 * DEG },
+      hand_R:      { z: 18 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 38 * DEG, y: -38 * DEG, z: 58 * DEG },
+      forearm_R:   { x: 42 * DEG },
+      hand_R:      { z: -20 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 32 * DEG, z: -14 * DEG },
+      forearm_R:   { x: 46 * DEG },
+      hand_R:      { z: -4 * DEG },
+    },
+  },
+  [Direction.Overhead as number]: {
+    // Highest chamber in the arsenal: blade towers over the frame.
+    windup: {
+      upper_arm_R: { x: 118 * DEG, z: -14 * DEG },
+      forearm_R:   { x: 20 * DEG },
+      hand_R:      { x: -28 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 55 * DEG, z: -6 * DEG },
+      forearm_R:   { x: 65 * DEG },
+      hand_R:      { x: 18 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 32 * DEG, z: -14 * DEG },
+      forearm_R:   { x: 46 * DEG },
+      hand_R:      { z: -4 * DEG },
+    },
+  },
+  [Direction.Stab as number]: {
+    // Half-sword thrust: hands pulled way in before the drive.
+    windup: {
+      upper_arm_R: { x: 22 * DEG, z: -12 * DEG },
+      forearm_R:   { x: 105 * DEG },
+      hand_R:      { x: -8 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 70 * DEG, z: -6 * DEG },
+      forearm_R:   { x: 18 * DEG },
+      hand_R:      { x: 6 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 32 * DEG, z: -14 * DEG },
+      forearm_R:   { x: 46 * DEG },
+      hand_R:      { z: -4 * DEG },
+    },
+  },
+};
+
+const ZWEIHANDER_BLOCKS: Record<number, Pose> = {
+  [Direction.Left as number]: {
+    upper_arm_R: { x: 52 * DEG, y: -16 * DEG, z: 42 * DEG },
+    forearm_R:   { x: 50 * DEG },
+    hand_R:      { z: -16 * DEG },
+  },
+  [Direction.Right as number]: {
+    upper_arm_R: { x: 52 * DEG, y: 16 * DEG, z: -42 * DEG },
+    forearm_R:   { x: 50 * DEG },
+    hand_R:      { z: 16 * DEG },
+  },
+  [Direction.Overhead as number]: {
+    upper_arm_R: { x: 100 * DEG, z: -10 * DEG },
+    forearm_R:   { x: 22 * DEG },
+    hand_R:      { x: -28 * DEG },
+  },
+  [Direction.Stab as number]: {
+    upper_arm_R: { x: 58 * DEG, z: -16 * DEG },
+    forearm_R:   { x: 65 * DEG },
+    hand_R:      { x: 12 * DEG },
+  },
+};
+
+const ZWEIHANDER_PARRY: Pose = {
+  upper_arm_R: { x: 65 * DEG, z: -18 * DEG },
+  forearm_R:   { x: 55 * DEG },
+  hand_R:      { x: -8 * DEG, z: 6 * DEG },
+};
+
+const ZWEIHANDER_STUNNED: Pose = {
+  upper_arm_R: { x: 20 * DEG, z: -12 * DEG },
+  forearm_R:   { x: 22 * DEG },
+  hand_R:      { z: 10 * DEG },
+};
+
+const ZWEIHANDER_HITSTUN: Pose = {
+  upper_arm_R: { x: 32 * DEG, z: 8 * DEG },
+  forearm_R:   { x: 20 * DEG },
+  hand_R:      { z: -10 * DEG },
+};
+
+const ZWEIHANDER_ANIMS: ViewmodelWeaponAnims = {
+  idle: ZWEIHANDER_IDLE,
+  attacks: ZWEIHANDER_ATTACKS,
+  blocks: ZWEIHANDER_BLOCKS,
+  parry: ZWEIHANDER_PARRY,
+  stunned: ZWEIHANDER_STUNNED,
+  hitStun: ZWEIHANDER_HITSTUN,
+};
+
+// ── Warhammer — everything hangs off the top-heavy head. Compressed
+// elbow in the chambers, wrist rolled to keep the head visible. ──
+
+const WARHAMMER_IDLE: Pose = {
+  upper_arm_R: { x: 42 * DEG, z: -12 * DEG },
+  forearm_R:   { x: 64 * DEG },
+  hand_R:      { x: 10 * DEG, z: -8 * DEG },
+};
+
+const WARHAMMER_ATTACKS: Record<number, CombatAnimation> = {
+  [Direction.Left as number]: {
+    // Head swung back past the shoulder — the elbow stays bent to
+      // keep the mass close until the release.
+    windup: {
+      upper_arm_R: { x: 60 * DEG, y: -26 * DEG, z: 50 * DEG },
+      forearm_R:   { x: 52 * DEG },
+      hand_R:      { y: 12 * DEG, z: -16 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 36 * DEG, y: 34 * DEG, z: -52 * DEG },
+      forearm_R:   { x: 30 * DEG },
+      hand_R:      { y: -10 * DEG, z: 18 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 26 * DEG, z: -12 * DEG },
+      forearm_R:   { x: 52 * DEG },
+      hand_R:      { x: 10 * DEG, z: -8 * DEG },
+    },
+  },
+  [Direction.Right as number]: {
+    // Mirror of Left.
+    windup: {
+      upper_arm_R: { x: 60 * DEG, y: 26 * DEG, z: -50 * DEG },
+      forearm_R:   { x: 52 * DEG },
+      hand_R:      { y: -12 * DEG, z: 16 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 36 * DEG, y: -34 * DEG, z: 52 * DEG },
+      forearm_R:   { x: 30 * DEG },
+      hand_R:      { y: 10 * DEG, z: -18 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 26 * DEG, z: -12 * DEG },
+      forearm_R:   { x: 52 * DEG },
+      hand_R:      { x: 10 * DEG, z: -8 * DEG },
+    },
+  },
+  [Direction.Overhead as number]: {
+    // Hammer raised nearly vertical; the head loads the drop.
+    windup: {
+      upper_arm_R: { x: 115 * DEG, z: -12 * DEG },
+      forearm_R:   { x: 40 * DEG },
+      hand_R:      { x: -25 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 52 * DEG, z: -6 * DEG },
+      forearm_R:   { x: 55 * DEG },
+      hand_R:      { x: 22 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 26 * DEG, z: -12 * DEG },
+      forearm_R:   { x: 52 * DEG },
+      hand_R:      { x: 10 * DEG, z: -8 * DEG },
+    },
+  },
+  [Direction.Stab as number]: {
+    // Butt-end jab — quick, mean, close range.
+    windup: {
+      upper_arm_R: { x: 20 * DEG, z: -10 * DEG },
+      forearm_R:   { x: 95 * DEG },
+      hand_R:      { x: -6 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 62 * DEG, z: -6 * DEG },
+      forearm_R:   { x: 22 * DEG },
+      hand_R:      { x: 8 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 26 * DEG, z: -12 * DEG },
+      forearm_R:   { x: 52 * DEG },
+      hand_R:      { x: 10 * DEG, z: -8 * DEG },
+    },
+  },
+};
+
+const WARHAMMER_BLOCKS: Record<number, Pose> = {
+  [Direction.Left as number]: {
+    upper_arm_R: { x: 48 * DEG, y: -14 * DEG, z: 32 * DEG },
+    forearm_R:   { x: 55 * DEG },
+    hand_R:      { z: -12 * DEG },
+  },
+  [Direction.Right as number]: {
+    upper_arm_R: { x: 48 * DEG, y: 14 * DEG, z: -32 * DEG },
+    forearm_R:   { x: 55 * DEG },
+    hand_R:      { z: 12 * DEG },
+  },
+  [Direction.Overhead as number]: {
+    upper_arm_R: { x: 92 * DEG, z: -10 * DEG },
+    forearm_R:   { x: 35 * DEG },
+    hand_R:      { x: -20 * DEG },
+  },
+  [Direction.Stab as number]: {
+    upper_arm_R: { x: 52 * DEG, z: -14 * DEG },
+    forearm_R:   { x: 68 * DEG },
+    hand_R:      { x: 10 * DEG },
+  },
+};
+
+const WARHAMMER_PARRY: Pose = {
+  upper_arm_R: { x: 58 * DEG, z: -14 * DEG },
+  forearm_R:   { x: 60 * DEG },
+  hand_R:      { x: -6 * DEG },
+};
+
+const WARHAMMER_STUNNED: Pose = {
+  upper_arm_R: { x: 18 * DEG, z: -10 * DEG },
+  forearm_R:   { x: 20 * DEG },
+  hand_R:      { z: 12 * DEG },
+};
+
+const WARHAMMER_HITSTUN: Pose = {
+  upper_arm_R: { x: 30 * DEG, z: 10 * DEG },
+  forearm_R:   { x: 18 * DEG },
+  hand_R:      { z: -12 * DEG },
+};
+
+const WARHAMMER_ANIMS: ViewmodelWeaponAnims = {
+  idle: WARHAMMER_IDLE,
+  attacks: WARHAMMER_ATTACKS,
+  blocks: WARHAMMER_BLOCKS,
+  parry: WARHAMMER_PARRY,
+  stunned: WARHAMMER_STUNNED,
+  hitStun: WARHAMMER_HITSTUN,
+};
+
+// ── Spear — couched and economical. The shaft rides the forearm; the
+// thrust is the star, slashes are short corrective sweeps. ──
+
+const SPEAR_IDLE: Pose = {
+  upper_arm_R: { x: 35 * DEG, z: -6 * DEG },
+  forearm_R:   { x: 76 * DEG },
+  hand_R:      { z: -2 * DEG },
+};
+
+const SPEAR_ATTACKS: Record<number, CombatAnimation> = {
+  [Direction.Left as number]: {
+    // Short lateral sweep — a spear slash is a correction, not a cut.
+    windup: {
+      upper_arm_R: { x: 40 * DEG, y: -12 * DEG, z: 24 * DEG },
+      forearm_R:   { x: 60 * DEG },
+      hand_R:      { z: -8 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 32 * DEG, y: 16 * DEG, z: -24 * DEG },
+      forearm_R:   { x: 66 * DEG },
+      hand_R:      { z: 8 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 24 * DEG, z: -6 * DEG },
+      forearm_R:   { x: 64 * DEG },
+      hand_R:      { z: -2 * DEG },
+    },
+  },
+  [Direction.Right as number]: {
+    // Mirror of Left.
+    windup: {
+      upper_arm_R: { x: 40 * DEG, y: 12 * DEG, z: -24 * DEG },
+      forearm_R:   { x: 60 * DEG },
+      hand_R:      { z: 8 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 32 * DEG, y: -16 * DEG, z: 24 * DEG },
+      forearm_R:   { x: 66 * DEG },
+      hand_R:      { z: -8 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 24 * DEG, z: -6 * DEG },
+      forearm_R:   { x: 64 * DEG },
+      hand_R:      { z: -2 * DEG },
+    },
+  },
+  [Direction.Overhead as number]: {
+    // High shaft chop — more warning than weapon.
+    windup: {
+      upper_arm_R: { x: 85 * DEG, z: -6 * DEG },
+      forearm_R:   { x: 45 * DEG },
+      hand_R:      { x: -12 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 48 * DEG, z: -4 * DEG },
+      forearm_R:   { x: 58 * DEG },
+      hand_R:      { x: 10 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 24 * DEG, z: -6 * DEG },
+      forearm_R:   { x: 64 * DEG },
+      hand_R:      { z: -2 * DEG },
+    },
+  },
+  [Direction.Stab as number]: {
+    // Deep coil along the flank, then a piston extension.
+    windup: {
+      upper_arm_R: { x: 24 * DEG, z: -8 * DEG },
+      forearm_R:   { x: 118 * DEG },
+      hand_R:      { x: -6 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 78 * DEG, z: -4 * DEG },
+      forearm_R:   { x: 8 * DEG },
+      hand_R:      { x: 4 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 24 * DEG, z: -6 * DEG },
+      forearm_R:   { x: 64 * DEG },
+      hand_R:      { z: -2 * DEG },
+    },
+  },
+};
+
+const SPEAR_BLOCKS: Record<number, Pose> = {
+  [Direction.Left as number]: {
+    upper_arm_R: { x: 50 * DEG, y: -10 * DEG, z: 26 * DEG },
+    forearm_R:   { x: 62 * DEG },
+    hand_R:      { z: -8 * DEG },
+  },
+  [Direction.Right as number]: {
+    upper_arm_R: { x: 50 * DEG, y: 10 * DEG, z: -26 * DEG },
+    forearm_R:   { x: 62 * DEG },
+    hand_R:      { z: 8 * DEG },
+  },
+  [Direction.Overhead as number]: {
+    upper_arm_R: { x: 88 * DEG, z: -6 * DEG },
+    forearm_R:   { x: 40 * DEG },
+    hand_R:      { x: -16 * DEG },
+  },
+  [Direction.Stab as number]: {
+    upper_arm_R: { x: 50 * DEG, z: -10 * DEG },
+    forearm_R:   { x: 72 * DEG },
+    hand_R:      { x: 8 * DEG },
+  },
+};
+
+const SPEAR_PARRY: Pose = {
+  upper_arm_R: { x: 55 * DEG, z: -10 * DEG },
+  forearm_R:   { x: 62 * DEG },
+  hand_R:      { x: -4 * DEG, z: 4 * DEG },
+};
+
+const SPEAR_STUNNED: Pose = {
+  upper_arm_R: { x: 20 * DEG, z: -6 * DEG },
+  forearm_R:   { x: 30 * DEG },
+  hand_R:      { z: 6 * DEG },
+};
+
+const SPEAR_HITSTUN: Pose = {
+  upper_arm_R: { x: 28 * DEG, z: 6 * DEG },
+  forearm_R:   { x: 26 * DEG },
+  hand_R:      { z: -8 * DEG },
+};
+
+const SPEAR_ANIMS: ViewmodelWeaponAnims = {
+  idle: SPEAR_IDLE,
+  attacks: SPEAR_ATTACKS,
+  blocks: SPEAR_BLOCKS,
+  parry: SPEAR_PARRY,
+  stunned: SPEAR_STUNNED,
+  hitStun: SPEAR_HITSTUN,
+};
+
+// ── Katana — high kendo guard, tight fast chambers, crisp cuts.
+// The blade lives near the head; nothing sweeps wider than it must. ──
+
+const KATANA_IDLE: Pose = {
+  upper_arm_R: { x: 62 * DEG, z: -4 * DEG },
+  forearm_R:   { x: 44 * DEG },
+  hand_R:      { x: -6 * DEG, z: -2 * DEG },
+};
+
+const KATANA_ATTACKS: Record<number, CombatAnimation> = {
+  [Direction.Left as number]: {
+    // Compact chamber off the high guard — speed over spectacle.
+    windup: {
+      upper_arm_R: { x: 66 * DEG, y: -16 * DEG, z: 36 * DEG },
+      forearm_R:   { x: 28 * DEG },
+      hand_R:      { z: -8 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 44 * DEG, y: 24 * DEG, z: -38 * DEG },
+      forearm_R:   { x: 38 * DEG },
+      hand_R:      { z: 10 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 44 * DEG, z: -4 * DEG },
+      forearm_R:   { x: 38 * DEG },
+      hand_R:      { x: -6 * DEG, z: -2 * DEG },
+    },
+  },
+  [Direction.Right as number]: {
+    // Mirror of Left.
+    windup: {
+      upper_arm_R: { x: 66 * DEG, y: 16 * DEG, z: -36 * DEG },
+      forearm_R:   { x: 28 * DEG },
+      hand_R:      { z: 8 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 44 * DEG, y: -24 * DEG, z: 38 * DEG },
+      forearm_R:   { x: 38 * DEG },
+      hand_R:      { z: -10 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 44 * DEG, z: -4 * DEG },
+      forearm_R:   { x: 38 * DEG },
+      hand_R:      { x: -6 * DEG, z: -2 * DEG },
+    },
+  },
+  [Direction.Overhead as number]: {
+    // Classic men cut: raised straight over the centerline.
+    windup: {
+      upper_arm_R: { x: 105 * DEG, z: -4 * DEG },
+      forearm_R:   { x: 20 * DEG },
+      hand_R:      { x: -18 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 58 * DEG, z: -2 * DEG },
+      forearm_R:   { x: 55 * DEG },
+      hand_R:      { x: 12 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 44 * DEG, z: -4 * DEG },
+      forearm_R:   { x: 38 * DEG },
+      hand_R:      { x: -6 * DEG, z: -2 * DEG },
+    },
+  },
+  [Direction.Stab as number]: {
+    // Tsuki: blade drawn to the ribs, then the point goes.
+    windup: {
+      upper_arm_R: { x: 30 * DEG, z: -6 * DEG },
+      forearm_R:   { x: 96 * DEG },
+      hand_R:      { x: -4 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 74 * DEG, z: -2 * DEG },
+      forearm_R:   { x: 12 * DEG },
+      hand_R:      { x: 4 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 44 * DEG, z: -4 * DEG },
+      forearm_R:   { x: 38 * DEG },
+      hand_R:      { x: -6 * DEG, z: -2 * DEG },
+    },
+  },
+};
+
+const KATANA_BLOCKS: Record<number, Pose> = {
+  [Direction.Left as number]: {
+    upper_arm_R: { x: 56 * DEG, y: -12 * DEG, z: 28 * DEG },
+    forearm_R:   { x: 40 * DEG },
+    hand_R:      { z: -10 * DEG },
+  },
+  [Direction.Right as number]: {
+    upper_arm_R: { x: 56 * DEG, y: 12 * DEG, z: -28 * DEG },
+    forearm_R:   { x: 40 * DEG },
+    hand_R:      { z: 10 * DEG },
+  },
+  [Direction.Overhead as number]: {
+    upper_arm_R: { x: 96 * DEG, z: -4 * DEG },
+    forearm_R:   { x: 20 * DEG },
+    hand_R:      { x: -22 * DEG },
+  },
+  [Direction.Stab as number]: {
+    upper_arm_R: { x: 56 * DEG, z: -8 * DEG },
+    forearm_R:   { x: 58 * DEG },
+    hand_R:      { x: 8 * DEG },
+  },
+};
+
+const KATANA_PARRY: Pose = {
+  upper_arm_R: { x: 64 * DEG, z: -10 * DEG },
+  forearm_R:   { x: 46 * DEG },
+  hand_R:      { x: -6 * DEG, z: 4 * DEG },
+};
+
+const KATANA_STUNNED: Pose = {
+  upper_arm_R: { x: 24 * DEG, z: -6 * DEG },
+  forearm_R:   { x: 24 * DEG },
+  hand_R:      { z: 6 * DEG },
+};
+
+const KATANA_HITSTUN: Pose = {
+  upper_arm_R: { x: 34 * DEG, z: 4 * DEG },
+  forearm_R:   { x: 22 * DEG },
+  hand_R:      { z: -8 * DEG },
+};
+
+const KATANA_ANIMS: ViewmodelWeaponAnims = {
+  idle: KATANA_IDLE,
+  attacks: KATANA_ATTACKS,
+  blocks: KATANA_BLOCKS,
+  parry: KATANA_PARRY,
+  stunned: KATANA_STUNNED,
+  hitStun: KATANA_HITSTUN,
+};
+
+// ── Scythe — hooking horizontal drama. The widest z-tilts in the
+// arsenal; even the idle drags the blade low and outside. ──
+
+const SCYTHE_IDLE: Pose = {
+  upper_arm_R: { x: 40 * DEG, z: -16 * DEG },
+  forearm_R:   { x: 54 * DEG },
+  hand_R:      { x: 10 * DEG, z: -10 * DEG },
+};
+
+const SCYTHE_ATTACKS: Record<number, CombatAnimation> = {
+  [Direction.Left as number]: {
+    // Blade hooked far outside — the reap starts behind the frame.
+    windup: {
+      upper_arm_R: { x: 46 * DEG, y: -34 * DEG, z: 60 * DEG },
+      forearm_R:   { x: 24 * DEG },
+      hand_R:      { z: -20 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 34 * DEG, y: 40 * DEG, z: -62 * DEG },
+      forearm_R:   { x: 40 * DEG },
+      hand_R:      { z: 22 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 26 * DEG, z: -16 * DEG },
+      forearm_R:   { x: 44 * DEG },
+      hand_R:      { x: 10 * DEG, z: -10 * DEG },
+    },
+  },
+  [Direction.Right as number]: {
+    // Mirror of Left.
+    windup: {
+      upper_arm_R: { x: 46 * DEG, y: 34 * DEG, z: -60 * DEG },
+      forearm_R:   { x: 24 * DEG },
+      hand_R:      { z: 20 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 34 * DEG, y: -40 * DEG, z: 62 * DEG },
+      forearm_R:   { x: 40 * DEG },
+      hand_R:      { z: -22 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 26 * DEG, z: -16 * DEG },
+      forearm_R:   { x: 44 * DEG },
+      hand_R:      { x: 10 * DEG, z: -10 * DEG },
+    },
+  },
+  [Direction.Overhead as number]: {
+    // Hooking pull-down: the point comes over the top like a claw.
+    windup: {
+      upper_arm_R: { x: 100 * DEG, z: -18 * DEG },
+      forearm_R:   { x: 22 * DEG },
+      hand_R:      { x: -22 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 50 * DEG, z: -8 * DEG },
+      forearm_R:   { x: 52 * DEG },
+      hand_R:      { x: 18 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 26 * DEG, z: -16 * DEG },
+      forearm_R:   { x: 44 * DEG },
+      hand_R:      { x: 10 * DEG, z: -10 * DEG },
+    },
+  },
+  [Direction.Stab as number]: {
+    // Handle-end jab; the scythe has no honest thrust.
+    windup: {
+      upper_arm_R: { x: 22 * DEG, z: -10 * DEG },
+      forearm_R:   { x: 88 * DEG },
+      hand_R:      { x: -4 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 60 * DEG, z: -6 * DEG },
+      forearm_R:   { x: 24 * DEG },
+      hand_R:      { x: 6 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 26 * DEG, z: -16 * DEG },
+      forearm_R:   { x: 44 * DEG },
+      hand_R:      { x: 10 * DEG, z: -10 * DEG },
+    },
+  },
+};
+
+const SCYTHE_BLOCKS: Record<number, Pose> = {
+  [Direction.Left as number]: {
+    upper_arm_R: { x: 46 * DEG, y: -18 * DEG, z: 40 * DEG },
+    forearm_R:   { x: 48 * DEG },
+    hand_R:      { z: -14 * DEG },
+  },
+  [Direction.Right as number]: {
+    upper_arm_R: { x: 46 * DEG, y: 18 * DEG, z: -40 * DEG },
+    forearm_R:   { x: 48 * DEG },
+    hand_R:      { z: 14 * DEG },
+  },
+  [Direction.Overhead as number]: {
+    upper_arm_R: { x: 90 * DEG, z: -14 * DEG },
+    forearm_R:   { x: 26 * DEG },
+    hand_R:      { x: -20 * DEG },
+  },
+  [Direction.Stab as number]: {
+    upper_arm_R: { x: 50 * DEG, z: -14 * DEG },
+    forearm_R:   { x: 62 * DEG },
+    hand_R:      { x: 10 * DEG },
+  },
+};
+
+const SCYTHE_PARRY: Pose = {
+  upper_arm_R: { x: 56 * DEG, z: -20 * DEG },
+  forearm_R:   { x: 50 * DEG },
+  hand_R:      { x: -6 * DEG, z: 8 * DEG },
+};
+
+const SCYTHE_STUNNED: Pose = {
+  upper_arm_R: { x: 18 * DEG, z: -14 * DEG },
+  forearm_R:   { x: 22 * DEG },
+  hand_R:      { z: 10 * DEG },
+};
+
+const SCYTHE_HITSTUN: Pose = {
+  upper_arm_R: { x: 30 * DEG, z: 8 * DEG },
+  forearm_R:   { x: 20 * DEG },
+  hand_R:      { z: -10 * DEG },
+};
+
+const SCYTHE_ANIMS: ViewmodelWeaponAnims = {
+  idle: SCYTHE_IDLE,
+  attacks: SCYTHE_ATTACKS,
+  blocks: SCYTHE_BLOCKS,
+  parry: SCYTHE_PARRY,
+  stunned: SCYTHE_STUNNED,
+  hitStun: SCYTHE_HITSTUN,
+};
+
+// ── Yeeter — maximum theater. Every chamber overshoots, every wrist
+// angle is 20% too much. Premium physics deserve premium drama. ──
+
+const YEETER_IDLE: Pose = {
+  upper_arm_R: { x: 55 * DEG, z: -10 * DEG },
+  forearm_R:   { x: 60 * DEG },
+  hand_R:      { x: 12 * DEG, z: -12 * DEG },
+};
+
+const YEETER_ATTACKS: Record<number, CombatAnimation> = {
+  [Direction.Left as number]: {
+    // Wound up past the shoulder blade. Physics will forgive us.
+    windup: {
+      upper_arm_R: { x: 70 * DEG, y: -40 * DEG, z: 62 * DEG },
+      forearm_R:   { x: 18 * DEG },
+      hand_R:      { y: 14 * DEG, z: -24 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 30 * DEG, y: 44 * DEG, z: -62 * DEG },
+      forearm_R:   { x: 44 * DEG },
+      hand_R:      { y: -12 * DEG, z: 24 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 36 * DEG, z: -10 * DEG },
+      forearm_R:   { x: 48 * DEG },
+      hand_R:      { x: 12 * DEG, z: -12 * DEG },
+    },
+  },
+  [Direction.Right as number]: {
+    // Mirror of Left.
+    windup: {
+      upper_arm_R: { x: 70 * DEG, y: 40 * DEG, z: -62 * DEG },
+      forearm_R:   { x: 18 * DEG },
+      hand_R:      { y: -14 * DEG, z: 24 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 30 * DEG, y: -44 * DEG, z: 62 * DEG },
+      forearm_R:   { x: 44 * DEG },
+      hand_R:      { y: 12 * DEG, z: -24 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 36 * DEG, z: -10 * DEG },
+      forearm_R:   { x: 48 * DEG },
+      hand_R:      { x: 12 * DEG, z: -12 * DEG },
+    },
+  },
+  [Direction.Overhead as number]: {
+    // The full ceiling-scraper. Hold for applause.
+    windup: {
+      upper_arm_R: { x: 120 * DEG, z: -14 * DEG },
+      forearm_R:   { x: 15 * DEG },
+      hand_R:      { x: -30 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 45 * DEG, z: -6 * DEG },
+      forearm_R:   { x: 62 * DEG },
+      hand_R:      { x: 24 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 36 * DEG, z: -10 * DEG },
+      forearm_R:   { x: 48 * DEG },
+      hand_R:      { x: 12 * DEG, z: -12 * DEG },
+    },
+  },
+  [Direction.Stab as number]: {
+    // Coiled like a mousetrap; releases like one too.
+    windup: {
+      upper_arm_R: { x: 18 * DEG, z: -10 * DEG },
+      forearm_R:   { x: 112 * DEG },
+      hand_R:      { x: -10 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 80 * DEG, z: -4 * DEG },
+      forearm_R:   { x: 10 * DEG },
+      hand_R:      { x: 8 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 36 * DEG, z: -10 * DEG },
+      forearm_R:   { x: 48 * DEG },
+      hand_R:      { x: 12 * DEG, z: -12 * DEG },
+    },
+  },
+};
+
+const YEETER_BLOCKS: Record<number, Pose> = {
+  [Direction.Left as number]: {
+    upper_arm_R: { x: 50 * DEG, y: -20 * DEG, z: 44 * DEG },
+    forearm_R:   { x: 44 * DEG },
+    hand_R:      { z: -18 * DEG },
+  },
+  [Direction.Right as number]: {
+    upper_arm_R: { x: 50 * DEG, y: 20 * DEG, z: -44 * DEG },
+    forearm_R:   { x: 44 * DEG },
+    hand_R:      { z: 18 * DEG },
+  },
+  [Direction.Overhead as number]: {
+    upper_arm_R: { x: 100 * DEG, z: -10 * DEG },
+    forearm_R:   { x: 20 * DEG },
+    hand_R:      { x: -26 * DEG },
+  },
+  [Direction.Stab as number]: {
+    upper_arm_R: { x: 55 * DEG, z: -14 * DEG },
+    forearm_R:   { x: 66 * DEG },
+    hand_R:      { x: 12 * DEG },
+  },
+};
+
+const YEETER_PARRY: Pose = {
+  upper_arm_R: { x: 66 * DEG, z: -16 * DEG },
+  forearm_R:   { x: 52 * DEG },
+  hand_R:      { x: -10 * DEG, z: 8 * DEG },
+};
+
+const YEETER_STUNNED: Pose = {
+  upper_arm_R: { x: 15 * DEG, z: -12 * DEG },
+  forearm_R:   { x: 18 * DEG },
+  hand_R:      { z: 14 * DEG },
+};
+
+const YEETER_HITSTUN: Pose = {
+  upper_arm_R: { x: 36 * DEG, z: 10 * DEG },
+  forearm_R:   { x: 16 * DEG },
+  hand_R:      { z: -14 * DEG },
+};
+
+const YEETER_ANIMS: ViewmodelWeaponAnims = {
+  idle: YEETER_IDLE,
+  attacks: YEETER_ATTACKS,
+  blocks: YEETER_BLOCKS,
+  parry: YEETER_PARRY,
+  stunned: YEETER_STUNNED,
+  hitStun: YEETER_HITSTUN,
+};
+
+// ── Rapier — fencing lunge master (new, 2026-07). Point-forward low
+// guard, slashes are wrist flicks, and the stab coils deep then
+// extends to a full needle-straight lunge. ──
+
+const RAPIER_IDLE: Pose = {
+  upper_arm_R: { x: 50 * DEG, z: -2 * DEG },
+  forearm_R:   { x: 70 * DEG },
+  hand_R:      { x: -4 * DEG },
+};
+
+const RAPIER_ATTACKS: Record<number, CombatAnimation> = {
+  [Direction.Left as number]: {
+    // A flick, not a swing — the point barely leaves centerline.
+    windup: {
+      upper_arm_R: { x: 52 * DEG, y: -10 * DEG, z: 18 * DEG },
+      forearm_R:   { x: 62 * DEG },
+      hand_R:      { z: -6 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 46 * DEG, y: 12 * DEG, z: -20 * DEG },
+      forearm_R:   { x: 64 * DEG },
+      hand_R:      { z: 6 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 42 * DEG, z: -2 * DEG },
+      forearm_R:   { x: 62 * DEG },
+      hand_R:      { x: -4 * DEG },
+    },
+  },
+  [Direction.Right as number]: {
+    // Mirror of Left.
+    windup: {
+      upper_arm_R: { x: 52 * DEG, y: 10 * DEG, z: -18 * DEG },
+      forearm_R:   { x: 62 * DEG },
+      hand_R:      { z: 6 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 46 * DEG, y: -12 * DEG, z: 20 * DEG },
+      forearm_R:   { x: 64 * DEG },
+      hand_R:      { z: -6 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 42 * DEG, z: -2 * DEG },
+      forearm_R:   { x: 62 * DEG },
+      hand_R:      { x: -4 * DEG },
+    },
+  },
+  [Direction.Overhead as number]: {
+    // A cut from the wrist; the rapier has no real chop.
+    windup: {
+      upper_arm_R: { x: 88 * DEG, z: -2 * DEG },
+      forearm_R:   { x: 40 * DEG },
+      hand_R:      { x: -10 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 54 * DEG, z: -2 * DEG },
+      forearm_R:   { x: 58 * DEG },
+      hand_R:      { x: 8 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 42 * DEG, z: -2 * DEG },
+      forearm_R:   { x: 62 * DEG },
+      hand_R:      { x: -4 * DEG },
+    },
+  },
+  [Direction.Stab as number]: {
+    // The lunge: deepest coil in the arsenal, straightest extension.
+    windup: {
+      upper_arm_R: { x: 26 * DEG, z: -4 * DEG },
+      forearm_R:   { x: 122 * DEG },
+      hand_R:      { x: -4 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 82 * DEG, z: -2 * DEG },
+      forearm_R:   { x: 4 * DEG },
+      hand_R:      { x: 2 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 42 * DEG, z: -2 * DEG },
+      forearm_R:   { x: 62 * DEG },
+      hand_R:      { x: -4 * DEG },
+    },
+  },
+};
+
+const RAPIER_BLOCKS: Record<number, Pose> = {
+  [Direction.Left as number]: {
+    upper_arm_R: { x: 54 * DEG, y: -8 * DEG, z: 20 * DEG },
+    forearm_R:   { x: 58 * DEG },
+    hand_R:      { z: -6 * DEG },
+  },
+  [Direction.Right as number]: {
+    upper_arm_R: { x: 54 * DEG, y: 8 * DEG, z: -20 * DEG },
+    forearm_R:   { x: 58 * DEG },
+    hand_R:      { z: 6 * DEG },
+  },
+  [Direction.Overhead as number]: {
+    upper_arm_R: { x: 90 * DEG, z: -2 * DEG },
+    forearm_R:   { x: 30 * DEG },
+    hand_R:      { x: -14 * DEG },
+  },
+  [Direction.Stab as number]: {
+    upper_arm_R: { x: 56 * DEG, z: -6 * DEG },
+    forearm_R:   { x: 66 * DEG },
+    hand_R:      { x: 6 * DEG },
+  },
+};
+
+const RAPIER_PARRY: Pose = {
+  upper_arm_R: { x: 70 * DEG, z: -8 * DEG },
+  forearm_R:   { x: 52 * DEG },
+  hand_R:      { x: -10 * DEG, z: 6 * DEG },
+};
+
+const RAPIER_STUNNED: Pose = {
+  upper_arm_R: { x: 22 * DEG, z: -4 * DEG },
+  forearm_R:   { x: 32 * DEG },
+  hand_R:      { z: 4 * DEG },
+};
+
+const RAPIER_HITSTUN: Pose = {
+  upper_arm_R: { x: 30 * DEG, z: 4 * DEG },
+  forearm_R:   { x: 28 * DEG },
+  hand_R:      { z: -6 * DEG },
+};
+
+const RAPIER_ANIMS: ViewmodelWeaponAnims = {
+  idle: RAPIER_IDLE,
+  attacks: RAPIER_ATTACKS,
+  blocks: RAPIER_BLOCKS,
+  parry: RAPIER_PARRY,
+  stunned: RAPIER_STUNNED,
+  hitStun: RAPIER_HITSTUN,
+};
+
+// ── Halberd — two-handed polearm carry (new, 2026-07). High grip,
+// commanding overhead chop, quick spike thrust off the top. ──
+
+const HALBERD_IDLE: Pose = {
+  upper_arm_R: { x: 48 * DEG, z: -12 * DEG },
+  forearm_R:   { x: 62 * DEG },
+  hand_R:      { x: 4 * DEG, z: -6 * DEG },
+};
+
+const HALBERD_ATTACKS: Record<number, CombatAnimation> = {
+  [Direction.Left as number]: {
+    // Shaft swung across the body; the axe head leads the arc.
+    windup: {
+      upper_arm_R: { x: 54 * DEG, y: -22 * DEG, z: 44 * DEG },
+      forearm_R:   { x: 40 * DEG },
+      hand_R:      { z: -14 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 36 * DEG, y: 28 * DEG, z: -46 * DEG },
+      forearm_R:   { x: 48 * DEG },
+      hand_R:      { z: 16 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 30 * DEG, z: -12 * DEG },
+      forearm_R:   { x: 50 * DEG },
+      hand_R:      { x: 4 * DEG, z: -6 * DEG },
+    },
+  },
+  [Direction.Right as number]: {
+    // Mirror of Left.
+    windup: {
+      upper_arm_R: { x: 54 * DEG, y: 22 * DEG, z: -44 * DEG },
+      forearm_R:   { x: 40 * DEG },
+      hand_R:      { z: 14 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 36 * DEG, y: -28 * DEG, z: 46 * DEG },
+      forearm_R:   { x: 48 * DEG },
+      hand_R:      { z: -16 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 30 * DEG, z: -12 * DEG },
+      forearm_R:   { x: 50 * DEG },
+      hand_R:      { x: 4 * DEG, z: -6 * DEG },
+    },
+  },
+  [Direction.Overhead as number]: {
+    // The headsman's silhouette — shaft near vertical.
+    windup: {
+      upper_arm_R: { x: 112 * DEG, z: -12 * DEG },
+      forearm_R:   { x: 30 * DEG },
+      hand_R:      { x: -24 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 50 * DEG, z: -6 * DEG },
+      forearm_R:   { x: 58 * DEG },
+      hand_R:      { x: 18 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 30 * DEG, z: -12 * DEG },
+      forearm_R:   { x: 50 * DEG },
+      hand_R:      { x: 4 * DEG, z: -6 * DEG },
+    },
+  },
+  [Direction.Stab as number]: {
+    // Spike thrust: hands slide, the point drives off the top.
+    windup: {
+      upper_arm_R: { x: 24 * DEG, z: -8 * DEG },
+      forearm_R:   { x: 108 * DEG },
+      hand_R:      { x: -6 * DEG },
+    },
+    release: {
+      upper_arm_R: { x: 76 * DEG, z: -4 * DEG },
+      forearm_R:   { x: 10 * DEG },
+      hand_R:      { x: 4 * DEG },
+    },
+    recovery: {
+      upper_arm_R: { x: 30 * DEG, z: -12 * DEG },
+      forearm_R:   { x: 50 * DEG },
+      hand_R:      { x: 4 * DEG, z: -6 * DEG },
+    },
+  },
+};
+
+const HALBERD_BLOCKS: Record<number, Pose> = {
+  [Direction.Left as number]: {
+    upper_arm_R: { x: 48 * DEG, y: -14 * DEG, z: 30 * DEG },
+    forearm_R:   { x: 58 * DEG },
+    hand_R:      { z: -10 * DEG },
+  },
+  [Direction.Right as number]: {
+    upper_arm_R: { x: 48 * DEG, y: 14 * DEG, z: -30 * DEG },
+    forearm_R:   { x: 58 * DEG },
+    hand_R:      { z: 10 * DEG },
+  },
+  [Direction.Overhead as number]: {
+    upper_arm_R: { x: 94 * DEG, z: -8 * DEG },
+    forearm_R:   { x: 32 * DEG },
+    hand_R:      { x: -18 * DEG },
+  },
+  [Direction.Stab as number]: {
+    upper_arm_R: { x: 52 * DEG, z: -12 * DEG },
+    forearm_R:   { x: 70 * DEG },
+    hand_R:      { x: 8 * DEG },
+  },
+};
+
+const HALBERD_PARRY: Pose = {
+  upper_arm_R: { x: 60 * DEG, z: -14 * DEG },
+  forearm_R:   { x: 56 * DEG },
+  hand_R:      { x: -6 * DEG, z: 6 * DEG },
+};
+
+const HALBERD_STUNNED: Pose = {
+  upper_arm_R: { x: 18 * DEG, z: -10 * DEG },
+  forearm_R:   { x: 26 * DEG },
+  hand_R:      { z: 8 * DEG },
+};
+
+const HALBERD_HITSTUN: Pose = {
+  upper_arm_R: { x: 30 * DEG, z: 8 * DEG },
+  forearm_R:   { x: 22 * DEG },
+  hand_R:      { z: -10 * DEG },
+};
+
+const HALBERD_ANIMS: ViewmodelWeaponAnims = {
+  idle: HALBERD_IDLE,
+  attacks: HALBERD_ATTACKS,
+  blocks: HALBERD_BLOCKS,
+  parry: HALBERD_PARRY,
+  stunned: HALBERD_STUNNED,
+  hitStun: HALBERD_HITSTUN,
+};
+
 // ── Registry ────────────────────────────────────────────
 
 /** Weapon name → viewmodel animation data */
@@ -612,6 +1686,17 @@ export const VIEWMODEL_ANIMS: Record<string, ViewmodelWeaponAnims> = {
   Mace: MACE_ANIMS,
   Dagger: DAGGER_ANIMS,
   Battleaxe: BATTLEAXE_ANIMS,
+  // 2026-07 arsenal + rapier/halberd: unique sets (previously these fell
+  // back to the Longsword poses, which is why every weapon FELT the same
+  // in first person — #goal-2026-07 "weapons with unique animations").
+  Zweihander: ZWEIHANDER_ANIMS,
+  Warhammer: WARHAMMER_ANIMS,
+  Spear: SPEAR_ANIMS,
+  Katana: KATANA_ANIMS,
+  Scythe: SCYTHE_ANIMS,
+  Yeeter: YEETER_ANIMS,
+  Rapier: RAPIER_ANIMS,
+  Halberd: HALBERD_ANIMS,
 };
 
 /** Allowed bone names in viewmodel poses */

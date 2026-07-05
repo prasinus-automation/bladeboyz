@@ -110,6 +110,8 @@ import './weapons/spear';
 import './weapons/katana';
 import './weapons/scythe';
 import './weapons/yeeter';
+import './weapons/rapier';
+import './weapons/halberd';
 
 // Populate weaponConfigMap for TracerSystem — maps numeric weapon IDs to configs
 for (const [name, config] of Object.entries(weaponConfigs)) {

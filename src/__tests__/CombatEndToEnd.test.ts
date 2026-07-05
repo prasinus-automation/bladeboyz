@@ -77,6 +77,8 @@ import '../weapons/spear';
 import '../weapons/katana';
 import '../weapons/scythe';
 import '../weapons/yeeter';
+import '../weapons/rapier';
+import '../weapons/halberd';
 
 // ── Fake InputManager ────────────────────────────────────
 // Only the surface CombatSystem + detectDirection consume.
@@ -417,6 +419,9 @@ describe('combat end-to-end (real Rapier, real scene graph)', { timeout: 30_000 
       Zweihander: 1.5,
       Yeeter: 1.4,
       Spear: 1.8,
+      Rapier: 1.2,
+      // Halberd business end (blade + spike) rides the 1.45-2.15 band.
+      Halberd: 1.6,
     };
     for (const weapon of weaponIdToName) {
       clearRegistries();
@@ -429,7 +434,7 @@ describe('combat end-to-end (real Rapier, real scene graph)', { timeout: 30_000 
       // Scythe sweeps horizontally (its perpendicular blade makes vertical
       // chops awkward — true to the tool), everything else chops.
       const dir =
-        weapon === 'Spear'
+        weapon === 'Spear' || weapon === 'Rapier'
           ? Direction.Stab
           : weapon === 'Scythe'
             ? Direction.Left

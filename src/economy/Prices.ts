@@ -18,9 +18,11 @@ export const weaponPrices: Record<string, number> = {
   Battleaxe: 200,
   Spear: 250,
   Katana: 275,
+  Rapier: 275,
   Zweihander: 300,
   Scythe: 325,
   Warhammer: 350,
+  Halberd: 400,
   // Premium pricing for premium physics.
   Yeeter: 500,
 };

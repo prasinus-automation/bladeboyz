@@ -8,7 +8,20 @@ import type { Pose } from './AnimationData';
 import { CombatState } from '../combat/states';
 import { Direction } from '../combat/directions';
 
-const WEAPON_NAMES = ['Longsword', 'Mace', 'Dagger', 'Battleaxe'];
+const WEAPON_NAMES = [
+  'Longsword',
+  'Mace',
+  'Dagger',
+  'Battleaxe',
+  'Zweihander',
+  'Warhammer',
+  'Spear',
+  'Katana',
+  'Scythe',
+  'Yeeter',
+  'Rapier',
+  'Halberd',
+];
 
 /** Only these bones should appear in viewmodel poses */
 const ALLOWED_BONES = new Set(['upper_arm_R', 'forearm_R', 'hand_R']);

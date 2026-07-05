@@ -133,8 +133,8 @@ describe('weaponModelFactories', () => {
     );
   });
 
-  it('has one entry per weaponIdToName slot (10 as of the 2026-07 arsenal)', () => {
-    expect(Object.keys(weaponModelFactories)).toHaveLength(10);
+  it('has one entry per weaponIdToName slot (12 as of the 2026-07 arsenal + rapier/halberd)', () => {
+    expect(Object.keys(weaponModelFactories)).toHaveLength(12);
   });
 
   it('all factories return valid WeaponModelResult', () => {

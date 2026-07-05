@@ -57,6 +57,8 @@ export const weaponIdToName: string[] = [
   'Katana',
   'Scythe',
   'Yeeter',
+  'Rapier',
+  'Halberd',
 ];
 
 /** Look up weapon config by numeric ID */
