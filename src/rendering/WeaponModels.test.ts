@@ -42,7 +42,7 @@ describe('createMaceModel', () => {
     expect(result.gripOffset!.x).toBeCloseTo(0);
     expect(result.gripOffset!.y).toBeCloseTo(0);
     expect(result.gripOffset!.z).toBeCloseTo(0);
-    expect(result.gripRotation!.x).toBeCloseTo(Math.PI * 0.75);
+    expect(result.gripRotation!.x).toBeCloseTo(-Math.PI * 0.75);
     expect(result.gripRotation!.y).toBeCloseTo(0);
     expect(result.gripRotation!.z).toBeCloseTo(-0.15);
   });
@@ -81,7 +81,7 @@ describe('createDaggerModel', () => {
     expect(result.gripOffset!.x).toBeCloseTo(0);
     expect(result.gripOffset!.y).toBeCloseTo(0);
     expect(result.gripOffset!.z).toBeCloseTo(-0.02);
-    expect(result.gripRotation!.x).toBeCloseTo(Math.PI * 0.9);
+    expect(result.gripRotation!.x).toBeCloseTo(-Math.PI * 0.9);
     expect(result.gripRotation!.y).toBeCloseTo(0);
     expect(result.gripRotation!.z).toBeCloseTo(0);
   });
@@ -120,7 +120,7 @@ describe('createBattleaxeModel', () => {
     expect(result.gripOffset!.x).toBeCloseTo(0);
     expect(result.gripOffset!.y).toBeCloseTo(-0.05);
     expect(result.gripOffset!.z).toBeCloseTo(0);
-    expect(result.gripRotation!.x).toBeCloseTo(Math.PI * 0.8);
+    expect(result.gripRotation!.x).toBeCloseTo(-Math.PI * 0.8);
     expect(result.gripRotation!.y).toBeCloseTo(0);
     expect(result.gripRotation!.z).toBeCloseTo(0.1);
   });
@@ -133,8 +133,8 @@ describe('weaponModelFactories', () => {
     );
   });
 
-  it('has exactly 4 entries', () => {
-    expect(Object.keys(weaponModelFactories)).toHaveLength(4);
+  it('has one entry per weaponIdToName slot (10 as of the 2026-07 arsenal)', () => {
+    expect(Object.keys(weaponModelFactories)).toHaveLength(10);
   });
 
   it('all factories return valid WeaponModelResult', () => {

@@ -85,7 +85,7 @@ const DEBUG_BONE_NAMES = ['upper_arm_R', 'forearm_R', 'hand_R', 'weapon_attach']
  * fallback only.
  */
 const DEFAULT_GRIP_OFFSET = new THREE.Vector3(0, 0, 0);
-const DEFAULT_GRIP_ROTATION = new THREE.Euler(Math.PI * 0.85, 0, 0);
+const DEFAULT_GRIP_ROTATION = new THREE.Euler(-Math.PI * 0.85, 0, 0);
 
 /**
  * Read-only view of `ARM_OFFSET` for the debug overlay. Exposed so the overlay

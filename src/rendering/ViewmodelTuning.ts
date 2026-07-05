@@ -42,12 +42,12 @@ import * as THREE from 'three';
  *
  * Moved here from `ViewmodelRenderer.ts` per doc §2.2.
  */
-// Tuned bias (#182 follow-up): shifted slightly right (+0.07) and well
-// below eye line (-0.20 lower) so the shoulder anchors near the bottom-
-// right corner of the viewport instead of floating in the middle.
+// Tuned 2026-07 (goal pass, alongside the raised idle poses that fixed the
+// invisible-FP-weapon bug): x = 0.42 frames the weapon in the right half of
+// the screen like a classic FPS melee ready pose instead of dead center.
 // Iterate further at runtime via `window.__setArmOffset(x, y, z)` —
 // the field is mutable by design (Vector3 instance is not replaced).
-export const ARM_OFFSET = new THREE.Vector3(0.32, -0.30, -0.4);
+export const ARM_OFFSET = new THREE.Vector3(0.42, -0.30, -0.4);
 
 // ─── Aim-sway lag (doc §7) ─────────────────────────────────
 

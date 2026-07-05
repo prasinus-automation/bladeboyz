@@ -140,6 +140,11 @@ export const longsword: WeaponConfig = {
 
   /** HitStun ticks applied to target on unblocked hit */
   hitStunTicks: 45,
+
+  // ── Knockback ─────────────────────────────────────────
+  // Solid shove — visibly rocks the target back a step.
+
+  knockback: { force: 3.0, upward: 1.5 },
 };
 
 // Auto-register on import so systems can look up by name

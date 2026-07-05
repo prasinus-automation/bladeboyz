@@ -46,10 +46,16 @@ export interface GameWorld {
 export const FIXED_TIMESTEP = 1 / 60; // 60Hz
 export const MAX_SUBSTEPS = 5;
 
-/** Movement speed constants (units/s) */
-export const WALK_SPEED = 4.0;
-export const SPRINT_SPEED = 6.5;
-export const CROUCH_SPEED = 2.0;
+/**
+ * Movement speed constants (units/s).
+ *
+ * Tuned for arcade feel (2026-07 goal pass): quick base movement + a real
+ * sprint gap so closing/opening distance is a decision, not a formality.
+ * Swing WEIGHT comes from the combat turncaps, not from slow feet.
+ */
+export const WALK_SPEED = 4.5;
+export const SPRINT_SPEED = 7.5;
+export const CROUCH_SPEED = 2.2;
 export const SPRINT_MULTIPLIER = SPRINT_SPEED / WALK_SPEED;
 export const CROUCH_MULTIPLIER = CROUCH_SPEED / WALK_SPEED;
 
@@ -72,9 +78,15 @@ export const GROUND_TOP_Y = 0.1;
  */
 export const SPAWN_HEIGHT = GROUND_TOP_Y;
 
-/** Physics constants */
-export const GRAVITY = -20.0;
-export const JUMP_VELOCITY = 8.0;
+/**
+ * Physics constants. GRAVITY is deliberately super-terrestrial (-22) with a
+ * matching JUMP_VELOCITY (9): apex ≈ 1.84 m, airtime ≈ 0.82 s — a bouncy
+ * arcade hop that still comes down fast enough to not feel floaty. Jump is
+ * edge-triggered with no cooldown, so bunny-hopping around swings is a
+ * legitimate (and encouraged) movement skill.
+ */
+export const GRAVITY = -22.0;
+export const JUMP_VELOCITY = 9.0;
 export const GROUND_CAST_DISTANCE = 0.15;
 export const CHARACTER_CONTROLLER_OFFSET = 0.02;
 

@@ -77,7 +77,7 @@ export function createMaceModel(): WeaponModelResult {
   // Viewmodel grip data (#125, doc §4.3). Head angled up-forward to
   // emphasize the heavy mace head; small Z-axis lean reads as off-axis grip.
   const gripOffset = new THREE.Vector3(0, 0, 0);
-  const gripRotation = new THREE.Euler(Math.PI * 0.75, 0, -0.15);
+  const gripRotation = new THREE.Euler(-Math.PI * 0.75, 0, -0.15);
 
   return { group, tracerPoints, gripOffset, gripRotation };
 }
@@ -131,7 +131,7 @@ export function createDaggerModel(): WeaponModelResult {
   // toward the camera (Z negative), blade tilted further forward — sells
   // the small/quick feel. A reverse-grip variant could rotate ~π on Z.
   const gripOffset = new THREE.Vector3(0, 0, -0.02);
-  const gripRotation = new THREE.Euler(Math.PI * 0.9, 0, 0);
+  const gripRotation = new THREE.Euler(-Math.PI * 0.9, 0, 0);
 
   return { group, tracerPoints, gripOffset, gripRotation };
 }
@@ -187,7 +187,277 @@ export function createBattleaxeModel(): WeaponModelResult {
   // down-sideways — Y-offset pulls the model down toward the hand bottom
   // (long handle), small +Z rotation tilts the head. Sells the weight.
   const gripOffset = new THREE.Vector3(0, -0.05, 0);
-  const gripRotation = new THREE.Euler(Math.PI * 0.8, 0, 0.1);
+  const gripRotation = new THREE.Euler(-Math.PI * 0.8, 0, 0.1);
+
+  return { group, tracerPoints, gripOffset, gripRotation };
+}
+
+// ── Zweihander Model ────────────────────────────────────────
+
+/**
+ * Colossal two-handed sword: extra-long grip, wide crossguard, 1.9m blade.
+ */
+export function createZweihanderModel(): WeaponModelResult {
+  const group = new THREE.Group();
+
+  const bladeMat = new THREE.MeshStandardMaterial({ color: 0xd8d8e0, flatShading: true });
+  const guardMat = new THREE.MeshStandardMaterial({ color: 0x44403a, flatShading: true });
+  const gripMat = new THREE.MeshStandardMaterial({ color: 0x5a3a1a, flatShading: true });
+
+  const GRIP_LEN = 0.35;
+  const grip = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.025, 0.025, GRIP_LEN, 6),
+    gripMat,
+  );
+  grip.position.set(0, GRIP_LEN / 2, 0);
+  group.add(grip);
+
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.04, 0.04), guardMat);
+  guard.position.set(0, GRIP_LEN + 0.02, 0);
+  group.add(guard);
+
+  const BLADE_H = 1.55;
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.07, BLADE_H, 0.02), bladeMat);
+  blade.position.set(0, GRIP_LEN + 0.04 + BLADE_H / 2, 0);
+  group.add(blade);
+
+  const tracerPoints: THREE.Vector3[] = [];
+  for (let i = 0; i < 5; i++) {
+    tracerPoints.push(new THREE.Vector3(0, GRIP_LEN + 0.04 + (i / 4) * BLADE_H, 0));
+  }
+
+  const gripOffset = new THREE.Vector3(0, -0.03, 0);
+  const gripRotation = new THREE.Euler(-Math.PI * 0.85, 0, 0);
+
+  return { group, tracerPoints, gripOffset, gripRotation };
+}
+
+// ── Warhammer Model ─────────────────────────────────────────
+
+/**
+ * Thick haft + massive rectangular head with a striking face and a spike.
+ */
+export function createWarhammerModel(): WeaponModelResult {
+  const group = new THREE.Group();
+
+  const handleMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2a, flatShading: true });
+  const headMat = new THREE.MeshStandardMaterial({ color: 0x3f4045, flatShading: true });
+
+  const HANDLE_LEN = 0.65;
+  const handle = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.03, 0.03, HANDLE_LEN, 6),
+    handleMat,
+  );
+  handle.position.set(0, HANDLE_LEN / 2, 0);
+  group.add(handle);
+
+  // Blocky head — deliberately oversized so the silhouette screams "launcher".
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.2, 0.2), headMat);
+  head.position.set(0, HANDLE_LEN + 0.1, 0);
+  group.add(head);
+
+  // Back spike (small pyramid via cone with 4 segments).
+  const spike = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.16, 4), headMat);
+  spike.rotation.z = Math.PI / 2;
+  spike.position.set(-0.25, HANDLE_LEN + 0.1, 0);
+  group.add(spike);
+
+  const tracerPoints: THREE.Vector3[] = [
+    new THREE.Vector3(0, HANDLE_LEN - 0.1, 0),
+    new THREE.Vector3(0, HANDLE_LEN + 0.05, 0),
+    new THREE.Vector3(0, HANDLE_LEN + 0.2, 0),
+  ];
+
+  const gripOffset = new THREE.Vector3(0, -0.04, 0);
+  const gripRotation = new THREE.Euler(-Math.PI * 0.78, 0, 0.05);
+
+  return { group, tracerPoints, gripOffset, gripRotation };
+}
+
+// ── Spear Model ─────────────────────────────────────────────
+
+/**
+ * Very long thin shaft + leaf-blade tip.
+ */
+export function createSpearModel(): WeaponModelResult {
+  const group = new THREE.Group();
+
+  const shaftMat = new THREE.MeshStandardMaterial({ color: 0x8a6a3a, flatShading: true });
+  const tipMat = new THREE.MeshStandardMaterial({ color: 0xc8c8d0, flatShading: true });
+
+  const SHAFT_LEN = 2.1;
+  const shaft = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.02, 0.02, SHAFT_LEN, 6),
+    shaftMat,
+  );
+  shaft.position.set(0, SHAFT_LEN / 2, 0);
+  group.add(shaft);
+
+  const TIP_LEN = 0.28;
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.045, TIP_LEN, 4), tipMat);
+  tip.position.set(0, SHAFT_LEN + TIP_LEN / 2, 0);
+  group.add(tip);
+
+  const tracerPoints: THREE.Vector3[] = [
+    new THREE.Vector3(0, 1.2, 0),
+    new THREE.Vector3(0, 1.6, 0),
+    new THREE.Vector3(0, 2.0, 0),
+    new THREE.Vector3(0, SHAFT_LEN + TIP_LEN, 0),
+  ];
+
+  // Gripped low so most of the shaft projects forward.
+  const gripOffset = new THREE.Vector3(0, -0.02, 0);
+  const gripRotation = new THREE.Euler(-Math.PI * 0.88, 0, 0);
+
+  return { group, tracerPoints, gripOffset, gripRotation };
+}
+
+// ── Katana Model ────────────────────────────────────────────
+
+/**
+ * Slim single-edged blade, disc guard, wrapped grip.
+ */
+export function createKatanaModel(): WeaponModelResult {
+  const group = new THREE.Group();
+
+  const bladeMat = new THREE.MeshStandardMaterial({ color: 0xe8e8f0, flatShading: true });
+  const guardMat = new THREE.MeshStandardMaterial({ color: 0x22201c, flatShading: true });
+  const gripMat = new THREE.MeshStandardMaterial({ color: 0x223355, flatShading: true });
+
+  const GRIP_LEN = 0.24;
+  const grip = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.018, 0.018, GRIP_LEN, 6),
+    gripMat,
+  );
+  grip.position.set(0, GRIP_LEN / 2, 0);
+  group.add(grip);
+
+  // Tsuba — thin disc.
+  const guard = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.05, 0.05, 0.012, 8),
+    guardMat,
+  );
+  guard.position.set(0, GRIP_LEN + 0.006, 0);
+  group.add(guard);
+
+  // Blade — narrow, slightly angled back for the curved silhouette.
+  const BLADE_H = 0.95;
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.035, BLADE_H, 0.01), bladeMat);
+  blade.position.set(0.02, GRIP_LEN + 0.01 + BLADE_H / 2, 0);
+  blade.rotation.z = -0.05;
+  group.add(blade);
+
+  const tracerPoints: THREE.Vector3[] = [];
+  for (let i = 0; i < 4; i++) {
+    tracerPoints.push(
+      new THREE.Vector3(0.02 + i * 0.012, GRIP_LEN + 0.05 + (i / 3) * (BLADE_H - 0.1), 0),
+    );
+  }
+
+  const gripOffset = new THREE.Vector3(0, 0, -0.01);
+  const gripRotation = new THREE.Euler(-Math.PI * 0.87, 0, -0.05);
+
+  return { group, tracerPoints, gripOffset, gripRotation };
+}
+
+// ── Scythe Model ────────────────────────────────────────────
+
+/**
+ * Long shaft with a perpendicular curved blade — the reaper silhouette.
+ * Blade is approximated with two angled boxes.
+ */
+export function createScytheModel(): WeaponModelResult {
+  const group = new THREE.Group();
+
+  const shaftMat = new THREE.MeshStandardMaterial({ color: 0x4a3a2a, flatShading: true });
+  const bladeMat = new THREE.MeshStandardMaterial({ color: 0xb0b8c0, flatShading: true });
+
+  const SHAFT_LEN = 1.5;
+  const shaft = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.022, 0.022, SHAFT_LEN, 6),
+    shaftMat,
+  );
+  shaft.position.set(0, SHAFT_LEN / 2, 0);
+  group.add(shaft);
+
+  // Main blade segment — juts out perpendicular at the shaft tip.
+  const blade1 = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.06, 0.015), bladeMat);
+  blade1.position.set(0.28, SHAFT_LEN - 0.03, 0);
+  group.add(blade1);
+
+  // Curved tip segment — angled down from the main blade's end.
+  const blade2 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.05, 0.013), bladeMat);
+  blade2.position.set(0.68, SHAFT_LEN - 0.14, 0);
+  blade2.rotation.z = -0.5;
+  group.add(blade2);
+
+  const tracerPoints: THREE.Vector3[] = [
+    new THREE.Vector3(0.15, SHAFT_LEN, 0),
+    new THREE.Vector3(0.4, SHAFT_LEN - 0.05, 0),
+    new THREE.Vector3(0.65, SHAFT_LEN - 0.1, 0),
+    new THREE.Vector3(0.9, SHAFT_LEN - 0.15, 0),
+  ];
+
+  const gripOffset = new THREE.Vector3(0, -0.05, 0);
+  const gripRotation = new THREE.Euler(-Math.PI * 0.8, 0, 0.15);
+
+  return { group, tracerPoints, gripOffset, gripRotation };
+}
+
+// ── Yeeter Model ────────────────────────────────────────────
+
+/**
+ * An entire tree trunk. Bark, stump rings, absurd girth. The most
+ * important weapon in the game.
+ */
+export function createYeeterModel(): WeaponModelResult {
+  const group = new THREE.Group();
+
+  const barkMat = new THREE.MeshStandardMaterial({ color: 0x5a4028, flatShading: true });
+  const ringMat = new THREE.MeshStandardMaterial({ color: 0xc9a86a, flatShading: true });
+
+  // Grip end — narrower so a human hand can theoretically hold it.
+  const NECK_LEN = 0.35;
+  const neck = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.05, 0.04, NECK_LEN, 7),
+    barkMat,
+  );
+  neck.position.set(0, NECK_LEN / 2, 0);
+  group.add(neck);
+
+  // The trunk proper.
+  const TRUNK_LEN = 1.75;
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.16, 0.09, TRUNK_LEN, 7),
+    barkMat,
+  );
+  trunk.position.set(0, NECK_LEN + TRUNK_LEN / 2, 0);
+  group.add(trunk);
+
+  // Stump face — pale growth-ring disc on the business end.
+  const rings = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.155, 0.155, 0.02, 7),
+    ringMat,
+  );
+  rings.position.set(0, NECK_LEN + TRUNK_LEN + 0.01, 0);
+  group.add(rings);
+
+  // A stub branch, for character.
+  const branch = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.035, 0.045, 0.3, 5),
+    barkMat,
+  );
+  branch.rotation.z = Math.PI / 2.5;
+  branch.position.set(0.2, NECK_LEN + TRUNK_LEN * 0.6, 0);
+  group.add(branch);
+
+  const tracerPoints: THREE.Vector3[] = [];
+  for (let i = 0; i < 5; i++) {
+    tracerPoints.push(new THREE.Vector3(0, 0.4 + (i / 4) * 1.6, 0));
+  }
+
+  const gripOffset = new THREE.Vector3(0, -0.06, 0);
+  const gripRotation = new THREE.Euler(-Math.PI * 0.8, 0, 0.12);
 
   return { group, tracerPoints, gripOffset, gripRotation };
 }
@@ -207,6 +477,12 @@ export const weaponModelFactories: Record<string, WeaponModelFactory> = {
   'Mace': createMaceModel,
   'Dagger': createDaggerModel,
   'Battleaxe': createBattleaxeModel,
+  'Zweihander': createZweihanderModel,
+  'Warhammer': createWarhammerModel,
+  'Spear': createSpearModel,
+  'Katana': createKatanaModel,
+  'Scythe': createScytheModel,
+  'Yeeter': createYeeterModel,
 };
 
 // ── Ground Pickup Model ─────────────────────────────────────
@@ -227,10 +503,15 @@ export const weaponModelFactories: Record<string, WeaponModelFactory> = {
  *   face rather than balancing on the haft edge.
  */
 const PICKUP_ORIENTATIONS: Record<string, { x: number; y: number; z: number }> = {
-  'Longsword': { x: -Math.PI / 2, y: 0, z: 0 },
-  'Mace':      { x: -Math.PI / 2, y: 0, z: 0 },
-  'Dagger':    { x: -Math.PI / 2, y: 0, z: 0 },
-  'Battleaxe': { x: -Math.PI / 2, y: 0, z: Math.PI / 4 },
+  'Longsword':  { x: -Math.PI / 2, y: 0, z: 0 },
+  'Mace':       { x: -Math.PI / 2, y: 0, z: 0 },
+  'Dagger':     { x: -Math.PI / 2, y: 0, z: 0 },
+  'Battleaxe':  { x: -Math.PI / 2, y: 0, z: Math.PI / 4 },
+  // Warhammer's box head is offset like the battleaxe — roll onto its face.
+  'Warhammer':  { x: -Math.PI / 2, y: 0, z: Math.PI / 4 },
+  // Scythe's perpendicular blade — roll so the blade lies flat, not standing.
+  'Scythe':     { x: -Math.PI / 2, y: 0, z: Math.PI / 2 },
+  // Zweihander / Spear / Katana / Yeeter lie naturally on the default roll.
 };
 
 const DEFAULT_PICKUP_ORIENTATION = { x: -Math.PI / 2, y: 0, z: 0 };

@@ -36,6 +36,7 @@ import { TracerSystem, weaponConfigMap } from './ecs/systems/TracerSystem';
 import { DamageSystem } from './ecs/systems/DamageSystem';
 import { hitReactSystemTick } from './ecs/systems/HitReactSystem';
 import { hitboxSystem } from './ecs/systems/HitboxSystem';
+import { knockbackSystem } from './ecs/systems/KnockbackSystem';
 import { advanceFixedTick, getCurrentFixedTick } from './core/tickCounter';
 import { TracerDebugRenderer } from './rendering/TracerDebugRenderer';
 import { FloatingDamage } from './hud/FloatingDamage';
@@ -46,7 +47,15 @@ import { showNotification } from './hud/DebugNotification';
 import { InventoryPanel } from './hud/InventoryPanel';
 import { ShopPanel } from './hud/ShopPanel';
 import { FIXED_TIMESTEP } from './core/types';
-import { Position, PreviousPosition, Rotation, meshRegistry } from './ecs/components';
+import {
+  Position,
+  PreviousPosition,
+  Rotation,
+  PreviousRotation,
+  Health,
+  KnockbackState,
+  meshRegistry,
+} from './ecs/components';
 import { lerp } from './utils/math';
 import { createFSM, fsmRegistry } from './combat/CombatFSM';
 import { weaponConfigs } from './weapons/WeaponConfig';
@@ -54,6 +63,7 @@ import { weaponIdToName } from './ecs/systems/CombatSystem';
 import {
   initInventory,
   equipWeapon,
+  addWeaponToInventory,
   getInventory,
   onEquip,
   registerWeaponModelFactory,
@@ -80,6 +90,12 @@ import './weapons/longsword';
 import './weapons/mace';
 import './weapons/dagger';
 import './weapons/battleaxe';
+import './weapons/zweihander';
+import './weapons/warhammer';
+import './weapons/spear';
+import './weapons/katana';
+import './weapons/scythe';
+import './weapons/yeeter';
 
 // Populate weaponConfigMap for TracerSystem — maps numeric weapon IDs to configs
 for (const [name, config] of Object.entries(weaponConfigs)) {
@@ -448,6 +464,8 @@ async function main(): Promise<void> {
   });
 
   // ─── Runtime weapon swap via console ───
+  // Dev helper: self-provisions the weapon into inventory so testers can
+  // try any registered weapon without walking to the shop.
   (window as any).setWeapon = (name: string): void => {
     const config = weaponConfigs[name];
     if (!config) {
@@ -456,13 +474,41 @@ async function main(): Promise<void> {
       );
       return;
     }
+    addWeaponToInventory(world.playerEntity, name);
     const success = equipWeapon(world.playerEntity, name);
     if (success) {
       console.log(`Weapon set to: ${config.name}`);
     } else {
-      console.warn(`Could not equip "${name}" — player may not be idle or weapon not in inventory`);
+      console.warn(`Could not equip "${name}" — player may not be idle`);
     }
   };
+
+  // ─── Automated-verification helpers (headless browser drivers) ───
+  // Read-only ECS state snapshots. The browser-automation harness aims and
+  // asserts against these; they're also handy for manual console poking.
+  (window as any).__getPlayerState = () => ({
+    pos: {
+      x: Position.x[playerEid],
+      y: Position.y[playerEid],
+      z: Position.z[playerEid],
+    },
+    yaw: Rotation.y[playerEid],
+    hp: Health.current[playerEid],
+    combatState: COMBAT_STATE_NAMES[CombatStateComp.state[playerEid]],
+    pointerLocked: document.pointerLockElement != null,
+  });
+  (window as any).__getNpcs = () =>
+    getTrainingDummyEids(world).map((eid) => ({
+      eid,
+      hp: Health.current[eid],
+      pos: { x: Position.x[eid], y: Position.y[eid], z: Position.z[eid] },
+      kb: {
+        vx: KnockbackState.vx[eid],
+        vy: KnockbackState.vy[eid],
+        vz: KnockbackState.vz[eid],
+        ticks: KnockbackState.ticksRemaining[eid],
+      },
+    }));
 
   // ─── Expose inventory query for debugging ───
   (window as any).getInventory = () => getInventory(world.playerEntity);
@@ -601,7 +647,17 @@ async function main(): Promise<void> {
     // Sync hitbox positions to skeleton bones
     hitboxSystem(world);
 
-    // Observe damage events (floating numbers) before they're consumed
+    // Training-dummy auto-regen (3 s no-hit → restore HP). MUST run
+    // BEFORE TracerSystem/DamageSystem: `recordNpcHit` fires from the
+    // DamageDealt handler at EventBus.flush (end of tick), so a regen
+    // check placed after DamageSystem would still see the stale last-hit
+    // tick on the very tick a hit lands and instantly heal the wound —
+    // the "damage doesn't work" bug. Up here it only ever acts on fully
+    // recorded state from previous ticks.
+    tickTrainingDummyHealthReset(world);
+
+    // NpcDamageObserver is EventBus-driven now (see its docstring); this
+    // per-tick call is a no-op kept for call-site compatibility.
     dummyDamageObserver(FIXED_TIMESTEP);
 
     // Tracer hit detection + damage resolution. DamageSystem may stamp
@@ -611,8 +667,11 @@ async function main(): Promise<void> {
     DamageSystem(world, FIXED_TIMESTEP);
     hitReactSystemTick(world.ecs);
 
-    // Training-dummy health reset timer (3 s no-hit → restore HP)
-    tickTrainingDummyHealthReset(world);
+    // Ballistic knockback for non-player entities (dummies/bots go flying
+    // when hit by heavy weapons). Player knockback is folded into
+    // MovementSystem's character controller instead. Runs after
+    // DamageSystem so a same-tick impulse starts moving the victim now.
+    knockbackSystem(world);
 
     // Update nearest-interactable cache (for KeyE handler + WorldLabel prompt)
     interactionSystem(playerEid);
@@ -710,6 +769,15 @@ async function main(): Promise<void> {
       const py = lerp(PreviousPosition.y[playerEid], Position.y[playerEid], alpha);
       const pz = lerp(PreviousPosition.z[playerEid], Position.z[playerEid], alpha);
       playerModelData.group.position.set(px, py, pz);
+      // Body yaw follows aim. Plain lerp is safe (no wrap handling) because
+      // CameraController yaw accumulates continuously — consecutive tick
+      // values are always close. hitboxSystem writes the un-lerped value at
+      // fixed rate for physics; this is the smooth visual counterpart.
+      playerModelData.group.rotation.y = lerp(
+        PreviousRotation.y[playerEid],
+        Rotation.y[playerEid],
+        alpha,
+      );
     }
     // Iterate every training dummy via the IsTrainingDummy tag query (the
     // legacy `activeDummies` array is gone — issue #114). Bots and other

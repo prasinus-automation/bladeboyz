@@ -110,6 +110,11 @@ export const battleaxe: WeaponConfig = {
   blockStaminaDrain: 30,
   parryStunTicks: 75,
   hitStunTicks: 55,
+
+  // ── Knockback ─────────────────────────────────────────
+  // Full-commitment cleave — sends victims airborne.
+
+  knockback: { force: 8.0, upward: 5.0 },
 };
 
 registerWeapon(battleaxe);

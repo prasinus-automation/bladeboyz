@@ -85,23 +85,23 @@ describe('detectDirectionFromDeltas', () => {
 describe('detectDirection (InputManager wrapper)', () => {
   function mockInputManager(dx: number, dy: number): InputManager {
     return {
-      getAverageDelta(_windowMs: number) {
+      getAccumulatedDelta(_windowMs: number) {
         return { dx, dy };
       },
     } as unknown as InputManager;
   }
 
-  it('reads from getAverageDelta and classifies', () => {
+  it('reads from getAccumulatedDelta and classifies', () => {
     expect(detectDirection(mockInputManager(0, 0))).toBe(Direction.Stab);
-    expect(detectDirection(mockInputManager(-30, 0))).toBe(Direction.Left);
-    expect(detectDirection(mockInputManager(0, -30))).toBe(Direction.Overhead);
-    expect(detectDirection(mockInputManager(30, 0))).toBe(Direction.Right);
+    expect(detectDirection(mockInputManager(-45, 0))).toBe(Direction.Left);
+    expect(detectDirection(mockInputManager(0, -45))).toBe(Direction.Overhead);
+    expect(detectDirection(mockInputManager(45, 0))).toBe(Direction.Right);
   });
 
-  it('uses the configured bufferWindowMs when calling getAverageDelta', () => {
+  it('uses the configured bufferWindowMs when calling getAccumulatedDelta', () => {
     let observedWindow = -1;
     const im = {
-      getAverageDelta(windowMs: number) {
+      getAccumulatedDelta(windowMs: number) {
         observedWindow = windowMs;
         return { dx: 0, dy: 0 };
       },
@@ -113,7 +113,7 @@ describe('detectDirection (InputManager wrapper)', () => {
   it('defaults bufferWindowMs to 100', () => {
     let observedWindow = -1;
     const im = {
-      getAverageDelta(windowMs: number) {
+      getAccumulatedDelta(windowMs: number) {
         observedWindow = windowMs;
         return { dx: 0, dy: 0 };
       },

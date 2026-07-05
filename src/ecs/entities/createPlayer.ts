@@ -18,6 +18,7 @@ import {
   HitReactComp,
   CharacterModel,
   TracerTag,
+  KnockbackState,
   Hitboxes,
   Gold,
   Score,
@@ -131,6 +132,7 @@ export function createPlayer(
   addComponent(world.ecs, AnimationComp, eid);
   addComponent(world.ecs, HitReactComp, eid);
   addComponent(world.ecs, TracerTag, eid);
+  addComponent(world.ecs, KnockbackState, eid);
   addComponent(world.ecs, Hitboxes, eid);
   addComponent(world.ecs, Gold, eid);
   // Score is initialized to all-zeroes via bitECS's typed-array default.

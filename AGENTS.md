@@ -39,6 +39,7 @@ bladeboyz/
 │   │   │   ├── InteractionSystem.ts # Per-tick proximity check; caches nearest in-range interactable per player (#113)
 │   │   │   ├── NpcDamageObserver.ts # Floating damage numbers + auto-regen book-keeping for any IsNPC entity; renamed from DummyDamageObserver in #114
 │   │   │   ├── HitReactSystem.ts # Clears expired HitReactComp entries (active=1 → 0 once tick >= spawnedAtTick + durationTicks) (#120)
+│   │   │   ├── KnockbackSystem.ts # Ballistic knockback for non-player entities (dummies fly on heavy hits); player knockback folds into MovementSystem's character controller (2026-07 combat overhaul)
 │   │   │   ├── processDeaths.ts # Death-cleanup hook: emits DeathEvent, increments Score, resets FSM, zeros Velocity, calls dropEquippedWeapon stub (#130)
 │   │   │   ├── processRespawns.ts # Respawn-cleanup hook: picks spawn point, teleports Position/PreviousPosition/Rotation + Rapier body, restores HP/Stamina, equips default starter, removes DeadTag/RespawnPending, emits RespawnEvent (#134)
 │   │   │   ├── AnimationSystem.ts # Layered procedural animator: snapshot phase-t slerp + arc swings + hit-react overlay; defensive vs missing MovementState (#128)
@@ -72,11 +73,17 @@ bladeboyz/
 │   │   ├── states.ts            # State enum and transition logic
 │   │   └── directions.ts        # Unified `Direction` enum + `detectDirection()` (rolling-buffer sampling, #139)
 │   ├── weapons/
-│   │   ├── WeaponConfig.ts      # WeaponConfig type + registry (weaponConfigs, registerWeapon)
+│   │   ├── WeaponConfig.ts      # WeaponConfig type + registry (weaponConfigs, registerWeapon) + DEFAULT_KNOCKBACK
 │   │   ├── longsword.ts         # Longsword weapon data (auto-registers on import)
 │   │   ├── mace.ts              # Mace weapon data (auto-registers on import)
 │   │   ├── dagger.ts            # Dagger weapon data (auto-registers on import)
-│   │   └── battleaxe.ts         # Battleaxe weapon data (auto-registers on import)
+│   │   ├── battleaxe.ts         # Battleaxe weapon data (auto-registers on import)
+│   │   ├── zweihander.ts        # Zweihander — colossal reach two-hander (2026-07 arsenal)
+│   │   ├── warhammer.ts         # Warhammer — max-knockback launcher (2026-07 arsenal)
+│   │   ├── spear.ts             # Spear — 2.4m stab specialist (2026-07 arsenal)
+│   │   ├── katana.ts            # Katana — fast combo tempo (2026-07 arsenal)
+│   │   ├── scythe.ts            # Scythe — blade rides a ~2m ring; inside the ring is safe (2026-07 arsenal)
+│   │   └── yeeter.ts            # The Yeeter — a tree trunk; tiny damage, absurd knockback (2026-07 arsenal)
 │   ├── input/
 │   │   ├── InputManager.ts      # Raw input capture, pointer lock, mouse delta tracking; pointer-lock-loss / blur cleanup (#172); listener tracking + working dispose() (#172)
 │   │   ├── InputManager.types.ts # Target interface contract (issue #102 spec — see docs/input-pipeline.md)
@@ -272,7 +279,7 @@ Detailed entries moved to [`docs/AGENTS-DEBT.md`](docs/AGENTS-DEBT.md) on 2026-0
 - **Rapier debug renderer** needs `@dimforge/rapier3d-compat` not `@dimforge/rapier3d` for browser compatibility
 - The deploy workflow (`.github/workflows/deploy-staging.yml`) expects a `Dockerfile` and maps port 3000 internally → 3010 externally
 - **CombatSystem syncs both `CombatStateComponent` and `CombatStateComp`** — phase math (`getPhaseTotal` / `getPhaseT`) lives on the FSM. AnimationSystem reads from `CombatStateComp` (`phaseElapsed`, `phaseTotal`, `phaseT`, `state`, `direction`).
-- **`weaponIdToName` in CombatSystem.ts (line 28) is a hardcoded array** — when adding new weapons, update this array AND ensure the weapon's numeric index matches `CombatStateComponent.weaponId[eid]`
+- **`weaponIdToName` in CombatSystem.ts is a hardcoded APPEND-ONLY array** (10 entries as of the 2026-07 arsenal) — the index is the wire format for `weaponId` fields; never reorder or insert mid-table. When adding a weapon also touch: config file + import in main.ts and CombatEndToEnd.test.ts, `weaponModelFactories`, `Prices.ts`, `WEAPON_SCALING`/`WeaponName` in arcSwing.ts, and optionally `PICKUP_ORIENTATIONS`.
 - **Pointer Lock must be released** when showing any UI overlay (inventory, menus) — call `document.exitPointerLock()`. Re-request on close via user gesture (click on canvas).
 - **Side-table pattern** for non-numeric data: `meshRegistry` (Map<number, CharacterModelData>), `fsmRegistry` (Map<number, CombatFSM>), `hitboxColliderRegistry` — use the same pattern for inventory/equipment data
 - **`SPAWN_HEIGHT` is now a deprecated alias of `GROUND_TOP_Y` (= 0.1)** — semantics changed from capsule-center (1.1) to feet (0.1) in PR #150. Existing call sites still compile but new code should use `spawnAtGround()` for spawn Y or `GROUND_TOP_Y` for the literal.

@@ -302,8 +302,38 @@ export class InputManager {
   }
 
   /**
-   * Get average mouse delta over the last N milliseconds.
+   * Get TOTAL accumulated mouse delta over the last N milliseconds.
    * Used for combat directional attack detection.
+   *
+   * Total (not mean-per-event) is deliberate: mousemove event frequency
+   * varies wildly across hardware/browsers (60–1000 Hz), so a per-event
+   * mean makes direction detection depend on the pointing device — a
+   * deliberate 150 px flick could average under the stab threshold on a
+   * high-report-rate mouse. The physical quantity that encodes intent is
+   * how far the mouse moved over the window, which is the sum.
+   */
+  getAccumulatedDelta(windowMs: number = DELTA_BUFFER_WINDOW_MS): { dx: number; dy: number } {
+    const now = performance.now();
+    const cutoff = now - windowMs;
+
+    let totalDx = 0;
+    let totalDy = 0;
+
+    for (let i = this.deltaBuffer.length - 1; i >= 0; i--) {
+      const entry = this.deltaBuffer[i];
+      if (entry.timestamp < cutoff) break;
+      totalDx += entry.dx;
+      totalDy += entry.dy;
+    }
+
+    return { dx: totalDx, dy: totalDy };
+  }
+
+  /**
+   * Get average mouse delta over the last N milliseconds.
+   * @deprecated Direction detection moved to `getAccumulatedDelta` — the
+   * per-event mean depends on the device's report rate. Kept for any
+   * remaining callers; remove once nothing imports it.
    */
   getAverageDelta(windowMs: number = DELTA_BUFFER_WINDOW_MS): { dx: number; dy: number } {
     const now = performance.now();

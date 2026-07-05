@@ -122,7 +122,7 @@ describe('createLongswordModel', () => {
     expect(result.gripOffset!.x).toBeCloseTo(0);
     expect(result.gripOffset!.y).toBeCloseTo(0);
     expect(result.gripOffset!.z).toBeCloseTo(0);
-    expect(result.gripRotation!.x).toBeCloseTo(Math.PI * 0.85);
+    expect(result.gripRotation!.x).toBeCloseTo(-Math.PI * 0.85);
     expect(result.gripRotation!.y).toBeCloseTo(0);
     expect(result.gripRotation!.z).toBeCloseTo(0);
   });

@@ -47,6 +47,9 @@ class MockInputManager {
     return this._mouseDelta;
   }
 
+  getAccumulatedDelta(): { dx: number; dy: number } {
+    return { dx: this._mouseDelta.x, dy: this._mouseDelta.y };
+  }
   getAverageDelta(): { dx: number; dy: number } {
     return { dx: this._mouseDelta.x, dy: this._mouseDelta.y };
   }
