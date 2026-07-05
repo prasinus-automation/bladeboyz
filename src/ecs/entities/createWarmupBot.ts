@@ -160,6 +160,8 @@ export function createWarmupBot(
   // Grounded from tick 0 — raycast-placed on the floor; avoids one frame
   // of airborne pose (AnimationSystem defends, but be tidy at the source).
   MovementState.grounded[eid] = 1;
+  MovementState.lastGroundedTick[eid] = 0;
+  MovementState.jumpBufferTick[eid] = 0;
 
   CombatStateComponent.state[eid] = CombatState.Idle;
   const weaponIndex = weaponIdToName.indexOf(startingWeapon);

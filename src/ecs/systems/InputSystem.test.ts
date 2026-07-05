@@ -215,6 +215,15 @@ describe('InputSystem', () => {
       expect(MovementIntent.jumpRequested[eid]).toBe(1);
     });
 
+    it('sub-tick Space tap (down+up entirely between ticks) still sets jumpRequested', () => {
+      // State polling would miss this press completely — the latched edge
+      // in InputManager preserves it (#goal-2026-07 movement-feel pass).
+      pressKey('Space');
+      releaseKey('Space');
+      inputSystem(FIXED_TIMESTEP);
+      expect(MovementIntent.jumpRequested[eid]).toBe(1);
+    });
+
     it('no Space → jumpRequested=0', () => {
       inputSystem(FIXED_TIMESTEP);
       expect(MovementIntent.jumpRequested[eid]).toBe(0);

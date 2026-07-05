@@ -65,16 +65,20 @@ function getWeaponConfigById(id: number) {
   return name ? weaponConfigs[name] : undefined;
 }
 
-// ── Previous input state (for edge detection) ────────────
+// ── Input edge detection ──────────────────────────────────
+//
+// Edges come from InputManager's latched sets (`consumeMousePress` /
+// `consumeMouseRelease`) instead of tick-boundary state polling: a click
+// whose mousedown+mouseup both land inside one fixed tick used to be
+// invisible to `isMouseButtonDown` and the attack was silently dropped
+// (the sub-tick click gotcha, docs/AGENTS-DEBT.md).
 
-let prevLeftMouseDown = false;
-let prevRightMouseDown = false;
-
-/** Reset input tracking state (for testing) */
-export function resetCombatInputState(): void {
-  prevLeftMouseDown = false;
-  prevRightMouseDown = false;
-}
+/**
+ * Reset input tracking state (for testing). Edge state now lives in the
+ * InputManager instance (latched sets), so there is no module state left —
+ * kept because test setups call it.
+ */
+export function resetCombatInputState(): void {}
 
 // ── System factory ───────────────────────────────────────
 
@@ -89,17 +93,12 @@ export function createCombatSystem(
 ): () => void {
   return function combatSystemTick(): void {
     const playerEntities = playerQuery(ecsWorld);
-    const leftMouseDown = input.isMouseButtonDown(0);
-    const rightMouseDown = input.isMouseButtonDown(2);
 
-    // Detect press/release edges
-    const leftJustPressed = leftMouseDown && !prevLeftMouseDown;
-    const rightJustPressed = rightMouseDown && !prevRightMouseDown;
-    const rightJustReleased = !rightMouseDown && prevRightMouseDown;
-
-    // Update previous state
-    prevLeftMouseDown = leftMouseDown;
-    prevRightMouseDown = rightMouseDown;
+    // Latched edges: each fires exactly once per physical press/release,
+    // including presses that started and ended inside this same tick.
+    const leftJustPressed = input.consumeMousePress(0);
+    const rightJustPressed = input.consumeMousePress(2);
+    const rightJustReleased = input.consumeMouseRelease(2);
 
     // Process player entities (input-driven)
     for (const eid of playerEntities) {

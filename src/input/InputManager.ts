@@ -32,6 +32,24 @@ export class InputManager {
   // Mouse button state (button index -> pressed)
   private mouseButtons: Set<number> = new Set();
 
+  // ── Latched edges (consume-on-read) ──────────────────────
+  //
+  // State polling (`isKeyDown`/`isMouseButtonDown`) drops any press+release
+  // that both happen inside one 16.7ms fixed tick — the browser delivers
+  // both events between ticks and the poll never sees the button down
+  // (the "sub-tick click" gotcha, docs/AGENTS-DEBT.md). These sets latch
+  // every rising/falling edge as it arrives; a consumer drains its edge
+  // with `consumeKeyPress`/`consumeMousePress`/`consumeMouseRelease`, so a
+  // press fires exactly once no matter how it straddles tick boundaries.
+  //
+  // Consume-on-read means each edge has ONE owner per tick — today that's
+  // InputSystem (Space) and CombatSystem (mouse 0/2), which are disjoint.
+  // A second consumer of the same key would race the first; give new
+  // consumers their own key, don't share.
+  private pressedKeys: Set<string> = new Set();
+  private pressedMouseButtons: Set<number> = new Set();
+  private releasedMouseButtons: Set<number> = new Set();
+
   // Per-frame mouse delta (accumulated between resets)
   private frameDeltaX = 0;
   private frameDeltaY = 0;
@@ -70,9 +88,18 @@ export class InputManager {
   set paused(value: boolean) {
     this._paused = value;
     if (value) {
+      // Latch a release edge for every button still held, BEFORE clearing.
+      // A consumer watching for release (e.g. CombatSystem ending a block
+      // on RMB-up) must still see the falling edge when pausing swallows
+      // the real mouseup — otherwise the FSM sticks in Blocking.
+      for (const button of this.mouseButtons) {
+        this.releasedMouseButtons.add(button);
+      }
       // Safety net: clear accumulated state so nothing stays "stuck"
       this.keysDown.clear();
       this.mouseButtons.clear();
+      this.pressedKeys.clear();
+      this.pressedMouseButtons.clear();
     }
   }
 
@@ -126,6 +153,11 @@ export class InputManager {
     }
     if (this._paused) return;
     this.keysDown.add(e.code);
+    // Latch the rising edge. `repeat` filters OS key auto-repeat — a held
+    // key must not re-fire its edge every repeat interval.
+    if (!e.repeat) {
+      this.pressedKeys.add(e.code);
+    }
   };
 
   private _onKeyUp = (e: KeyboardEvent): void => {
@@ -152,11 +184,13 @@ export class InputManager {
   private _onMouseDown = (e: MouseEvent): void => {
     if (this.paused) return;
     this.mouseButtons.add(e.button);
+    this.pressedMouseButtons.add(e.button);
   };
 
   private _onMouseUp = (e: MouseEvent): void => {
     // Always remove — paused only gates reads, not writes
     this.mouseButtons.delete(e.button);
+    this.releasedMouseButtons.add(e.button);
   };
 
   private _onWheel = (e: WheelEvent): void => {
@@ -286,6 +320,33 @@ export class InputManager {
     return !this.paused && this.mouseButtons.has(button);
   }
 
+  /**
+   * Consume a latched key press edge. Returns true exactly once per
+   * physical press, even when the press+release both happened inside a
+   * single fixed tick (state polling would drop that press entirely).
+   * Returns false while paused. One consumer per key — see the latched-edge
+   * comment on the fields.
+   */
+  consumeKeyPress(code: string): boolean {
+    if (this.paused) return false;
+    return this.pressedKeys.delete(code);
+  }
+
+  /** Consume a latched mouse press edge (0=left, 2=right). See consumeKeyPress. */
+  consumeMousePress(button: number): boolean {
+    if (this.paused) return false;
+    return this.pressedMouseButtons.delete(button);
+  }
+
+  /**
+   * Consume a latched mouse release edge. NOT gated on paused: releases are
+   * always processed (same philosophy as keyup/mouseup handlers) so a block
+   * ended by pausing still delivers its falling edge to the combat FSM.
+   */
+  consumeMouseRelease(button: number): boolean {
+    return this.releasedMouseButtons.delete(button);
+  }
+
   /** Get accumulated mouse delta since last reset */
   getMouseDelta(): { x: number; y: number } {
     return { x: this.frameDeltaX, y: this.frameDeltaY };
@@ -395,6 +456,9 @@ export class InputManager {
     // Drop accumulated state so a stray reference doesn't keep memory alive.
     this.keysDown.clear();
     this.mouseButtons.clear();
+    this.pressedKeys.clear();
+    this.pressedMouseButtons.clear();
+    this.releasedMouseButtons.clear();
     this.deltaBuffer.length = 0;
   }
 }
