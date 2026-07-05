@@ -38,10 +38,12 @@ jobs:
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/${{ env.PROJECT_NAME }}.tar.gz
 
           # Quoted delimiter: the script must reach the remote shell verbatim.
-          # ${{ }} interpolation happens at the Actions layer either way, but an
-          # unquoted heredoc also lets the RUNNER's bash expand $(...) — and in
-          # heredoc context command substitution keeps its newlines, which
-          # turned `for i in $(seq 1 15)` into a remote syntax error.
+          # GitHub-expression interpolation happens at the Actions templating
+          # layer either way, but an unquoted heredoc also lets the RUNNER's
+          # bash expand command substitutions — and in heredoc context those
+          # keep their newlines, which turned the seq-based health-check loop
+          # into a remote syntax error. (Do not write a literal dollar-brace
+          # expression in comments here — Actions parses it even in comments.)
           ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'DEPLOY_SCRIPT'
             set -euo pipefail
             docker load < /tmp/${{ env.PROJECT_NAME }}.tar.gz
