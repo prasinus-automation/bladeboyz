@@ -2,7 +2,7 @@
 
 Browser-based multiplayer melee combat game with an ultra-low-poly BattleBit-style aesthetic and Mordhau/Chivalry-inspired directional combat mechanics. Built with Three.js, Rapier3D physics, and a bitECS entity-component-system architecture.
 
-Currently in the scaffolding phase: single player, **Arena v1** with training dummies, no networking yet. The combat system features tracer-based hit detection (swept-volume collision along the blade), directional attacks and blocks, a parry/riposte system, and data-driven weapon configurations. Players can open an inventory overlay to swap between unlocked weapons mid-session.
+The game now boots into **Arena v2** — a 100×100 m medieval outdoor map with variable-height terrain (a central raised stone plateau, perimeter hills, dirt paths) built on a deterministic heightfield engine. The combat system features tracer-based hit detection (swept-volume collision along the blade), directional attacks and blocks, a parry system, and data-driven weapon configurations. Players can open an inventory overlay to swap between unlocked weapons mid-session. The smaller flat **Arena v1** is retained as a reference/test map. See [Arenas](#arenas-v2--v1) below and [`docs/arena-v2.md`](docs/arena-v2.md).
 
 ## Getting Started
 
@@ -236,7 +236,7 @@ All character ECS `Position` values represent the entity's **feet** (point of co
 
 Capsule colliders are offset upward inside the body via `ColliderDesc.capsule(...).setTranslation(0, R+H, 0)` so the bottom hemisphere sits at the body origin (= feet). This applies uniformly to the player and to training dummies.
 
-Spawn Y is resolved by `spawnAtGround(world, x, z)`, which raycasts down from `(x, 50, z)` and returns the surface hit + a small `CHARACTER_CONTROLLER_OFFSET` epsilon. Entity factories never hard-code Y. The arena ground top is at `y = GROUND_TOP_Y = 0.1` (a 30×0.2×30 cuboid centered at origin in Arena v1).
+Spawn Y is resolved by `spawnAtGround(world, x, z)`, which raycasts down from above the terrain and returns the surface hit + a small `CHARACTER_CONTROLLER_OFFSET` epsilon. Entity factories never hard-code Y. Ground height is variable in Arena v2 — every fixed system that needs it queries `getGroundHeightAt(world.arena, x, z)` (from `src/arena/types.ts`), which samples the terrain heightfield when present (v2) and returns the flat `GROUND_TOP_Y = 0.1` when absent (v1). Never read `arena.groundHeight` directly.
 
 ## Weapons
 
@@ -311,7 +311,7 @@ Spawn points live in `src/world/SpawnPoints.ts` as a `Map<id, SpawnPoint>`. Each
 3. Otherwise filter to `distToNearestEnemy ≥ minEnemyDistance` (default `8.0`); uniform random over the safe set.
 4. If no candidate is safe, return the candidate that's furthest from its nearest enemy (max-min fallback, so a packed arena still respawns the player).
 
-Both initial spawn (`createPlayer`) and post-death respawn (`processRespawns`) consult this registry — the only difference is initial spawn passes an empty enemies list. The arena (`src/arena/createArena.ts`) is the sole producer of registry entries: it `clearSpawnPoints()` first, then registers the six arena-defined points (S1..S6 from the design doc). The legacy `seedPlaceholderSpawnPoints()` helper is no longer wired in production — it's kept around for unit tests that need a registry without spinning up an arena.
+Both initial spawn (`createPlayer`) and post-death respawn (`processRespawns`) consult this registry — the only difference is initial spawn passes an empty enemies list. The active arena builder is the sole producer of registry entries: it `clearSpawnPoints()` first, then registers its arena-defined points — 10 points for Arena v2 (`createArenaV2`), or the 6 v1 points (S1..S6) for `createArena`. The legacy `seedPlaceholderSpawnPoints()` helper is no longer wired in production — it's kept around for unit tests that need a registry without spinning up an arena.
 
 ## Animation
 
@@ -340,9 +340,26 @@ When a hit lands, `DamageSystem` writes a `HitReactComp` carrying a target-body-
 
 The slerp loop lives in `src/animation/poseBlending.ts` so both the third-person `AnimationSystem` and the first-person `ViewmodelAnimationSystem` (issue #D) can share it — no more independently-buggy copies of the same code in two files. The full architecture spec is at [`docs/animation-architecture.md`](docs/animation-architecture.md).
 
-## Test Arena (Arena v1)
+## Arenas (v2 + v1)
 
-The world is a single 30×30 m arena built code-first from `src/arena/createArena.ts` — no glTF, no JSON map files. Layout (top-down, +X = east, −Z = north):
+Both maps are built **code-first** — no glTF, no JSON map files, no textures.
+
+### Arena v2 (active map)
+
+The game boots into **Arena v2** (`src/arena/createArenaV2.ts`) — a 100×100 m medieval outdoor map on the deterministic terrain engine (`src/arena/terrain.ts`, #206). Highlights:
+
+- **Variable-height terrain** — one Rapier heightfield collider plus a displaced, flat-shaded `PlaneGeometry` visual mesh, both sampled from the same `TERRAIN_SPEC_V2` at the same grid points, so the visible surface and the collision surface match exactly (a dropped entity rests on the mesh).
+- **Central stone plateau** — a 36×36 m flat top raised to `y ≈ 4` with a walkable smoothstep skirt (radius ≈ 26 m). This is the foundation the follow-up **castle** issue builds on.
+- **Perimeter hills** (4, heights ≈4.5–5.5 m) for sightline breaks and verticality, plus four **dirt paths** radiating from the plateau to the map edges.
+- **Material zones without textures** — per-vertex colors on the terrain mesh: grass (olive), dirt (path brown), stone (plateau). `sampleTerrainZone(x, z)` is a pure function so a future minimap/server can reproduce it.
+- **10 spawn points** on a radius-39 ring in open, flat terrain (outside the plateau footprint), each facing map center. The **x/z/yaw** spawn table lives in `src/arena/arenaV2Spec.ts` (`ARENA_V2_SPAWNS`) and is imported verbatim by both the client and the multiplayer server — a deep-equal test pins them in lockstep. Spawn y is resolved at runtime from the terrain sampler.
+- **Boundary walls** at `±50.25` (stone, 6 m tall, top at `y = 5` so they stand proud of the perimeter hills and can't be climbed over) and the **lighting rig** (ambient + hemisphere fill + a directional sun repositioned to `(60, 80, 40)` for the larger field; no shadows).
+
+`arenaV2Spec.ts` holds all pure map data (terrain spec, zones, spawn table) with **no** Three.js/Rapier runtime imports, so the headless server bundles the spawn table without pulling in the renderer. Full layout, feature table, plateau contract, and zone map: [`docs/arena-v2.md`](docs/arena-v2.md).
+
+### Arena v1 (reference/test map)
+
+The original single 30×30 m arena (`src/arena/createArena.ts`) is retained for its tests and as a small flat reference. Layout (top-down, +X = east, −Z = north):
 
 - **Ground plane** — 30 × 0.2 × 30 olive-green floor; top surface at `y = 0.1` (matches `GROUND_TOP_Y`).
 - **Perimeter walls** — four 2 m-tall warm-grey walls forming a closed playspace at `x = ±15.25` and `z = ±15.25`.
