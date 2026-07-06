@@ -44,6 +44,13 @@ export const CROSSFADE_DURATION_SEC = 0.08;
 const CROSSFADE_BY_STATE: Partial<Record<CombatState, number>> = {
   [CombatState.Parry]: 0.05,
   [CombatState.HitStun]: 0.12,
+  // Blocking (#218): a readable "raise weapon to guard" sweep. The legacy
+  // 0.08 crossfade was so fast it read as a snap, giving weak feedback about
+  // the act and direction of blocking. 0.14 s (paired with `easeOutBack` in
+  // `combatPhaseBlend`) makes the weapon carry up into guard and settle.
+  // Gameplay is unchanged — the block is mechanically active on the FSM
+  // entry tick regardless of how long the VISUAL raise takes.
+  [CombatState.Blocking]: 0.14,
 };
 
 /** Crossfade duration to use when ENTERING `state`. */
@@ -56,6 +63,8 @@ export function crossfadeDurationFor(state: CombatState): number {
 const _euler = new THREE.Euler();
 const _targetQuat = new THREE.Quaternion();
 const _identity = new THREE.Quaternion();
+const _addEuler = new THREE.Euler();
+const _addQuat = new THREE.Quaternion();
 
 // ── Helpers ──────────────────────────────────────────────
 
@@ -141,8 +150,15 @@ export function anchoredPhaseT(
  *  - Recovery: ease-out-back on phaseT — the arm carries past guard
  *    (follow-through momentum) and settles into it across the whole
  *    recovery window.
- *  - Everything else (Idle, Blocking, Parry, HitStun): reactive states
- *    keep the crossfade race — snapping fast IS correct for a block.
+ *  - Blocking (#218): ease-out-back on the CROSSFADE (phaseT is always 0
+ *    during Blocking — `phaseTotal == 0` — so the old `max()` was a no-op
+ *    there anyway). Paired with the 0.14 s Blocking crossfade above, the
+ *    weapon carries ~6% past the guard pose and settles: a "brace the
+ *    guard" feel instead of a snap. Gameplay is unchanged — only the
+ *    VISUAL raise takes 0.14 s; the block is mechanically active on the
+ *    FSM entry tick.
+ *  - Everything else (Idle, Parry, HitStun): reactive states keep the
+ *    crossfade race. Parry's 0.05 s snap is a deliberate reward flourish.
  */
 export function combatPhaseBlend(
   state: CombatState,
@@ -154,6 +170,8 @@ export function combatPhaseBlend(
       return smoothstepEase(phaseT);
     case CombatState.Recovery:
       return easeOutBack(phaseT);
+    case CombatState.Blocking:
+      return easeOutBack(crossfadeT);
     default:
       return smoothstepEase(Math.max(phaseT, crossfadeT));
   }
@@ -218,5 +236,36 @@ export function applyPoseLayer(
 
     const prevQuat = prevPose[boneName] ?? _identity;
     bone.quaternion.copy(prevQuat).slerp(_targetQuat, easedT);
+  }
+}
+
+/**
+ * Post-multiply a small additive pose onto bones that were already written
+ * by a keyframe/arc layer this tick — the "layer ON TOP" pattern used for
+ * idle sway (#129) and the living-guard block hold (#218).
+ *
+ * Unlike `applyPoseLayer` (which SLERPS the bone from a snapshot toward a
+ * target), this LEAVES the existing bone rotation in place and multiplies a
+ * delta quaternion onto it, so it composes with — rather than replaces —
+ * the base pose. Only bones present in BOTH `pose` and `ownedBoneSet` are
+ * touched; everything else is left exactly as the base layer produced it.
+ *
+ * @param bones        Bone hierarchy (third-person or viewmodel).
+ * @param pose         Additive Euler-delta offsets (radians), keyed by bone.
+ * @param ownedBoneSet Bones this layer is allowed to write this tick.
+ */
+export function applyAdditivePoseLayer(
+  bones: Record<string, THREE.Bone>,
+  pose: Pose,
+  ownedBoneSet: ReadonlySet<string>,
+): void {
+  for (const boneName of ownedBoneSet) {
+    const rot = pose[boneName];
+    if (!rot) continue;
+    const bone = bones[boneName];
+    if (!bone) continue;
+    _addEuler.set(rot.x ?? 0, rot.y ?? 0, rot.z ?? 0, 'XYZ');
+    _addQuat.setFromEuler(_addEuler);
+    bone.quaternion.multiply(_addQuat);
   }
 }

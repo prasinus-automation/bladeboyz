@@ -413,4 +413,78 @@ describe('ViewmodelAnimationSystem', () => {
       });
     }
   });
+
+  describe('living-guard block hold (#218)', () => {
+    /** Settle the crossfade at a fixed hold tick, then return the arm quat. */
+    function settleBlock(direction: Direction, phaseElapsed: number): THREE.Quaternion {
+      CombatStateComp.state[eid] = CombatState.Blocking;
+      CombatStateComp.direction[eid] = direction;
+      CombatStateComp.phaseTotal[eid] = 0;
+      CombatStateComp.phaseElapsed[eid] = phaseElapsed;
+      // Run well past the 0.14 s crossfade so the keyframe base is static.
+      for (let i = 0; i < 20; i++) {
+        viewmodelAnimationSystem(viewmodel, eid, 0.016, WEAPON_ID_TO_NAME);
+      }
+      return viewmodel.bones['upper_arm_R'].quaternion.clone();
+    }
+
+    it('is NOT frozen during the hold — pose at tick N differs from N+30', () => {
+      for (const dir of [Direction.Overhead, Direction.Left, Direction.Right, Direction.Stab]) {
+        resetViewmodelAnimationSystem();
+        const atN = settleBlock(dir, 40);
+        // Advance the block-hold clock only; state/direction unchanged so the
+        // keyframe base is identical — any difference is the living-guard layer.
+        CombatStateComp.phaseElapsed[eid] = 70;
+        viewmodelAnimationSystem(viewmodel, eid, 0.016, WEAPON_ID_TO_NAME);
+        const atN30 = viewmodel.bones['upper_arm_R'].quaternion.clone();
+        expect(atN30.equals(atN)).toBe(false);
+      }
+    });
+
+    it('is deterministic — identical phaseElapsed yields identical pose', () => {
+      resetViewmodelAnimationSystem();
+      const first = settleBlock(Direction.Overhead, 55);
+      resetViewmodelAnimationSystem();
+      const second = settleBlock(Direction.Overhead, 55);
+      expect(first.angleTo(second)).toBeCloseTo(0, 12);
+    });
+
+    it('the entry raise-in sweep lasts longer than the old 0.08 s snap', () => {
+      // Fully blend Idle first.
+      for (let i = 0; i < 20; i++) {
+        viewmodelAnimationSystem(viewmodel, eid, 0.016, WEAPON_ID_TO_NAME);
+      }
+      // Enter Blocking; sample at ~0.08 s and ~0.16 s into the crossfade.
+      CombatStateComp.state[eid] = CombatState.Blocking;
+      CombatStateComp.direction[eid] = Direction.Overhead;
+      CombatStateComp.phaseTotal[eid] = 0;
+      CombatStateComp.phaseElapsed[eid] = 1;
+      for (let i = 0; i < 5; i++) {
+        viewmodelAnimationSystem(viewmodel, eid, 0.016, WEAPON_ID_TO_NAME);
+      }
+      const atEarly = viewmodel.bones['upper_arm_R'].quaternion.clone(); // ~0.08 s
+      for (let i = 0; i < 5; i++) {
+        viewmodelAnimationSystem(viewmodel, eid, 0.016, WEAPON_ID_TO_NAME);
+      }
+      const atLate = viewmodel.bones['upper_arm_R'].quaternion.clone(); // ~0.16 s
+      // Still visibly moving after 0.08 s → the sweep is longer than a snap.
+      expect(atEarly.equals(atLate)).toBe(false);
+    });
+
+    it('Parry has NO hold motion — pose is frozen across ticks', () => {
+      resetViewmodelAnimationSystem();
+      CombatStateComp.state[eid] = CombatState.Parry;
+      CombatStateComp.direction[eid] = Direction.Overhead;
+      CombatStateComp.phaseTotal[eid] = 0;
+      CombatStateComp.phaseElapsed[eid] = 40;
+      for (let i = 0; i < 20; i++) {
+        viewmodelAnimationSystem(viewmodel, eid, 0.016, WEAPON_ID_TO_NAME);
+      }
+      const atN = viewmodel.bones['upper_arm_R'].quaternion.clone();
+      CombatStateComp.phaseElapsed[eid] = 70;
+      viewmodelAnimationSystem(viewmodel, eid, 0.016, WEAPON_ID_TO_NAME);
+      const atN30 = viewmodel.bones['upper_arm_R'].quaternion.clone();
+      expect(atN30.equals(atN)).toBe(true);
+    });
+  });
 });

@@ -586,4 +586,58 @@ describe('AnimationSystem', () => {
     const thighL = modelData.bones['thigh_L'];
     expect(thighL.quaternion.equals(new THREE.Quaternion())).toBe(false);
   });
+
+  describe('living-guard block hold (#218)', () => {
+    /** Settle the crossfade at a fixed hold tick, return the upper_arm_R quat. */
+    function settleBlock(direction: Direction, phaseElapsed: number): THREE.Quaternion {
+      CombatStateComp.state[eid] = CombatState.Blocking;
+      CombatStateComp.direction[eid] = direction;
+      CombatStateComp.phaseTotal[eid] = 0;
+      CombatStateComp.phaseElapsed[eid] = phaseElapsed;
+      MovementState.speedFactor[eid] = 0; // stationary → guard, no gait
+      for (let i = 0; i < 25; i++) animationSystem(world, 1 / 60);
+      return meshRegistry.get(CharacterModel.id[eid])!.bones['upper_arm_R'].quaternion.clone();
+    }
+
+    it('is NOT frozen during the hold — pose at tick N differs from N+30', () => {
+      for (const dir of [Direction.Overhead, Direction.Left, Direction.Right, Direction.Stab]) {
+        resetAnimationSystem();
+        AnimationComp.prevCombatState[eid] = CombatState.Idle;
+        AnimationComp.prevDirection[eid] = 0;
+        AnimationComp.crossfadeT[eid] = 1;
+        const atN = settleBlock(dir, 40);
+        // Advance the block-hold clock only; state/direction unchanged so the
+        // keyframe base is identical — any difference is the living-guard layer.
+        CombatStateComp.phaseElapsed[eid] = 70;
+        animationSystem(world, 1 / 60);
+        const atN30 = meshRegistry.get(CharacterModel.id[eid])!.bones['upper_arm_R'].quaternion.clone();
+        expect(atN30.equals(atN)).toBe(false);
+      }
+    });
+
+    it('is deterministic — identical phaseElapsed yields identical pose', () => {
+      const first = settleBlock(Direction.Overhead, 55);
+      // Fresh world/entity so nothing carries over.
+      resetAnimationSystem();
+      resetFixedTick();
+      world = createTestWorld();
+      eid = createTestEntity(world);
+      const second = settleBlock(Direction.Overhead, 55);
+      expect(first.angleTo(second)).toBeCloseTo(0, 12);
+    });
+
+    it('Parry has NO hold motion — pose is frozen across ticks', () => {
+      CombatStateComp.state[eid] = CombatState.Parry;
+      CombatStateComp.direction[eid] = Direction.Overhead;
+      CombatStateComp.phaseTotal[eid] = 0;
+      CombatStateComp.phaseElapsed[eid] = 40;
+      MovementState.speedFactor[eid] = 0;
+      for (let i = 0; i < 25; i++) animationSystem(world, 1 / 60);
+      const atN = meshRegistry.get(CharacterModel.id[eid])!.bones['upper_arm_R'].quaternion.clone();
+      CombatStateComp.phaseElapsed[eid] = 70;
+      animationSystem(world, 1 / 60);
+      const atN30 = meshRegistry.get(CharacterModel.id[eid])!.bones['upper_arm_R'].quaternion.clone();
+      expect(atN30.equals(atN)).toBe(true);
+    });
+  });
 });
