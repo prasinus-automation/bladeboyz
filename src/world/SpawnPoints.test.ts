@@ -293,22 +293,31 @@ describe('seedPlaceholderSpawnPoints', () => {
     expect(ids).toEqual([1, 2, 3, 4]);
   });
 
-  it('yaws face roughly toward the origin (atan2(-x, -z))', () => {
+  it('each spawn`s world forward vector points at the origin', () => {
     seedPlaceholderSpawnPoints();
     for (const sp of spawnPointRegistry.values()) {
-      const expectedYaw = Math.atan2(-sp.position.x, -sp.position.z);
-      expect(sp.yaw).toBeCloseTo(expectedYaw, 5);
+      // forward = (-sin yaw, -cos yaw) under the project convention.
+      const fwdX = -Math.sin(sp.yaw);
+      const fwdZ = -Math.cos(sp.yaw);
+      // Unit vector from the spawn toward the origin (0,0).
+      const toX = -sp.position.x;
+      const toZ = -sp.position.z;
+      const len = Math.hypot(toX, toZ);
+      // dot(forward, normalize(origin - pos)) ≈ 1 iff forward points at origin.
+      const dot = (fwdX * toX + fwdZ * toZ) / len;
+      expect(dot).toBeCloseTo(1, 5);
     }
   });
 
-  it('the (10,_,10) corner faces the origin specifically', () => {
+  it('the (10,_,10) corner faces the origin specifically (yaw = π/4)', () => {
     seedPlaceholderSpawnPoints();
     const corner = Array.from(spawnPointRegistry.values()).find(
       (sp) => sp.position.x === 10 && sp.position.z === 10,
     );
     expect(corner).toBeDefined();
-    // atan2(-10, -10) = -3π/4
-    expect(corner!.yaw).toBeCloseTo(-Math.PI * 0.75, 5);
+    // yawTowards(10, 10) = atan2(10, 10) = π/4 → forward (-sin, -cos) = (-√½,-√½)
+    // which points toward (0,0) from (10,10). (The old -3π/4 faced AWAY.)
+    expect(corner!.yaw).toBeCloseTo(Math.PI * 0.25, 5);
   });
 });
 

@@ -90,6 +90,18 @@ export class CameraController {
     return this.yaw;
   }
 
+  /**
+   * Force the camera yaw (radians, around world +Y), e.g. to look along a
+   * spawn/respawn facing. Pitch is reset to level (0) — a fresh spawn should
+   * look straight ahead. This is the ONLY correct way to reorient the local
+   * player on spawn: `MovementSystem` overwrites `Rotation.y` from the camera
+   * yaw every fixed tick, so writing the ECS component alone is clobbered.
+   */
+  setYaw(yaw: number): void {
+    this.yaw = yaw;
+    this.pitch = 0;
+  }
+
   /** Get current pitch */
   getPitch(): number {
     return this.pitch;

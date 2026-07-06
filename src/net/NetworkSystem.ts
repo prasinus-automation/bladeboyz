@@ -47,6 +47,7 @@ import { weaponIdToName } from '../ecs/systems/CombatSystem';
 import { DEFAULT_KNOCKBACK } from '../weapons/WeaponConfig';
 import type { GameWorld } from '../core/types';
 import type { NetClient } from './NetClient';
+import type { CameraController } from '../rendering/CameraController';
 import type { ServerMsg, NetScoreRow, NetSpawn } from './protocol';
 import { CLIENT_SEND_HZ } from './protocol';
 import {
@@ -93,6 +94,7 @@ export class NetworkSystem {
     private world: GameWorld,
     private client: NetClient,
     private playerEid: number,
+    private cameraController?: CameraController,
   ) {
     client.onMessage = (msg) => this.handleMessage(msg);
     client.onStatus = (status) => {
@@ -286,6 +288,11 @@ export class NetworkSystem {
       body.setTranslation({ x: spawn.x, y, z: spawn.z }, true);
     }
     Rotation.y[eid] = spawn.yaw;
+    // Point the local camera along the authoritative spawn/respawn facing.
+    // MovementSystem re-derives Rotation.y from the camera yaw each tick, so
+    // setting only the component would be clobbered next tick (#211/#212).
+    // teleportLocal is always the LOCAL player (welcome + server respawn).
+    this.cameraController?.setYaw(spawn.yaw);
   }
 
   private applyHp(

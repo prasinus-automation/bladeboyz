@@ -63,6 +63,7 @@ import {
 } from '../systems/MovementSystem';
 import { weaponBoneMap, colliderToHitbox } from '../systems/TracerSystem';
 import { spawnAtGround } from '../utils/spawnAtGround';
+import { yawTowards } from '../../utils/math';
 import { CombatState } from '../../combat/states';
 import { CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS } from '../../core/types';
 import { createFSM, removeFSM } from '../../combat/CombatFSM';
@@ -148,9 +149,14 @@ export function createWarmupBot(
   PreviousPosition.z[eid] = z;
 
   // Face the target initially; BotAISystem re-aims every tick.
-  const tdx = Position.x[opts.targetEid] - x;
-  const tdz = Position.z[opts.targetEid] - z;
-  Rotation.y[eid] = Math.atan2(-tdx, -tdz);
+  // yawTowards(self, target) = atan2(-(targetX-x), -(targetZ-z)) — identical to
+  // the old inline, via the shared helper (#212).
+  Rotation.y[eid] = yawTowards(
+    x,
+    z,
+    Position.x[opts.targetEid],
+    Position.z[opts.targetEid],
+  );
   PreviousRotation.y[eid] = Rotation.y[eid];
 
   Health.current[eid] = 100;

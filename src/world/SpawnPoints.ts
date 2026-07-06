@@ -26,6 +26,7 @@
 
 import { Position } from '../ecs/components';
 import { SPAWN_HEIGHT } from '../core/types';
+import { yawTowards } from '../utils/math';
 
 /**
  * A registered spawn location.
@@ -178,10 +179,11 @@ function distanceToNearestEnemy(
  * real arena layout (#91) registers its own.
  *
  * Coordinates: (±10, SPAWN_HEIGHT, ±10) — the four corners of an interior
- * 20×20 square. Yaw faces roughly toward the origin via
- * `atan2(-position.x, -position.z)` (Three.js convention: yaw=0 looks
- * down -Z, positive yaw rotates left). For the corner at (10, _, 10) this
- * gives yaw = atan2(-10, -10) = -3π/4, i.e. looking toward the origin.
+ * 20×20 square. Yaw faces toward the origin via `yawTowards(x, z)`
+ * (= atan2(x, z) under the forward = (-sin yaw, -cos yaw) convention: yaw=0
+ * looks down -Z). For the corner at (10, _, 10) this gives yaw =
+ * atan2(10, 10) = π/4, i.e. looking toward the origin. (The old
+ * `atan2(-x, -z)` form was π off and faced spawns AWAY — fixed in #211/#212.)
  *
  * Production note: SPAWN_HEIGHT is the deprecated alias of GROUND_TOP_Y
  * (= 0.1) per #104. These are FEET positions; pass them through to
@@ -203,7 +205,7 @@ export function seedPlaceholderSpawnPoints(): void {
     registerSpawnPoint({
       id: i + 1, // 1-based so id=0 stays the "no spawn point" sentinel
       position: { x, y: SPAWN_HEIGHT, z },
-      yaw: Math.atan2(-x, -z),
+      yaw: yawTowards(x, z),
     });
   }
 }

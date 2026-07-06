@@ -88,14 +88,16 @@ All extents are full extents (Three.js `BoxGeometry(width, height, depth)`); Rap
 
 Spawn points are mirror-symmetric pairs across z=0, plus two perpendicular spawns on the east-west axis. 6 spawn points total — fits 2–8 players if some respawn waves overlap. Player rotation faces arena center (yaw points toward origin, projected onto xz-plane).
 
+Yaw is computed by `yawTowards(x, z)` (in `src/utils/math.ts`) = `atan2(x, z)`. Under the project convention `forward = (-sin yaw, -cos yaw)` (yaw=0 looks down −Z), this points the spawn AT the origin. Note that positive yaw faces −X (west): `Math.PI / 2` → forward `(-1, 0)` = west. (The older `atan2(-x, -z)` form documented here was exactly π off — it faced spawns AWAY from center; fixed in #211/#212.)
+
 | ID | Position (x, y, z) | Yaw (rad, faces center) | Notes |
 |---|---|---|---|
-| S1 | `(-13, 1.1, 0)` | `Math.PI / 2` (faces +X / east) | West side, on E-W axis. |
-| S2 | `(-7, 1.1, -9)` | `atan2(7, 9)` ≈ `0.66` | NW interior, faces SE toward center. |
-| S3 | `(7, 1.1, -9)` | `atan2(-7, 9)` ≈ `-0.66` | NE interior, faces SW toward center. |
-| S4 | `(13, 1.1, 0)` | `-Math.PI / 2` (faces −X / west) | East side, on E-W axis. |
-| S5 | `(-7, 1.1, 9)` | `atan2(7, -9)` ≈ `2.48` | SW interior, faces NE toward center. (Behind shop stall — slight gameplay note: this spawn is closest to the shopkeep.) |
-| S6 | `(7, 1.1, 9)` | `atan2(-7, -9)` ≈ `-2.48` | SE interior, faces NW toward center. |
+| S1 | `(-13, 1.1, 0)` | `-Math.PI / 2` (faces +X / east) | West side, on E-W axis. |
+| S2 | `(-7, 1.1, -9)` | `atan2(-7, -9)` ≈ `-2.48` | NW interior, faces SE toward center. |
+| S3 | `(7, 1.1, -9)` | `atan2(7, -9)` ≈ `2.48` | NE interior, faces SW toward center. |
+| S4 | `(13, 1.1, 0)` | `Math.PI / 2` (faces −X / west) | East side, on E-W axis. |
+| S5 | `(-7, 1.1, 9)` | `atan2(-7, 9)` ≈ `-0.66` | SW interior, faces NE toward center. (Behind shop stall — slight gameplay note: this spawn is closest to the shopkeep.) |
+| S6 | `(7, 1.1, 9)` | `atan2(7, 9)` ≈ `0.66` | SE interior, faces NW toward center. |
 
 `y = 1.1` matches `SPAWN_HEIGHT`. Once Issue #86 (character controller) lands, spawn implementations should raycast down from `y = 5` and snap-to-ground; until then the static `y = 1.1` works because the ground is flat.
 

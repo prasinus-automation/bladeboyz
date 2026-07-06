@@ -180,6 +180,7 @@ export function processRespawns(
     EventBus.emit('RespawnEvent', {
       eid,
       spawnPointId: sp.id,
+      yaw: sp.yaw,
       tick,
     });
   }
