@@ -311,7 +311,7 @@ export function createCharacterModel(
       footGeom(),
       mat,
       footL,
-      new THREE.Vector3(0, -FOOT_H / 2, FOOT_D * 0.2),
+      new THREE.Vector3(0, -FOOT_H / 2, -FOOT_D * 0.2),
     ),
   );
   group.add(
@@ -319,7 +319,7 @@ export function createCharacterModel(
       footGeom(),
       mat,
       footR,
-      new THREE.Vector3(0, -FOOT_H / 2, FOOT_D * 0.2),
+      new THREE.Vector3(0, -FOOT_H / 2, -FOOT_D * 0.2),
     ),
   );
 

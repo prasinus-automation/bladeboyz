@@ -96,10 +96,25 @@ their own values.
 ### Bone-local rest semantics
 
 Limbs hang along **-Y** at rest (every limb's child offset has a negative Y
-component). The standard "raise arm forward in front of body" motion is a
-**negative X rotation** of `upper_arm_R` (rotates the local -Y down-axis
-toward -Z forward). The standard "elbow bend" is a **negative X rotation**
-of `forearm_R` (folding the forearm back up toward the shoulder).
+component). Because a bone points along local -Y, `Rx(θ)·(0,-1,0) =
+(0,-cosθ,-sinθ)`: a **positive** X rotation drives the tip toward **-Z
+(world-forward)**, a negative X drives it toward +Z (the third-person camera
+at yaw=0). So the standard "raise arm forward in front of body" motion is a
+**POSITIVE X rotation** of `upper_arm_R` (rotates the local -Y down-axis
+toward -Z forward). The "elbow bend" (folding the forearm back up toward the
+shoulder) is a **negative X rotation** of `forearm_R` — that folds the
+forearm's -Y tip toward +Z/up, tucking it in.
+
+> **Convention history (#219):** an earlier revision of this section claimed
+> the *opposite* (that raising an arm forward was a negative X rotation). The
+> character geometry and several keyframe poses (`IDLE_POSE`, `PARRY_POSE`,
+> the Overhead `BLOCK_POSE`, the toe offset) were authored to that wrong
+> claim, which rendered the model facing **+Z** — back-to-front, with the
+> sword hanging toward the camera. #219 corrected the geometry, the poses,
+> and this doc. `arcSwing.ts` already used the correct positive-X convention,
+> which is why weapon swings looked right while idle/block/parry were
+> mirrored. The mechanical fix for a +Z-authored pose is conjugation by
+> `Ry(π)`: **negate the X and Z Euler components, keep Y.**
 
 Per-bone neutral:
 
@@ -116,7 +131,7 @@ Per-bone neutral:
 | `weapon_attach`   | weapon grip points up out of the hand (after the `π` flip applied at rest) |
 | `thigh_L/R`       | leg straight down                                                |
 | `shin_L/R`        | knee extended                                                    |
-| `foot_L/R`        | sole flat on ground (slight +Z geom offset for toe forward)      |
+| `foot_L/R`        | sole flat on ground (slight **-Z** geom offset so toes point forward, #219) |
 
 ### Pose deltas
 

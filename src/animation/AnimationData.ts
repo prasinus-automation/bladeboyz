@@ -97,15 +97,27 @@ const DEG = Math.PI / 180;
 
 // ── Idle Pose ────────────────────────────────────────────
 
-/** Subtle "ready" stance — sword held in front at mid-guard */
+/**
+ * Subtle "ready" stance — sword held in front at mid-guard.
+ *
+ * FACING CONVENTION (#219): limbs hang along local -Y at rest, so
+ * `Rx(θ)·(0,-1,0) = (0,-cosθ,-sinθ)` — a **POSITIVE** X rotation swings an
+ * arm toward world-forward (-Z), a negative X swings it toward the
+ * third-person camera (+Z). This pose was originally authored to the
+ * inverted convention (all-negative X on the right-arm chain → guard raised
+ * toward the camera → the "floating sword pointing at the camera" bug). It
+ * has been corrected by conjugation with Ry(π): negate every X and Z Euler
+ * component, keep Y. Verified in `AnimationData.orientation.test.ts` —
+ * `hand_R`/`weapon_attach` now resolve to world-z < 0 at yaw=0.
+ */
 export const IDLE_POSE: Pose = {
-  shoulder_R: { x: -15 * DEG, z: -20 * DEG },
-  upper_arm_R: { x: -40 * DEG },
-  forearm_R: { x: -30 * DEG },
-  shoulder_L: { x: -10 * DEG, z: 20 * DEG },
-  upper_arm_L: { x: -30 * DEG },
-  forearm_L: { x: -20 * DEG },
-  spine: { x: 2 * DEG },
+  shoulder_R: { x: 15 * DEG, z: 20 * DEG },
+  upper_arm_R: { x: 40 * DEG },
+  forearm_R: { x: 30 * DEG },
+  shoulder_L: { x: 10 * DEG, z: -20 * DEG },
+  upper_arm_L: { x: 30 * DEG },
+  forearm_L: { x: 20 * DEG },
+  spine: { x: -2 * DEG },
 };
 
 // ── Combat Animations (4 directions × 3 phases) ─────────
@@ -115,6 +127,15 @@ export const IDLE_POSE: Pose = {
 // detection noise. After #139 the keys are unified `Direction` enum
 // values (Overhead=0, Left=1, Right=2, Stab=3) instead of the old
 // `AttackDirection` (Left=0, Right=1, Overhead=2, Stab=3).
+//
+// #219 audit: the windup keyframes were NOT flipped. They were already tuned
+// to the corrected -Z convention to crossfade seamlessly into the arc-swing
+// Release starts in `arcSwing.ts` (Overhead's shoulder `x: -160°` is
+// 2π-equivalent to arc `shoulderStart x: 3.5`; Left/Right chamber on the
+// same lateral hemisphere as their arc starts; Stab keeps its rear elbow
+// chamber). Negating them would break the windup→Release crossfade. Pinned
+// by `BladeTimingParity.test.ts` (Release) and the windup-hemisphere checks
+// in `AnimationData.orientation.test.ts`.
 
 const ATTACK_ANIMATIONS: Record<number, CombatAnimation> = {
   // ── Left Swing ──
@@ -243,13 +264,18 @@ const BLOCK_POSES: Record<number, BlockPose> = {
     forearm_L: { x: -30 * DEG },
   },
   [Direction.Overhead as number]: {
-    // Sword held high horizontally above head (formerly BlockDirection.Top).
-    shoulder_R: { x: -150 * DEG, z: -10 * DEG },
-    upper_arm_R: { x: -10 * DEG },
-    forearm_R: { x: -20 * DEG },
-    shoulder_L: { x: -130 * DEG, z: 10 * DEG },
-    upper_arm_L: { x: -10 * DEG },
-    forearm_L: { x: -30 * DEG },
+    // Sword held high above head, tipped FORWARD to catch a descending
+    // overhead attack (formerly BlockDirection.Top). #219: corrected from
+    // the +Z-authored `x: -150°` (which resolved the guard toward the
+    // camera, hand world-z ≈ +0.11) via Ry(π) conjugation (negate X and Z,
+    // keep Y). The Left/Right/Stab blocks were already fixed for the -Z
+    // convention in #139; this brings Overhead into line.
+    shoulder_R: { x: 150 * DEG, z: 10 * DEG },
+    upper_arm_R: { x: 10 * DEG },
+    forearm_R: { x: 20 * DEG },
+    shoulder_L: { x: 130 * DEG, z: -10 * DEG },
+    upper_arm_L: { x: 10 * DEG },
+    forearm_L: { x: 30 * DEG },
   },
   [Direction.Stab as number]: {
     // Sword held low/forward to catch a thrust (reuses the v1 `Bottom` pose).
@@ -321,14 +347,22 @@ export const MOVEMENT_PARAMS: Record<string, MovementAnimParams> = {
 
 // ── Parry visual feedback pose (slight knockback) ────────
 
+// #219: corrected from the +Z-authored pose (shoulder_R `x: -80°` threw the
+// sword arm toward the camera, hand world-z ≈ +0.34) via Ry(π) conjugation
+// (negate X and Z, keep Y). The parry now reads as a forward blade-catch
+// with a slight upward recoil, on the character's facing side (-Z).
 export const PARRY_POSE: Pose = {
-  chest: { x: -10 * DEG },
-  shoulder_R: { x: -80 * DEG, z: -20 * DEG },
-  upper_arm_R: { x: -20 * DEG },
-  forearm_R: { x: -40 * DEG },
+  chest: { x: 10 * DEG },
+  shoulder_R: { x: 80 * DEG, z: 20 * DEG },
+  upper_arm_R: { x: 20 * DEG },
+  forearm_R: { x: 40 * DEG },
 };
 
 // ── Stunned pose ─────────────────────────────────────────
+//
+// #219 audit: already authored to the -Z convention (positive shoulder_R x
+// → arms forward, hand world-z ≈ -0.30). NOT flipped. (Dead code anyway —
+// FSM v2 folded Stunned into HitStun — but kept convention-correct.)
 
 export const STUNNED_POSE: Pose = {
   chest: { x: 15 * DEG, y: 10 * DEG },
@@ -341,6 +375,12 @@ export const STUNNED_POSE: Pose = {
 };
 
 // ── HitStun pose ─────────────────────────────────────────
+//
+// #219 audit: already authored to the -Z convention (positive shoulder_R /
+// upper_arm_R x → defensive flinch forward, hand world-z ≈ -0.24). NOT
+// flipped — flipping would throw the guard toward the camera. The
+// directional stagger lean (`applyHitReactLean`) composes on top in
+// body-local space and is convention-agnostic.
 
 export const HITSTUN_POSE: Pose = {
   chest: { x: 10 * DEG, z: -5 * DEG },
