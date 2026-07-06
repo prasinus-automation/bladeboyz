@@ -33,7 +33,7 @@ import { CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS } from '../../core/types';
 import { CombatInput, createFSM, fsmRegistry, removeFSM } from '../../combat/CombatFSM';
 import { weaponConfigs } from '../../weapons/WeaponConfig';
 import { weaponIdToName } from '../systems/CombatSystem';
-import { weaponModelFactories } from '../../rendering/WeaponModels';
+import { attachThirdPersonWeapon } from '../../rendering/WeaponModels';
 import { npcRegistry } from '../npcRegistry';
 import type { GameWorld } from '../../core/types';
 
@@ -216,11 +216,7 @@ export function createTrainingDummy(
   // player's behaviour from createPlayer. So the dummy visibly looks like
   // a sparring partner instead of holding empty air.
   if (startingWeapon && weaponBone) {
-    const factory = weaponModelFactories[startingWeapon];
-    if (factory) {
-      const weaponModel = factory();
-      weaponBone.add(weaponModel.group);
-    }
+    attachThirdPersonWeapon(weaponBone, startingWeapon);
   }
 
   // Side-table metadata for HUD chrome / future debug overlays.

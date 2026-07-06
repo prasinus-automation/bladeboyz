@@ -69,7 +69,7 @@ import { CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS } from '../../core/types';
 import { createFSM, removeFSM } from '../../combat/CombatFSM';
 import { weaponConfigs } from '../../weapons/WeaponConfig';
 import { weaponIdToName } from '../systems/CombatSystem';
-import { weaponModelFactories } from '../../rendering/WeaponModels';
+import { attachThirdPersonWeapon } from '../../rendering/WeaponModels';
 import { initInventory, inventoryRegistry } from '../systems/InventorySystem';
 import { npcRegistry } from '../npcRegistry';
 import { npcLastHitTick } from './createTrainingDummy';
@@ -218,8 +218,7 @@ export function createWarmupBot(
   const weaponBone = bones['weapon_attach'];
   if (weaponBone) {
     weaponBoneMap.set(eid, weaponBone);
-    const factory = weaponModelFactories[startingWeapon];
-    if (factory) weaponBone.add(factory().group);
+    attachThirdPersonWeapon(weaponBone, startingWeapon);
   }
 
   createHitboxes(world, eid, skeleton, bones);

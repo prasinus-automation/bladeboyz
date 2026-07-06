@@ -42,6 +42,21 @@ const FOOT_H = 0.08;
 const FOOT_D = 0.2;
 const NECK_LEN = 0.08;
 
+/**
+ * Rest transform of the `weapon_attach` bone (child of `hand_R`).
+ *
+ * Exported so `attachThirdPersonWeapon` (WeaponModels.ts) can reset the bone
+ * to this baseline before composing per-weapon grip, making the attach
+ * idempotent across weapon swaps (RemotePlayers.applyRemoteWeapon).
+ *
+ * The `rotation.x = π` bake ("flip +Y to point outward from the hand") is a
+ * hard invariant — hitbox/tracer geometry and the #219 facing convention are
+ * pinned to it. Third-person grip composes ON TOP of this base, never
+ * replaces it (contrast the viewmodel bone, which has no baked rotation).
+ */
+export const WEAPON_ATTACH_BASE_POSITION = new THREE.Vector3(0, -HAND_SIZE / 2, 0);
+export const WEAPON_ATTACH_BASE_ROTATION = new THREE.Euler(Math.PI, 0, 0);
+
 export interface CharacterModelResult {
   group: THREE.Group;
   skeleton: THREE.Skeleton;
@@ -117,8 +132,8 @@ export function createCharacterModel(
 
   // Weapon attach point on right hand
   const weaponAttach = makeBone('weapon_attach', handR);
-  weaponAttach.position.set(0, -HAND_SIZE / 2, 0);
-  weaponAttach.rotation.x = Math.PI; // Flip +Y to point outward from hand
+  weaponAttach.position.copy(WEAPON_ATTACH_BASE_POSITION);
+  weaponAttach.rotation.copy(WEAPON_ATTACH_BASE_ROTATION); // Flip +Y to point outward from hand
 
   // Left leg chain
   const thighL = makeBone('thigh_L', spine);

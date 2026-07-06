@@ -39,7 +39,7 @@ import {
 import { createCharacterModel } from '../rendering/CharacterModel';
 import { createHitboxes } from '../ecs/systems/HitboxSystem';
 import { colliderToHitbox } from '../ecs/systems/TracerSystem';
-import { weaponModelFactories } from '../rendering/WeaponModels';
+import { attachThirdPersonWeapon } from '../rendering/WeaponModels';
 import { weaponIdToName } from '../ecs/systems/CombatSystem';
 import { CombatState } from '../combat/states';
 import { CHARACTER_CONTROLLER_OFFSET, WALK_SPEED, FIXED_TIMESTEP } from '../core/types';
@@ -198,8 +198,9 @@ export function applyRemoteWeapon(eid: number, weaponId: number): void {
   const bone = modelData?.bones['weapon_attach'];
   if (!bone) return;
   while (bone.children.length > 0) bone.remove(bone.children[0]);
-  const factory = weaponModelFactories[weaponIdToName[weaponId] ?? 'Longsword'];
-  if (factory) bone.add(factory().group);
+  // Shared attach path — resets the bone to its rest transform before
+  // composing grip, so swapping weapons never accumulates grip (idempotent).
+  attachThirdPersonWeapon(bone, weaponIdToName[weaponId] ?? 'Longsword');
   data.weaponId = weaponId;
 }
 
