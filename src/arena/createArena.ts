@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type { GameWorld } from '../core/types';
 import { CHARACTER_CONTROLLER_OFFSET, GROUND_TOP_Y } from '../core/types';
-import type { ArenaSpec, SpawnPoint, Vec3 } from './types';
+import type { ArenaSpec, SpawnPoint } from './types';
+import { addStaticBox } from './addStaticBox';
 import {
   clearSpawnPoints,
   registerSpawnPoint,
@@ -71,35 +72,14 @@ export function createArena(world: GameWorld): ArenaSpec {
   world.scene.add(sun.target);
 
   // ─── Static geometry (issue #112) ───
-  // Tiny helper: every prop is a BoxGeometry mesh + Rapier static cuboid
-  // with half-extents = (w/2, h/2, d/2). Keeps the body of createArena
-  // readable as a sequence of "place box at center with size and color".
-  function addStaticBox(
-    center: Vec3,
+  // Every prop is a BoxGeometry mesh + Rapier static cuboid with half-extents
+  // = (w/2, h/2, d/2). The `addStaticBox` helper (shared with Arena v2, #207)
+  // enforces that parity; here we just place boxes by center/size/color.
+  const box = (
+    center: { x: number; y: number; z: number },
     size: { x: number; y: number; z: number },
     color: number,
-  ): void {
-    // Visual mesh
-    const geo = new THREE.BoxGeometry(size.x, size.y, size.z);
-    const mat = new THREE.MeshStandardMaterial({ color });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(center.x, center.y, center.z);
-    world.scene.add(mesh);
-
-    // Rapier static collider with matching half-extents
-    const bodyDesc = world.rapier.RigidBodyDesc.fixed().setTranslation(
-      center.x,
-      center.y,
-      center.z,
-    );
-    const body = world.physicsWorld.createRigidBody(bodyDesc);
-    const colliderDesc = world.rapier.ColliderDesc.cuboid(
-      size.x / 2,
-      size.y / 2,
-      size.z / 2,
-    );
-    world.physicsWorld.createCollider(colliderDesc, body);
-  }
+  ): void => addStaticBox(world, center, size, color);
 
   // Colors — kept inline rather than as named constants because they're
   // visual-tuning values, not architectural choices. If we extract a palette
@@ -110,24 +90,24 @@ export function createArena(world: GameWorld): ArenaSpec {
   const COLOR_WOOD = 0x6e4a2a; // wood brown (shop counter + back wall)
 
   // 1. Ground — top surface at y = 0.1 = GROUND_TOP_Y. Keep this exact.
-  addStaticBox({ x: 0, y: 0, z: 0 }, { x: 30, y: 0.2, z: 30 }, COLOR_GROUND);
+  box({ x: 0, y: 0, z: 0 }, { x: 30, y: 0.2, z: 30 }, COLOR_GROUND);
 
   // 2-5. Perimeter walls — slight overlap into corners so there's no seam.
-  addStaticBox({ x: 0, y: 1, z: -15.25 }, { x: 30.5, y: 2, z: 0.5 }, COLOR_WALL);
-  addStaticBox({ x: 0, y: 1, z: 15.25 }, { x: 30.5, y: 2, z: 0.5 }, COLOR_WALL);
-  addStaticBox({ x: 15.25, y: 1, z: 0 }, { x: 0.5, y: 2, z: 30.5 }, COLOR_WALL);
-  addStaticBox({ x: -15.25, y: 1, z: 0 }, { x: 0.5, y: 2, z: 30.5 }, COLOR_WALL);
+  box({ x: 0, y: 1, z: -15.25 }, { x: 30.5, y: 2, z: 0.5 }, COLOR_WALL);
+  box({ x: 0, y: 1, z: 15.25 }, { x: 30.5, y: 2, z: 0.5 }, COLOR_WALL);
+  box({ x: 15.25, y: 1, z: 0 }, { x: 0.5, y: 2, z: 30.5 }, COLOR_WALL);
+  box({ x: -15.25, y: 1, z: 0 }, { x: 0.5, y: 2, z: 30.5 }, COLOR_WALL);
 
   // 6-7. Cover pillars at (±5, 0). Mirror-symmetric across z=0; they break
   // line-of-sight through the central killing floor without sealing it.
-  addStaticBox({ x: -5, y: 1.5, z: 0 }, { x: 2, y: 3, z: 2 }, COLOR_PILLAR);
-  addStaticBox({ x: 5, y: 1.5, z: 0 }, { x: 2, y: 3, z: 2 }, COLOR_PILLAR);
+  box({ x: -5, y: 1.5, z: 0 }, { x: 2, y: 3, z: 2 }, COLOR_PILLAR);
+  box({ x: 5, y: 1.5, z: 0 }, { x: 2, y: 3, z: 2 }, COLOR_PILLAR);
 
   // 8. Shop counter (waist-high, in the SW corner, faces north into arena).
-  addStaticBox({ x: -12, y: 0.5, z: 12 }, { x: 3, y: 1, z: 0.5 }, COLOR_WOOD);
+  box({ x: -12, y: 0.5, z: 12 }, { x: 3, y: 1, z: 0.5 }, COLOR_WOOD);
 
   // 9. Shop back wall — hides the SW corner behind the shopkeep stall.
-  addStaticBox({ x: -13.25, y: 1.5, z: 12 }, { x: 0.5, y: 3, z: 4 }, COLOR_WOOD);
+  box({ x: -13.25, y: 1.5, z: 12 }, { x: 0.5, y: 3, z: 4 }, COLOR_WOOD);
 
   // ─── Spawn points (issue #112) ───
   // SpawnPoint table from docs/arena-v1.md § *Spawn Points*. Yaw computed
