@@ -69,7 +69,7 @@ bladeboyz/
 │   │   └── hitReact.ts          # `applyHitReactLean` overlay during HitStun — peaks at t=0.3, decays to 0 by t=1, ~30° tilt cap (#128)
 │   ├── arena/
 │   │   ├── types.ts             # ArenaSpec, SpawnPoint, ShopkeepStallSpec, Volume3D interfaces
-│   │   └── createArena.ts       # Code-authored Arena v1: lights (#117) + 9 static props + 6 spawn points + ArenaSpec (#112)
+│   │   └── createArena.ts       # Code-authored Arena v1: lights (#117) + 9 static props + 6 spawn points + ArenaSpec (#112). Arena v2 (10x medieval castle map, variable terrain) in flight — parent #205
 │   ├── combat/
 │   │   ├── CombatFSM.ts         # Combat state machine definition
 │   │   ├── states.ts            # State enum and transition logic
@@ -131,8 +131,16 @@ bladeboyz/
 │   │   ├── PickupPrompt.ts      # Centred "Press [E] to pick up {Weapon}" overlay; FSM-Idle + pointer-lock gates, closest-of-many (#127)
 │   │   ├── DebugOverlay.ts      # FSM state, FPS counter
 │   │   └── ViewmodelDebugOverlay.ts # Bottom-left bone/state readout for --debug-viewmodel toggle (#122)
+│   ├── net/
+│   │   ├── protocol.ts          # Client↔server wire message types + constants (trust model v1 header comment is the authority reference)
+│   │   ├── NetClient.ts         # WebSocket client wrapper
+│   │   ├── NetworkSystem.ts     # Client-side net sync: sends local state, applies server echoes; respawn/teleport currently hard-codes y = GROUND_TOP_Y + offset (server sends x/z/yaw only — flat-ground assumption, see #205)
+│   │   └── RemotePlayers.ts     # Remote-player entity lifecycle + interpolation
 │   └── utils/
 │       └── math.ts              # Vector utilities, interpolation helpers
+├── server/                      # Multiplayer v1 headless server (transport-free core + ws shell)
+│   ├── room.ts                  # FfaRoom — pure FFA match logic: roster, spawn assignment, HP, attacker-authoritative damage claims through validateClaim (cap/rate/range/alive checks), kill credit, respawns, 15-min match clock. NOTE: duplicates the arena spawn table (x/z/yaw, NO y) — must be updated in lockstep with arena spawn changes
+│   └── index.ts                 # ws transport shell feeding FfaRoom join/leave/handleMessage/tick
 ├── docs/
 │   ├── MVP.md                                # Foundation rebuild roadmap (issue #85)
 │   ├── animation-architecture.md             # Third-person animation rebuild spec (issue #110, parent #89)
@@ -289,7 +297,7 @@ Detailed entries moved to [`docs/AGENTS-DEBT.md`](docs/AGENTS-DEBT.md) on 2026-0
 - **Rapier debug renderer** needs `@dimforge/rapier3d-compat` not `@dimforge/rapier3d` for browser compatibility
 - The deploy workflow (`.github/workflows/deploy-staging.yml`) expects a `Dockerfile` and maps port 3000 internally → 3010 externally
 - **CombatSystem syncs both `CombatStateComponent` and `CombatStateComp`** — phase math (`getPhaseTotal` / `getPhaseT`) lives on the FSM. AnimationSystem reads from `CombatStateComp` (`phaseElapsed`, `phaseTotal`, `phaseT`, `state`, `direction`).
-- **`weaponIdToName` in CombatSystem.ts is a hardcoded APPEND-ONLY array** (10 entries as of the 2026-07 arsenal) — the index is the wire format for `weaponId` fields; never reorder or insert mid-table. When adding a weapon also touch: config file + import in main.ts and CombatEndToEnd.test.ts, `weaponModelFactories`, `Prices.ts`, `WEAPON_SCALING`/`WeaponName` in arcSwing.ts, and optionally `PICKUP_ORIENTATIONS`.
+- **`weaponIdToName` in CombatSystem.ts is a hardcoded APPEND-ONLY array** (12 entries after #200 added Rapier + Halberd) — the index is the wire format for `weaponId` fields; never reorder or insert mid-table. When adding a weapon also touch: config file + import in main.ts and CombatEndToEnd.test.ts, `weaponModelFactories`, `Prices.ts`, `WEAPON_SCALING`/`WeaponName` in arcSwing.ts, and optionally `PICKUP_ORIENTATIONS`.
 - **Pointer Lock must be released** when showing any UI overlay (inventory, menus) — call `document.exitPointerLock()`. Re-request on close via user gesture (click on canvas).
 - **Side-table pattern** for non-numeric data: `meshRegistry` (Map<number, CharacterModelData>), `fsmRegistry` (Map<number, CombatFSM>), `hitboxColliderRegistry` — use the same pattern for inventory/equipment data
 - **`SPAWN_HEIGHT` is now a deprecated alias of `GROUND_TOP_Y` (= 0.1)** — semantics changed from capsule-center (1.1) to feet (0.1) in PR #150. Existing call sites still compile but new code should use `spawnAtGround()` for spawn Y or `GROUND_TOP_Y` for the literal.
