@@ -40,7 +40,8 @@ import { recordDamageAttribution } from '../ecs/systems/DamageSystem';
 import { getPhysicsBody } from '../ecs/systems/MovementSystem';
 import { EventBus } from '../events/EventBus';
 import { getCurrentFixedTick } from '../core/tickCounter';
-import { GROUND_TOP_Y, CHARACTER_CONTROLLER_OFFSET } from '../core/types';
+import { CHARACTER_CONTROLLER_OFFSET } from '../core/types';
+import { getGroundHeightAt } from '../arena/types';
 import { weaponConfigs } from '../weapons/WeaponConfig';
 import { weaponIdToName } from '../ecs/systems/CombatSystem';
 import { DEFAULT_KNOCKBACK } from '../weapons/WeaponConfig';
@@ -220,7 +221,12 @@ export class NetworkSystem {
           const data = remotePlayerRegistry.get(eid);
           if (data) data.samples.length = 0;
           Position.x[eid] = msg.spawn.x;
-          Position.y[eid] = GROUND_TOP_Y + CHARACTER_CONTROLLER_OFFSET;
+          // Server sends x/z/yaw only; resolve y from the shared deterministic
+          // terrain sampler (flat GROUND_TOP_Y on Arena v1). Safe by design —
+          // client and server agree on terrain geometry (#206).
+          Position.y[eid] =
+            getGroundHeightAt(this.world.arena, msg.spawn.x, msg.spawn.z) +
+            CHARACTER_CONTROLLER_OFFSET;
           Position.z[eid] = msg.spawn.z;
           Rotation.y[eid] = msg.spawn.yaw;
         }
@@ -255,7 +261,11 @@ export class NetworkSystem {
 
   private teleportLocal(spawn: NetSpawn): void {
     const eid = this.playerEid;
-    const y = GROUND_TOP_Y + CHARACTER_CONTROLLER_OFFSET;
+    // Resolve y from the shared deterministic terrain sampler (flat
+    // GROUND_TOP_Y on Arena v1) — server sends x/z/yaw only (#206).
+    const y =
+      getGroundHeightAt(this.world.arena, spawn.x, spawn.z) +
+      CHARACTER_CONTROLLER_OFFSET;
     Position.x[eid] = spawn.x;
     Position.y[eid] = y;
     Position.z[eid] = spawn.z;
