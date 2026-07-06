@@ -6,7 +6,7 @@ import {
   meshRegistry,
 } from '../components';
 import { createCharacterModel } from '../../rendering/CharacterModel';
-import { SPAWN_HEIGHT } from '../../core/types';
+import { spawnAtGround } from '../utils/spawnAtGround';
 import type { GameWorld } from '../../core/types';
 
 /**
@@ -52,18 +52,23 @@ export interface CreateShopkeepOptions {
 export function createShopkeep(
   world: GameWorld,
   x: number,
-  y: number = SPAWN_HEIGHT,
+  y?: number,
   z: number = 0,
   options: CreateShopkeepOptions = {},
 ): number {
   const eid = addEntity(world.ecs);
+
+  // Resolve spawn Y off the ground (matches createPlayer / createTrainingDummy)
+  // instead of the deprecated flat `SPAWN_HEIGHT` constant (#206). An explicit
+  // `y` still wins — every current caller passes one, so behavior is unchanged.
+  const resolvedY = typeof y === 'number' ? y : spawnAtGround(world, x, z).y;
 
   addComponent(world.ecs, Position, eid);
   addComponent(world.ecs, Rotation, eid);
   addComponent(world.ecs, CharacterModel, eid);
 
   Position.x[eid] = x;
-  Position.y[eid] = y;
+  Position.y[eid] = resolvedY;
   Position.z[eid] = z;
 
   // Face toward the arena center (origin). Yaw=0 looks down -Z, so the
@@ -73,7 +78,7 @@ export function createShopkeep(
   Rotation.y[eid] = Math.atan2(-x, -z);
 
   const { group, skeleton, bones } = createCharacterModel(SHOPKEEP_COLOR);
-  group.position.set(x, y, z);
+  group.position.set(x, resolvedY, z);
   group.rotation.y = Rotation.y[eid];
   CharacterModel.id[eid] = eid;
   meshRegistry.set(eid, { group, skeleton, bones });

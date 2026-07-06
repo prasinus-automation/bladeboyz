@@ -42,8 +42,9 @@ import { colliderToHitbox } from '../ecs/systems/TracerSystem';
 import { weaponModelFactories } from '../rendering/WeaponModels';
 import { weaponIdToName } from '../ecs/systems/CombatSystem';
 import { CombatState } from '../combat/states';
-import { GROUND_TOP_Y, CHARACTER_CONTROLLER_OFFSET, WALK_SPEED, FIXED_TIMESTEP } from '../core/types';
+import { CHARACTER_CONTROLLER_OFFSET, WALK_SPEED, FIXED_TIMESTEP } from '../core/types';
 import type { GameWorld } from '../core/types';
+import { getGroundHeightAt } from '../arena/types';
 import type { NetPlayerState } from './protocol';
 
 /** Interpolation delay: render remote players this far in the past. */
@@ -85,7 +86,8 @@ export function createRemotePlayer(
   // hitboxes can't soak local tracer hits at a bogus origin position.
   const y = spawn.holdBelowArena
     ? -30
-    : GROUND_TOP_Y + CHARACTER_CONTROLLER_OFFSET;
+    : getGroundHeightAt(world.arena, spawn.x, spawn.z) +
+      CHARACTER_CONTROLLER_OFFSET;
 
   addComponent(world.ecs, Position, eid);
   addComponent(world.ecs, PreviousPosition, eid);

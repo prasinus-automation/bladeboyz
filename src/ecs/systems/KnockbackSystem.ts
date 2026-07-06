@@ -33,8 +33,13 @@ import {
   PreviousPosition,
 } from '../components';
 import { getPhysicsBody } from './MovementSystem';
-import { FIXED_TIMESTEP, GRAVITY, GROUND_TOP_Y } from '../../core/types';
+import {
+  CHARACTER_CONTROLLER_OFFSET,
+  FIXED_TIMESTEP,
+  GRAVITY,
+} from '../../core/types';
 import type { GameWorld } from '../../core/types';
+import { getGroundHeightAt } from '../../arena/types';
 
 /** Horizontal velocity multiplier per tick while sliding on the ground. */
 const GROUND_FRICTION = 0.86;
@@ -52,11 +57,17 @@ const BOUNCE_RESTITUTION = 0.35;
 const REST_SPEED = 0.05;
 
 /**
- * Arena walls sit at ±15.25 with the playable interior ending at ±15.
- * Fixed-body teleports bypass collision resolution, so clamp launches
- * to just inside the walls rather than yeeting dummies into the void.
+ * Fallback clamp when no arena is on the world (unit/E2E harnesses). Arena
+ * walls sit at ±15.25 with the playable interior ending at ±15; fixed-body
+ * teleports bypass collision resolution, so clamp launches to just inside the
+ * walls rather than yeeting dummies into the void. When an arena IS present we
+ * clamp against `arena.bounds` minus `WALL_MARGIN` instead (#206) — for Arena
+ * v1's ±15 bounds that reproduces ±14.5 exactly (byte-identical).
  */
 const ARENA_CLAMP = 14.5;
+
+/** Inset from the arena bounds walls for fixed-body knockback clamping. */
+const WALL_MARGIN = 0.5;
 
 const knockbackQuery = defineQuery([KnockbackState, Position]);
 
@@ -85,13 +96,25 @@ export function knockbackSystem(world: GameWorld): void {
     PreviousPosition.y[eid] = y;
     PreviousPosition.z[eid] = z;
 
+    // Ground level beneath the victim — always via the shared accessor. On
+    // flat Arena v1 it returns groundHeight (0.1 = GROUND_TOP_Y), and in a
+    // bare test world (no arena) it returns GROUND_TOP_Y, so the flat case is
+    // byte-identical to pre-#206. The controller offset is added ONLY over
+    // variable terrain (the issue mandates flat v1 rest at exactly
+    // GROUND_TOP_Y, but a knocked-back dummy on a raised plateau should land
+    // ON it, at sampled-height + offset, not tunnel to 0.1).
+    const arena = world.arena;
+    const groundLevel =
+      getGroundHeightAt(arena, x, z) +
+      (arena?.terrain ? CHARACTER_CONTROLLER_OFFSET : 0);
+
     // GROUND_EPSILON must be generous: Position stores f32, so a value
-    // clamped to GROUND_TOP_Y (f64 0.1) reads back as ~0.100000001 — a
-    // strict `<=` comparison would see "airborne" forever and never apply
-    // ground friction (the victim slides across the arena at constant
-    // speed like an air-hockey puck).
+    // clamped to groundLevel (an f64) reads back slightly larger — a strict
+    // `<=` comparison would see "airborne" forever and never apply ground
+    // friction (the victim slides across the arena at constant speed like an
+    // air-hockey puck).
     const GROUND_EPSILON = 1e-3;
-    const airborne = y > GROUND_TOP_Y + GROUND_EPSILON || vy > 0;
+    const airborne = y > groundLevel + GROUND_EPSILON || vy > 0;
     if (airborne) {
       vy += GRAVITY * FIXED_TIMESTEP;
     }
@@ -101,8 +124,8 @@ export function knockbackSystem(world: GameWorld): void {
     let nz = z + vz * FIXED_TIMESTEP;
 
     // Ground contact.
-    if (ny <= GROUND_TOP_Y + GROUND_EPSILON && vy <= 0) {
-      ny = Math.max(ny, GROUND_TOP_Y);
+    if (ny <= groundLevel + GROUND_EPSILON && vy <= 0) {
+      ny = Math.max(ny, groundLevel);
       if (vy < -BOUNCE_THRESHOLD) {
         vy = -vy * BOUNCE_RESTITUTION;
       } else {
@@ -115,9 +138,17 @@ export function knockbackSystem(world: GameWorld): void {
       vz *= AIR_DRAG;
     }
 
-    // Keep launches inside the arena walls (teleports skip collision).
-    nx = Math.max(-ARENA_CLAMP, Math.min(ARENA_CLAMP, nx));
-    nz = Math.max(-ARENA_CLAMP, Math.min(ARENA_CLAMP, nz));
+    // Keep launches inside the arena walls (teleports skip collision). Clamp
+    // against arena bounds when present (minus a wall margin), else the
+    // legacy ±ARENA_CLAMP constant. For Arena v1's ±15 bounds this yields
+    // ±14.5 — identical to the old hardcode.
+    const bounds = arena?.bounds;
+    const clampMinX = bounds ? bounds.min.x + WALL_MARGIN : -ARENA_CLAMP;
+    const clampMaxX = bounds ? bounds.max.x - WALL_MARGIN : ARENA_CLAMP;
+    const clampMinZ = bounds ? bounds.min.z + WALL_MARGIN : -ARENA_CLAMP;
+    const clampMaxZ = bounds ? bounds.max.z - WALL_MARGIN : ARENA_CLAMP;
+    nx = Math.max(clampMinX, Math.min(clampMaxX, nx));
+    nz = Math.max(clampMinZ, Math.min(clampMaxZ, nz));
 
     Position.x[eid] = nx;
     Position.y[eid] = ny;
@@ -129,7 +160,7 @@ export function knockbackSystem(world: GameWorld): void {
     }
 
     // Settle check + timer.
-    const grounded = ny <= GROUND_TOP_Y + GROUND_EPSILON;
+    const grounded = ny <= groundLevel + GROUND_EPSILON;
     const speedSq = vx * vx + vy * vy + vz * vz;
     if (grounded && speedSq < REST_SPEED * REST_SPEED) {
       vx = 0;

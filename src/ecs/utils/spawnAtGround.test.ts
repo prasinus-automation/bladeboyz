@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { spawnAtGround } from './spawnAtGround';
 import { CHARACTER_CONTROLLER_OFFSET, GROUND_TOP_Y } from '../../core/types';
+import { makeTerrainHandle } from '../../arena/terrain';
 
 /**
  * Tests for spawnAtGround helper. Mocks Rapier's raycast API; we don't
@@ -11,6 +12,7 @@ import { CHARACTER_CONTROLLER_OFFSET, GROUND_TOP_Y } from '../../core/types';
 function makeMockWorld(opts: {
   hit?: { timeOfImpact: number } | null;
   noCastRay?: boolean;
+  arena?: any;
 } = {}) {
   return {
     rapier: {
@@ -22,6 +24,7 @@ function makeMockWorld(opts: {
       : {
           castRay: vi.fn().mockReturnValue(opts.hit ?? null),
         },
+    arena: opts.arena,
   };
 }
 
@@ -77,7 +80,7 @@ describe('spawnAtGround', () => {
     expect(result.y).toBeCloseTo(5 + CHARACTER_CONTROLLER_OFFSET, 5);
   });
 
-  it('casts the ray from y=50 looking straight down', () => {
+  it('casts the ray from y=50 looking straight down (no arena → legacy origin)', () => {
     const world = makeMockWorld({ hit: { timeOfImpact: 49.9 } });
     spawnAtGround(world as any, 7, -3);
 
@@ -86,5 +89,43 @@ describe('spawnAtGround', () => {
     expect(v3Calls[0]).toEqual([7, 50, -3]);
     // Second Vector3 call = downward direction
     expect(v3Calls[1]).toEqual([0, -1, 0]);
+  });
+
+  it('raises the cast origin above tall arena bounds (#206)', () => {
+    // bounds.max.y = 60 → origin = max(50, 60 + 20) = 80.
+    const arena = { bounds: { max: { y: 60 } } };
+    const world = makeMockWorld({ hit: { timeOfImpact: 79.9 }, arena });
+    const result = spawnAtGround(world as any, 0, 0);
+
+    const v3Calls = (world.rapier.Vector3 as any).mock.calls;
+    expect(v3Calls[0]).toEqual([0, 80, 0]);
+    // 80 - 79.9 = 0.1 ground.
+    expect(result.y).toBeCloseTo(GROUND_TOP_Y + CHARACTER_CONTROLLER_OFFSET, 5);
+  });
+
+  it('keeps the legacy y=50 origin when bounds are short', () => {
+    const arena = { bounds: { max: { y: 10 } } }; // 10 + 20 = 30 < 50
+    const world = makeMockWorld({ hit: { timeOfImpact: 49.9 }, arena });
+    spawnAtGround(world as any, 1, 2);
+    const v3Calls = (world.rapier.Vector3 as any).mock.calls;
+    expect(v3Calls[0]).toEqual([1, 50, 2]);
+  });
+
+  it('falls back to the terrain sample + offset when the raycast is unavailable', () => {
+    // A plateau raising ground to 3.0 at the query point; no castRay available.
+    const terrain = makeTerrainHandle({
+      sizeX: 40,
+      sizeZ: 40,
+      resolution: 20,
+      baseHeight: 0.1,
+      features: [
+        { kind: 'plateau', x: 0, z: 0, radiusX: 5, radiusZ: 5, falloff: 1, height: 2.9 },
+      ],
+    });
+    const arena = { bounds: { max: { y: 10 } }, terrain };
+    const world = makeMockWorld({ noCastRay: true, arena });
+    const result = spawnAtGround(world as any, 0, 0);
+    // Plateau top = 0.1 + 2.9 = 3.0, plus the controller offset.
+    expect(result.y).toBeCloseTo(3.0 + CHARACTER_CONTROLLER_OFFSET, 5);
   });
 });
