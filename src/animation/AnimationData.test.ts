@@ -96,13 +96,19 @@ describe('AnimationData', () => {
       }
     });
 
-    it('top block has arms raised high', () => {
+    it('top block has arms raised high (forward -Z convention)', () => {
       const topBlock = getBlockPose(Direction.Overhead);
       const shoulderR = topBlock['shoulder_R'];
       expect(shoulderR).toBeDefined();
-      // shoulder_R x should be very negative (arms raised)
+      // #219: this expectation was flipped from `< -π/4` to `> π/4`. The old
+      // value pinned the +Z-authored pose (shoulder_R x: -150°) that raised
+      // the guard toward the camera. Under the corrected -Z convention a
+      // raised guard uses a LARGE POSITIVE X (x: +150°). The magnitude
+      // assertion (|x| > 45°, i.e. arms genuinely raised) is preserved; only
+      // the sign is corrected. World-space forward is verified in
+      // AnimationData.orientation.test.ts.
       if (shoulderR?.x !== undefined) {
-        expect(shoulderR.x).toBeLessThan(-Math.PI / 4); // < -45 degrees
+        expect(shoulderR.x).toBeGreaterThan(Math.PI / 4); // > +45 degrees
       }
     });
   });

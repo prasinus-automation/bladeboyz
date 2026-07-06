@@ -409,7 +409,16 @@ describe('combat end-to-end (real Rapier, real scene graph)', { timeout: 30_000 
   // starts landing on the wrong body part.
 
   it('a level left slash lands on the upper body (head/torso), never as a limb graze', () => {
-    const h = buildHarness({ dummyPos: { x: 0, z: -1.0 } });
+    // #219: the dummy moved from z=-1.0 → -0.9. Correcting the third-person
+    // facing convention flipped IDLE_POSE so the resting guard holds the
+    // blade in FRONT (-Z) instead of behind (+Z). A forward guard reaches
+    // ~0.1m farther, so the whole swing arc shifted outward: at the old
+    // z=-1.0 the corrected sweep now enters through the dummy's arm (limb,
+    // 25) before the torso. Pulling the dummy 0.1m closer keeps the sweep
+    // landing on the torso first, preserving this test's intent (a level
+    // chest-height slash is priced as an upper-body hit, not a limb graze).
+    // The reach shift is real and correct — verified via a z-sweep in #219.
+    const h = buildHarness({ dummyPos: { x: 0, z: -0.9 } });
     h.runTicks(3);
     attack(h, Direction.Left);
     h.runTicks(60);
@@ -421,7 +430,10 @@ describe('combat end-to-end (real Rapier, real scene graph)', { timeout: 30_000 
   });
 
   it('the same slash aimed DOWN (pitch) hits the legs for limb damage', () => {
-    const h = buildHarness({ dummyPos: { x: 0, z: -1.0 } });
+    // #219: matched to the level-slash test above (z=-1.0 → -0.9) so the
+    // pair shares one setup and differs only by pitch. At -0.9 the down-
+    // aimed sweep still drops to leg height (limb, 25).
+    const h = buildHarness({ dummyPos: { x: 0, z: -0.9 } });
     // Camera pitch: looking down. MovementSystem writes Rotation.x for
     // the local player each tick; the harness sets it directly. The
     // AnimationSystem pitch-aim lean tilts the chest, the tracer rides
@@ -446,7 +458,11 @@ describe('combat end-to-end (real Rapier, real scene graph)', { timeout: 30_000 
       Longsword: 1.2,
       Battleaxe: 1.2,
       // The scythe blade rides a ~2m ring — inside it is the SAFE zone.
-      Scythe: 2.0,
+      // #219: bumped 2.0 → 2.15. The corrected forward guard (see the
+      // facing fix) extends effective reach ~0.1-0.2m, sliding the whole
+      // ring outward; at the old 2.0 the dummy now sits just inside the
+      // safe zone and takes no hit. 2.15 puts it back on the blade.
+      Scythe: 2.15,
       Zweihander: 1.5,
       Yeeter: 1.4,
       Spear: 1.8,
