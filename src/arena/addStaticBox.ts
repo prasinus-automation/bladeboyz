@@ -10,15 +10,27 @@
  */
 
 import * as THREE from 'three';
+import type RAPIER from '@dimforge/rapier3d-compat';
 import type { GameWorld } from '../core/types';
 import type { Vec3 } from './types';
+
+/**
+ * A placed static box's disposable handles. `createCastle` / `addMedievalProps`
+ * collect these so a caller can tear the geometry down on HMR / arena swap
+ * (dispose the mesh's geometry+material, remove the rigid body). Older callers
+ * that don't need disposal simply ignore the return value.
+ */
+export interface StaticHandle {
+  mesh: THREE.Mesh;
+  body: RAPIER.RigidBody;
+}
 
 export function addStaticBox(
   world: GameWorld,
   center: Vec3,
   size: { x: number; y: number; z: number },
   color: number,
-): void {
+): StaticHandle {
   // Visual mesh
   const geo = new THREE.BoxGeometry(size.x, size.y, size.z);
   const mat = new THREE.MeshStandardMaterial({ color });
@@ -39,4 +51,6 @@ export function addStaticBox(
     size.z / 2,
   );
   world.physicsWorld.createCollider(colliderDesc, body);
+
+  return { mesh, body };
 }
