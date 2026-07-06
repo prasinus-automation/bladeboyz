@@ -14,7 +14,7 @@ import { EventBus } from './events/EventBus';
 import { awardGold, awardGoldOnKill } from './economy/goldEconomy';
 import { flushGoldWrites } from './economy/goldPersistence';
 import { createPlayer } from './ecs/entities/createPlayer';
-import { createArena } from './arena/createArena';
+import { createArenaV2 } from './arena/createArenaV2';
 import { processRespawns } from './ecs/systems/processRespawns';
 import {
   createTrainingDummy,
@@ -123,28 +123,22 @@ for (const [name, config] of Object.entries(weaponConfigs)) {
 let dummySpawnIdx = 0;
 
 /**
- * Resolve the dummy spawn-position list from the active arena's interior
- * spawn points. Issue #112 spec calls out S2/S3/S5/S6 as the four interior
- * spawns that "work well" for dummies. Falls back to a small inline list
- * if the arena hasn't been built yet (defensive — main wires the arena
- * before this is called).
+ * Practice training-dummy spawn positions (J-key cycle).
+ *
+ * Arena v2 (#207) is a 100 m map with a raised central plateau (the future
+ * castle site). The old logic reused the arena's interior spawn indices, but
+ * v2's 10 spawns sit on a 39 m ring — scattering dummies across the whole map.
+ * Instead we place practice dummies at a fixed cluster of OPEN, FLAT grass
+ * positions on the +Z play side, a few meters apart and comfortably off the
+ * plateau skirt (radius ≈ 26 m) so they stay reachable and don't stand on the
+ * elevated foundation. These are code-authored, not derived from spawn points.
  */
-function getDummySpawnPositions(world: GameWorld): Array<{ x: number; z: number }> {
-  const arena = world.arena;
-  if (arena) {
-    // Indices 1, 2, 4, 5 = S2, S3, S5, S6 — the four interior spawns,
-    // mirror-symmetric across z = 0. Used as a starting set; J cycles
-    // through them in order.
-    const interior = [1, 2, 4, 5].map((i) => arena.spawnPoints[i].position);
-    return interior.map((p) => ({ x: p.x, z: p.z }));
-  }
-  // Fallback (used only if a test path constructs the world without an
-  // arena). Matches the v0 layout for behavioural compatibility.
+function getDummySpawnPositions(_world: GameWorld): Array<{ x: number; z: number }> {
   return [
-    { x: 0, z: -4 },
-    { x: 3, z: -4 },
-    { x: -3, z: -4 },
-    { x: 0, z: -7 },
+    { x: 12, z: 30 },
+    { x: -12, z: 30 },
+    { x: 24, z: 28 },
+    { x: -24, z: 28 },
   ];
 }
 
@@ -171,18 +165,19 @@ async function main(): Promise<void> {
   // Camera controller
   const cameraController = new CameraController(world.camera, input);
 
-  // Create arena. `createArena` adds the lighting rig + 9 static props
-  // (ground, walls, pillars, shop counter / back wall) AND registers the
-  // 6 arena spawn points into `world/SpawnPoints.ts` (replacing the v0
-  // `seedPlaceholderSpawnPoints()` call). The returned ArenaSpec is the
-  // runtime data store for the spawn-point list, shopkeep stall AABB, and
-  // weapon-pickup safe volume — stored on `world.arena` so other systems
-  // can query it without re-importing.
-  const arena = createArena(world);
+  // Create Arena v2 (issue #207). `createArenaV2` adds the lighting rig, the
+  // variable-height terrain (heightfield collider + vertex-colored mesh), the
+  // 4 boundary walls, AND registers the 10 arena spawn points into
+  // `world/SpawnPoints.ts`. The returned ArenaSpec carries the spawn list, the
+  // terrain handle (ground-height sampler), the shopkeep stall, and the
+  // weapon-pickup safe volume — stored on `world.arena` so other systems can
+  // query ground height via `getGroundHeightAt(world.arena, x, z)`.
+  const arena = createArenaV2(world);
   world.arena = arena;
 
-  // Create player at the first arena spawn point (S1 — west side, on the
-  // E-W axis). The createPlayer factory still falls back to the registry
+  // Create player at the first arena spawn point (S1 — Arena v2's south side,
+  // at (12, 37) on the radius-39 ring). The createPlayer factory falls back to
+  // the registry
   // selector when called without an explicit position, but pinning to S1
   // here keeps initial spawn deterministic and matches the issue spec's
   // "Replace hardcoded player spawn with arena.spawnPoints[0].position"
@@ -337,7 +332,11 @@ async function main(): Promise<void> {
   function spawnPracticeNpcs(): void {
     if (practiceNpcsSpawned) return;
     practiceNpcsSpawned = true;
-    createTrainingDummy(world, { spawnPos: { x: 0, z: -4 }, color: 0xcc4444 });
+    // Spawn the first practice dummy at the first open-grass practice position
+    // (Arena v2's plateau makes the old hardcoded (0,-4) land on the raised
+    // castle foundation — see getDummySpawnPositions).
+    const firstDummyPos = getDummySpawnPositions(world)[0];
+    createTrainingDummy(world, { spawnPos: firstDummyPos, color: 0xcc4444 });
     dummySpawnIdx = 1;
     const npc = arena.shopkeepStall.npcAnchor;
     createShopkeep(world, npc.x, npc.y, npc.z, { name: 'Shopkeep' });

@@ -29,22 +29,17 @@ import {
   INTERMISSION_MS,
   RESPAWN_DELAY_MS,
 } from '../src/net/protocol';
-import { yawTowards } from '../src/utils/math';
+import { ARENA_V2_SPAWNS } from '../src/arena/arenaV2Spec';
 
-// Arena spawn points — mirrors src/arena/createArena.ts S1..S6. The server
-// deliberately owns a copy: it must not import Three.js/Rapier world code,
-// and the arena is code-authored so these are stable constants. Yaws use the
-// shared `yawTowards(x, z)` helper (THREE-free — no Three.js pulled into the
-// server bundle) so they stay value-for-value in lockstep with the client
-// spawn table. These face the arena origin; see #211/#212 for the π-off bug.
-export const ARENA_SPAWNS: NetSpawn[] = [
-  { x: -13, z: 0, yaw: yawTowards(-13, 0) },
-  { x: -7, z: -9, yaw: yawTowards(-7, -9) },
-  { x: 7, z: -9, yaw: yawTowards(7, -9) },
-  { x: 13, z: 0, yaw: yawTowards(13, 0) },
-  { x: -7, z: 9, yaw: yawTowards(-7, 9) },
-  { x: 7, z: 9, yaw: yawTowards(7, 9) },
-];
+// Arena spawn points — the SHARED Arena v2 spawn table (issue #207). The server
+// imports the exact same x/z/yaw list the client mesh builder uses, so the two
+// tables can never drift (pinned by a deep-equal test in server/room.test.ts).
+// The table carries NO y: clients resolve ground-y from the shared terrain
+// sampler (`sampleTerrainHeight`) per #206, so the server needs no terrain math.
+// `arenaV2Spec.ts` is pure data (no Three.js/Rapier runtime imports), safe to
+// bundle into the Node server. Spawn yaws use the shared `yawTowards(x, z)`
+// helper so each spawn faces the arena center (see #211/#212 for the π-off bug).
+export const ARENA_SPAWNS: NetSpawn[] = ARENA_V2_SPAWNS;
 
 // ── Claim validation tunables ─────────────────────────────
 

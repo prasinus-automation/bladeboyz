@@ -19,6 +19,7 @@ import {
   RESPAWN_DELAY_MS,
   type ServerMsg,
 } from '../src/net/protocol';
+import { ARENA_V2_SPAWNS } from '../src/arena/arenaV2Spec';
 
 const T0 = 1_000_000;
 
@@ -41,6 +42,23 @@ function joinTwo(room: FfaRoom): void {
     T0,
   );
 }
+
+describe('FfaRoom — spawn table lockstep (#207)', () => {
+  it('server ARENA_SPAWNS is exactly the shared Arena v2 spawn table (no drift)', () => {
+    // The server must not silently diverge from the client map. Both import
+    // the same source; assert-equal here kills the drift failure mode.
+    expect(ARENA_SPAWNS).toHaveLength(10);
+    expect(ARENA_SPAWNS).toEqual(
+      ARENA_V2_SPAWNS.map((s) => ({ x: s.x, z: s.z, yaw: s.yaw })),
+    );
+  });
+
+  it('every server spawn carries x/z/yaw and NO y (client resolves y from terrain)', () => {
+    for (const s of ARENA_SPAWNS) {
+      expect(Object.keys(s).sort()).toEqual(['x', 'yaw', 'z']);
+    }
+  });
+});
 
 describe('FfaRoom — roster', () => {
   it('join sends welcome with spawn + roster; leave broadcasts', () => {
