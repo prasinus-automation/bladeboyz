@@ -149,7 +149,78 @@ Same rig as v1, sun repositioned for the larger field. **No shadows.**
 - `HemisphereLight(0x87ceeb sky, 0x556b2f ground, 0.5)` at (0, 50, 0)
 - `DirectionalLight(0xfff5e0, 0.7)` at **(60, 80, 40)** → origin
 
+## Castle (#208) — the plateau centerpiece
+
+Built by `src/arena/createCastle.ts` (`createCastle(world, origin)`) and the
+map-wide props by `src/arena/props.ts` (`addMedievalProps(world, arena)`). Both
+are composed from `src/main.ts` right after `createArenaV2` — **client-only**
+geometry (flat-colored `BoxGeometry` + 1:1 Rapier fixed cuboid colliders via the
+shared `addStaticBox` helper), so the headless server (which bundles only
+`arenaV2Spec.ts`) never pulls them in. `createArenaV2` itself is unchanged.
+
+`origin` is the plateau center at its flat top: `{ x: 0, y: PLATEAU_TOP_Y, z: 0 }`
+(`PLATEAU_TOP_Y = 4.0`). Every castle box is placed relative to it, so re-tuning
+the plateau moves the whole castle. All dimensions are named constants at the top
+of `createCastle.ts`.
+
+### Castle dimensions (constants in `createCastle.ts`)
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `WALL_HALF` | 15 | curtain-wall footprint half-extent → **30×30 m** (inside the 36×36 plateau) |
+| `WALL_HEIGHT` | 6 | wall height; **rampart walkway** at `origin.y + 6 = y≈10` |
+| `WALL_THICKNESS` | 1.2 | wall top = the walkway (room to fight) |
+| `PARAPET_HEIGHT` / `PARAPET_THICKNESS` | 0.8 / 0.3 | low cover on the **outer** rampart lip only (inner edge open → drop into courtyard) |
+| `GATE_HALF_WIDTH` | 2 | gate opening = **4 m** wide |
+| `GATE_CLEAR_HEIGHT` | 4.5 | gate opening clear height (floor → `y≈8.5`, lintel above) |
+| `GATE_TOWER_SIZE` | 3 | two 3×3 towers flanking the gate |
+| `CORNER_TOWER_SIZE` | 4 | four 4×4 corner towers (reach ±17 → on the flat top) |
+| `CORNER_TOWER_PARAPET_RISE` | 3 | corner parapet rises to `y≈13` (~9 m tall silhouette) |
+| `KEEP_SIZE` / `KEEP_HEIGHT` | 8 / 6 | central keep; roof at `y≈10`, reached by an external stair |
+| `RAMPART_STAIR` | 24×0.25 | two courtyard staircases, step **rise 0.25 ≤ 0.3** (`AUTOSTEP_MAX_HEIGHT`), tread 0.5 |
+| `KEEP_STAIR` | 24×0.25 | keep external stair, rise 0.25, tread 0.4 |
+
+### Layout & verticality
+
+- **Curtain walls**: N/E/W solid; the **S (+Z) wall is segmented** around the
+  gate (left segment + right segment + two gate towers + a lintel bridging the
+  top). No CSG — the opening is the gap between the two gate towers, and the
+  lintel carries the rampart walkway across it. The gate faces +Z, toward the
+  dirt path and the market stall.
+- **Ramparts**: the wall tops form a **continuous, level walkway** at `y≈10`.
+  Corner towers and gate towers are solid shafts topped flush with the walkway,
+  so you can walk the full circuit — over the gate lintel and across every tower
+  platform — and drop back into the courtyard over the open inner edge.
+- **Corner towers** carry an L-shaped parapet on their two outer edges rising to
+  `y≈13`, giving the ~9 m tower silhouette while leaving the platform walkable.
+- **Stairs**: two staircases hug the inner faces of the W and E walls and climb
+  the courtyard floor (`y≈4`) to the ramparts (`y≈10`); step rise 0.25 m climbs
+  with plain W (no jump). A **unit test** (`createCastle.test.ts`) pins
+  `stepRise ≤ AUTOSTEP_MAX_HEIGHT` for every stair spec.
+- **Courtyard**: kept mostly open (fight arena). A central 8×8×6 m **keep** with
+  an external stair to its roof, a stone **well** (+X/+Z pocket), and two
+  **crate** clusters.
+
+### Containment
+
+Everything stays on the plateau flat top (`|x|,|z| ≤ 18`) and under the
+`weaponPickupSafeVolume` ceiling (y-max 20): the tallest element is a corner
+parapet at `y≈13`, so weapon drops on the ramparts (`y≈10`) are born inside the
+safe volume. Pinned by `createCastle.test.ts`.
+
+### Map-wide medieval props (`props.ts`)
+
+A redressed **market stall** at the shopkeep counter location (`ShopkeepStallSpec`
+on the +Z gatehouse approach — `createArenaV2` authors the AABB, this builds the
+geometry), plus a cart, hay bales, a fence line, a ruined wall, and a barrel
+cluster scattered on the open grass, clear of the spawn ring, paths, hills, and
+plateau. Props rest on the terrain via `getGroundHeightAt`. **Collider policy**:
+every prop ≥0.4 m tall gets its 1:1 collider; thin decorative trim (cart wheels,
+fence rails, raised hay/awning) is mesh-only — the character controller autosteps
+over it anyway.
+
 ## Out of scope (follow-ups)
 
-Castle + medieval props (#208, builds on the plateau), bot pathfinding,
-minimap, water, fog.
+Bot pathfinding around the castle (bots will bump walls — known limitation),
+minimap, water, fog. Interior tower/keep rooms (open platforms only), working
+gates/doors.

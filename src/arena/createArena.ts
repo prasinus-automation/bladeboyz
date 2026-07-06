@@ -79,7 +79,9 @@ export function createArena(world: GameWorld): ArenaSpec {
     center: { x: number; y: number; z: number },
     size: { x: number; y: number; z: number },
     color: number,
-  ): void => addStaticBox(world, center, size, color);
+  ): void => {
+    addStaticBox(world, center, size, color);
+  };
 
   // Colors — kept inline rather than as named constants because they're
   // visual-tuning values, not architectural choices. If we extract a palette

@@ -15,6 +15,9 @@ import { awardGold, awardGoldOnKill } from './economy/goldEconomy';
 import { flushGoldWrites } from './economy/goldPersistence';
 import { createPlayer } from './ecs/entities/createPlayer';
 import { createArenaV2 } from './arena/createArenaV2';
+import { createCastle } from './arena/createCastle';
+import { addMedievalProps } from './arena/props';
+import { PLATEAU_TOP_Y } from './arena/arenaV2Spec';
 import { processRespawns } from './ecs/systems/processRespawns';
 import {
   createTrainingDummy,
@@ -174,6 +177,16 @@ async function main(): Promise<void> {
   // query ground height via `getGroundHeightAt(world.arena, x, z)`.
   const arena = createArenaV2(world);
   world.arena = arena;
+
+  // Castle (#208): the medieval centerpiece on the central plateau, plus the
+  // map-wide medieval props. Built after the terrain/walls so their colliders
+  // rest on the finished ground. Origin = plateau center at its flat top; every
+  // castle box is placed relative to it, so re-tuning the plateau moves the
+  // whole structure. Client-only geometry (the headless server needs neither
+  // the meshes nor the static colliders), so it lives here rather than inside
+  // `createArenaV2` — which keeps that builder's server-bundled path lean.
+  createCastle(world, { x: 0, y: PLATEAU_TOP_Y, z: 0 });
+  addMedievalProps(world, arena);
 
   // Create player at the first arena spawn point (S1 — Arena v2's south side,
   // at (12, 37) on the radius-39 ring). The createPlayer factory falls back to
