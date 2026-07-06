@@ -136,6 +136,77 @@ describe('character facing convention (#219)', () => {
     });
   });
 
+  describe('off-hand (hand_L) chamber poses read forward (-Z) — #227', () => {
+    // #219's audit + tests only pinned the RIGHT arm (hand_R / weapon_attach).
+    // The off-hand chain (shoulder_L / upper_arm_L / forearm_L) in the attack
+    // keyframes was still authored to the old +Z convention, so at the start
+    // of every swing the off-hand snapped toward the camera. #227 flipped the
+    // clearly-backward entries via the Ry(π) conjugation. These assert real
+    // world transforms (build model → apply pose → read hand_L world-z), not
+    // the pose formula (the #212 tautological-test lesson).
+    //
+    // Reference: corrected IDLE_POSE resolves hand_L to the forward hemisphere.
+    it('idle off-hand is forward (-Z) — the reference', () => {
+      expect(boneWorldZ(IDLE_POSE, 'hand_L')).toBeLessThan(0);
+    });
+
+    it('Left windup off-hand is forward (-Z) — was +Z before #227', () => {
+      expect(boneWorldZ(getAttackAnimation(Direction.Left).windup, 'hand_L')).toBeLessThan(0);
+    });
+
+    it('Left release off-hand is forward (-Z) — was +Z before #227', () => {
+      expect(boneWorldZ(getAttackAnimation(Direction.Left).release, 'hand_L')).toBeLessThan(0);
+    });
+
+    it('Right windup off-hand is forward (-Z) — was +Z before #227', () => {
+      expect(boneWorldZ(getAttackAnimation(Direction.Right).windup, 'hand_L')).toBeLessThan(0);
+    });
+
+    it('Right release off-hand is forward (-Z) — was +Z before #227', () => {
+      expect(boneWorldZ(getAttackAnimation(Direction.Right).release, 'hand_L')).toBeLessThan(0);
+    });
+
+    it('Stab windup off-hand is forward (-Z) — was +Z before #227', () => {
+      expect(boneWorldZ(getAttackAnimation(Direction.Stab).windup, 'hand_L')).toBeLessThan(0);
+    });
+
+    it('Stab release off-hand is forward (-Z) — was +Z before #227', () => {
+      expect(boneWorldZ(getAttackAnimation(Direction.Stab).release, 'hand_L')).toBeLessThan(0);
+    });
+
+    it('Overhead release off-hand follows the chop forward (-Z) — was +Z before #227', () => {
+      expect(boneWorldZ(getAttackAnimation(Direction.Overhead).release, 'hand_L')).toBeLessThan(0);
+    });
+
+    it('Overhead windup off-hand left as authored — neutral/forward (not the +Z bug)', () => {
+      // shoulder_L x:-140° is a large-angle overhead raise (2π-adjacency case),
+      // measured ≈ -0.018 — on the forward side. Deliberately NOT flipped.
+      expect(boneWorldZ(getAttackAnimation(Direction.Overhead).windup, 'hand_L')).toBeLessThan(0);
+    });
+
+    // Phase continuity: for each direction the off-hand stays in the forward
+    // hemisphere across idle→windup→release→recovery (recovery IS IDLE_POSE),
+    // so there is no mid-chain hemisphere flip for the ~80ms crossfade to
+    // absorb. We assert every phase shares the sign of the idle reference.
+    // `Direction` is a const enum (no runtime reverse-map), so label explicitly.
+    const chainDirs: Array<[string, Direction]> = [
+      ['Left', Direction.Left],
+      ['Right', Direction.Right],
+      ['Overhead', Direction.Overhead],
+      ['Stab', Direction.Stab],
+    ];
+    for (const [label, dir] of chainDirs) {
+      it(`off-hand stays in one hemisphere across the ${label} chain`, () => {
+        const idleSign = Math.sign(boneWorldZ(IDLE_POSE, 'hand_L'));
+        const anim = getAttackAnimation(dir);
+        expect(Math.sign(boneWorldZ(anim.windup, 'hand_L'))).toBe(idleSign);
+        expect(Math.sign(boneWorldZ(anim.release, 'hand_L'))).toBe(idleSign);
+        // recovery === IDLE_POSE by construction, but assert to be explicit.
+        expect(Math.sign(boneWorldZ(anim.recovery, 'hand_L'))).toBe(idleSign);
+      });
+    }
+  });
+
   describe('foot geometry points toes forward (-Z)', () => {
     it('both foot meshes are offset toward -Z', () => {
       const { group } = createCharacterModel();
