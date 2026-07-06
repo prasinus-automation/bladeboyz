@@ -36,14 +36,12 @@ import {
   dropEquippedWeapon,
   getInventory,
   inventoryRegistry,
-  registerWeaponModelFactory,
 } from './InventorySystem';
 import {
   pickupRegistry,
   resetPickupRegistry,
 } from '../../inventory/PickupRegistry';
 import { weaponIdToName } from './CombatSystem';
-import { weaponModelFactories as renderingFactories } from '../../rendering/WeaponModels';
 import { EventBus } from '../../events/EventBus';
 import { resetFixedTick, advanceFixedTick } from '../../core/tickCounter';
 import { DESPAWN_TICKS } from './WeaponPickupSystem';
@@ -84,17 +82,10 @@ function makeArmedEntity(
   Position.y[eid] = y;
   Position.z[eid] = z;
   CombatStateComponent.state[eid] = CombatState.Idle;
-  // Mesh stub so equipWeapon's model-swap doesn't NPE on the re-equip path
-  const bone: any = {
-    children: [] as any[],
-    add(c: any) {
-      this.children.push(c);
-    },
-    remove(c: any) {
-      const i = this.children.indexOf(c);
-      if (i >= 0) this.children.splice(i, 1);
-    },
-  };
+  // Mesh stub so equipWeapon's model-swap doesn't NPE on the re-equip path.
+  // A real Object3D so `attachThirdPersonWeapon`'s transform reset + grip and
+  // Object3D.add() (real weapon Groups) work.
+  const bone = new THREE.Object3D();
   meshRegistry.set(eid, {
     group: { position: { x: 0, y: 0, z: 0 } } as any,
     skeleton: {} as any,
@@ -116,9 +107,9 @@ beforeEach(() => {
   savedWeaponIdToName = [...weaponIdToName];
   weaponIdToName.length = 0;
   weaponIdToName.push('Longsword', 'Mace', 'Dagger', 'Battleaxe');
-  for (const [name, factory] of Object.entries(renderingFactories)) {
-    registerWeaponModelFactory(name, factory);
-  }
+  // `equipWeapon`'s starter re-equip mounts the model via
+  // `attachThirdPersonWeapon`, which reads WeaponModels.ts's canonical
+  // `weaponModelFactories` registry directly — nothing to seed here.
 });
 
 afterEach(() => {

@@ -197,9 +197,9 @@ export function applyRemoteWeapon(eid: number, weaponId: number): void {
   const modelData = meshRegistry.get(eid);
   const bone = modelData?.bones['weapon_attach'];
   if (!bone) return;
-  while (bone.children.length > 0) bone.remove(bone.children[0]);
-  // Shared attach path — resets the bone to its rest transform before
-  // composing grip, so swapping weapons never accumulates grip (idempotent).
+  // Shared attach path — clears the old model, resets the bone to its rest
+  // transform, then composes grip, so swapping weapons never accumulates grip
+  // or stacks models (idempotent).
   attachThirdPersonWeapon(bone, weaponIdToName[weaponId] ?? 'Longsword');
   data.weaponId = weaponId;
 }

@@ -46,16 +46,11 @@ import {
 } from '../../inventory/PickupRegistry';
 import { weaponIdToName } from './CombatSystem';
 import {
-  weaponModelFactories,
-  registerWeaponModelFactory,
-} from './InventorySystem';
-import {
   inventoryRegistry,
   initInventory,
   resetInventorySystem,
   getInventory,
 } from './InventorySystem';
-import { weaponModelFactories as renderingFactories } from '../../rendering/WeaponModels';
 import { EventBus } from '../../events/EventBus';
 import type { GameWorld } from '../../core/types';
 import {
@@ -124,17 +119,9 @@ function makePlayer(world: GameWorld, x: number, y: number, z: number): number {
   // Real FSM so equipWeapon's Idle gate has something to read
   createFSM(eid, weaponConfigs['Longsword']);
   // Mesh registry stub so equipWeapon's model-swap path is reachable.
-  // We only need a `weapon_attach` bone with add/remove methods.
-  const bone: any = {
-    children: [] as any[],
-    add(c: any) {
-      this.children.push(c);
-    },
-    remove(c: any) {
-      const i = this.children.indexOf(c);
-      if (i >= 0) this.children.splice(i, 1);
-    },
-  };
+  // A real Object3D so `attachThirdPersonWeapon`'s position/rotation/quaternion
+  // reset + grip compose and Object3D.add() (real weapon Groups) all work.
+  const bone = new THREE.Object3D();
   meshRegistry.set(eid, {
     group: { position: { x: 0, y: 0, z: 0 } } as any,
     skeleton: {} as any,
@@ -165,12 +152,9 @@ beforeEach(() => {
   // Ensure all four canonical weapons are in the id table
   weaponIdToName.length = 0;
   weaponIdToName.push('Longsword', 'Mace', 'Dagger', 'Battleaxe');
-  // Wire the InventorySystem's weaponModelFactories from the rendering
-  // factories so `equipWeapon` can mount the swapped model. The rendering
-  // module auto-populates its registry at import time.
-  for (const [name, factory] of Object.entries(renderingFactories)) {
-    registerWeaponModelFactory(name, factory);
-  }
+  // `equipWeapon` mounts the swapped model via `attachThirdPersonWeapon`, which
+  // reads the canonical `weaponModelFactories` registry in WeaponModels.ts
+  // (auto-populated at import time) — no separate registry to seed here.
 });
 
 afterEach(() => {

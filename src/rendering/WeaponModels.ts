@@ -707,16 +707,25 @@ const _baseQuat = new THREE.Quaternion();
  * applying the per-weapon third-person grip.
  *
  * This is the SINGLE attach path shared by every third-person combatant
- * (player, warmup bot, training dummy, remote players) so grip logic can't
- * drift across call sites. It:
- *   1. resets the bone to its baked rest transform (idempotent — safe to call
- *      again on a weapon swap, e.g. `RemotePlayers.applyRemoteWeapon`),
- *   2. composes the weapon's `ThirdPersonGrip` onto that base,
- *   3. builds a fresh model via the registered factory and parents it to the
+ * (player, warmup bot, training dummy, remote players, AND live weapon swaps
+ * via `InventorySystem.equipWeapon` — pickups, shop purchases, respawns,
+ * UI-equip) so grip logic can't drift across call sites. It:
+ *   1. clears any currently-attached weapon model from the bone,
+ *   2. resets the bone to its baked rest transform (idempotent — safe to call
+ *      again on a weapon swap),
+ *   3. composes the weapon's `ThirdPersonGrip` onto that base,
+ *   4. builds a fresh model via the registered factory and parents it to the
  *      bone.
  *
  * Grip on the bone (not the model group) keeps tracers and the visible blade
  * in lockstep — see `THIRD_PERSON_GRIPS` for the parity rationale.
+ *
+ * If `weaponName` has no registered factory the bone is left completely
+ * untouched (existing model + transform preserved) and `null` is returned —
+ * we never strip the old weapon or leave the bone rotated-but-empty. Callers
+ * only pass names validated against `weaponConfigs`, and every canonical
+ * weapon has a factory, so this guard is defence-in-depth against a typo in
+ * `THIRD_PERSON_GRIPS`.
  *
  * @returns the attached `WeaponModelResult`, or `null` if `weaponName` has no
  *          registered factory (caller decides how to handle).
@@ -725,6 +734,14 @@ export function attachThirdPersonWeapon(
   weaponAttachBone: THREE.Object3D,
   weaponName: string,
 ): WeaponModelResult | null {
+  const factory = weaponModelFactories[weaponName];
+  if (!factory) return null;
+
+  // Remove any previously-attached weapon model so swaps don't stack models.
+  while (weaponAttachBone.children.length > 0) {
+    weaponAttachBone.remove(weaponAttachBone.children[0]);
+  }
+
   // Reset to the baked rest transform so repeated calls (swaps) don't
   // accumulate grip.
   weaponAttachBone.position.copy(WEAPON_ATTACH_BASE_POSITION);
@@ -741,8 +758,6 @@ export function attachThirdPersonWeapon(
     weaponAttachBone.position.add(grip.offset);
   }
 
-  const factory = weaponModelFactories[weaponName];
-  if (!factory) return null;
   const model = factory();
   weaponAttachBone.add(model.group);
   return model;
