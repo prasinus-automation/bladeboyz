@@ -365,17 +365,28 @@ describe('createArena (Arena v1, #112)', () => {
       }
     });
 
-    it('spawn yaws face the arena center (atan2(-x, -z))', () => {
+    it('every spawn`s world forward vector points at the arena center', () => {
       const spec = createArena(world);
-      // S1 at (-13, 0): faces +X (east). Yaw +π/2 by convention.
-      expect(spec.spawnPoints[0].facing).toBeCloseTo(Math.PI / 2, 5);
-      // S4 at (13, 0): faces -X (west). Yaw -π/2.
-      expect(spec.spawnPoints[3].facing).toBeCloseTo(-Math.PI / 2, 5);
-      // S2/S3/S5/S6 — interior spawns, facings derived from atan2.
-      expect(spec.spawnPoints[1].facing).toBeCloseTo(Math.atan2(7, 9), 5);
-      expect(spec.spawnPoints[2].facing).toBeCloseTo(Math.atan2(-7, 9), 5);
-      expect(spec.spawnPoints[4].facing).toBeCloseTo(Math.atan2(7, -9), 5);
-      expect(spec.spawnPoints[5].facing).toBeCloseTo(Math.atan2(-7, -9), 5);
+      // Rather than restate the yaw formula, assert the actual facing:
+      // forward = (-sin yaw, -cos yaw) should align with (origin - pos).
+      for (const sp of spec.spawnPoints) {
+        const { x, z } = sp.position;
+        const fwdX = -Math.sin(sp.facing);
+        const fwdZ = -Math.cos(sp.facing);
+        const len = Math.hypot(-x, -z);
+        const dot = (fwdX * -x + fwdZ * -z) / len;
+        expect(dot).toBeCloseTo(1, 5);
+      }
+    });
+
+    it('the E-W axis spawns face across the arena (S1 → +X, S4 → -X)', () => {
+      const spec = createArena(world);
+      // S1 at (-13, 0): forward must be +X (east). yaw = -π/2.
+      expect(spec.spawnPoints[0].facing).toBeCloseTo(-Math.PI / 2, 5);
+      expect(-Math.sin(spec.spawnPoints[0].facing)).toBeCloseTo(1, 5); // fwd.x = +1
+      // S4 at (13, 0): forward must be -X (west). yaw = +π/2.
+      expect(spec.spawnPoints[3].facing).toBeCloseTo(Math.PI / 2, 5);
+      expect(-Math.sin(spec.spawnPoints[3].facing)).toBeCloseTo(-1, 5); // fwd.x = -1
     });
 
     it('S2 ↔ S5 and S3 ↔ S6 are mirror-symmetric across z = 0', () => {
@@ -404,7 +415,8 @@ describe('createArena (Arena v1, #112)', () => {
       // Spot-check coord/yaw mirroring on s1.
       const s1 = spawnPointRegistry.get(1)!;
       expect(s1.position).toEqual({ x: -13, y: SPAWN_Y, z: 0 });
-      expect(s1.yaw).toBeCloseTo(Math.PI / 2, 5);
+      // S1 at (-13, 0) faces +X toward center → yaw = -π/2.
+      expect(s1.yaw).toBeCloseTo(-Math.PI / 2, 5);
     });
 
     it('clears stale placeholders before registering arena spawn points', () => {

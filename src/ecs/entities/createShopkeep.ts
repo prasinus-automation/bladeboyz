@@ -7,6 +7,7 @@ import {
 } from '../components';
 import { createCharacterModel } from '../../rendering/CharacterModel';
 import { spawnAtGround } from '../utils/spawnAtGround';
+import { yawTowards } from '../../utils/math';
 import type { GameWorld } from '../../core/types';
 
 /**
@@ -71,11 +72,12 @@ export function createShopkeep(
   Position.y[eid] = resolvedY;
   Position.z[eid] = z;
 
-  // Face toward the arena center (origin). Yaw=0 looks down -Z, so the
-  // shopkeep yaw is atan2(playerX - x, playerZ - z) where (playerX,playerZ)=(0,0).
-  // For the default spawn corner (8, *, 8), this gives a yaw of atan2(-8, -8) = -3π/4
-  // which orients the shopkeep facing inward toward origin.
-  Rotation.y[eid] = Math.atan2(-x, -z);
+  // Face toward the arena center (origin) under the forward = (-sin yaw,
+  // -cos yaw) convention (yaw=0 looks down -Z). `yawTowards(x, z)` = atan2(x, z)
+  // orients the shopkeep inward. For the default corner (8, *, 8) this gives
+  // atan2(8, 8) = π/4. (The old `atan2(-x, -z)` = -3π/4 was π off and faced the
+  // shopkeep AWAY from the arena — fixed in #211/#212.)
+  Rotation.y[eid] = yawTowards(x, z);
 
   const { group, skeleton, bones } = createCharacterModel(SHOPKEEP_COLOR);
   group.position.set(x, resolvedY, z);

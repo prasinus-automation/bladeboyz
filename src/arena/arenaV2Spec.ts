@@ -24,6 +24,7 @@ import {
   type TerrainSpec,
   type TerrainHandle,
 } from './terrain';
+import { yawTowards } from '../utils/math';
 
 /* ────────────────────────────────────────────────────────────────────────
  * Map dimensions
@@ -162,7 +163,9 @@ export function sampleTerrainZone(x: number, z: number): TerrainZone {
  *
  * All 10 spawns sit on a radius-39 ring in OPEN, flat terrain: outside the
  * plateau footprint (bot AI can't path around the future castle) and clear of
- * every hill flank. `yaw = atan2(-x, -z)` faces each spawn toward map center.
+ * every hill flank. `yaw = yawTowards(x, z)` faces each spawn toward map center
+ * (origin). NOTE: the naive `atan2(-x, -z)` faces AWAY from center under this
+ * project's `forward = (-sin yaw, -cos yaw)` convention — see #211/#212.
  * ──────────────────────────────────────────────────────────────────────── */
 
 /** A spawn location without y — shape-compatible with `NetSpawn`. */
@@ -172,22 +175,17 @@ export interface ArenaV2Spawn {
   yaw: number;
 }
 
-/** Face the map center (origin) from (x, z). Yaw 0 looks down -Z. */
-function faceCenter(x: number, z: number): number {
-  return Math.atan2(-x, -z);
-}
-
 export const ARENA_V2_SPAWNS: ArenaV2Spawn[] = [
-  { x: 12, z: 37, yaw: faceCenter(12, 37) },
-  { x: 32, z: 23, yaw: faceCenter(32, 23) },
-  { x: 39, z: 0, yaw: faceCenter(39, 0) },
-  { x: 32, z: -23, yaw: faceCenter(32, -23) },
-  { x: 12, z: -37, yaw: faceCenter(12, -37) },
-  { x: -12, z: -37, yaw: faceCenter(-12, -37) },
-  { x: -32, z: -23, yaw: faceCenter(-32, -23) },
-  { x: -39, z: 0, yaw: faceCenter(-39, 0) },
-  { x: -32, z: 23, yaw: faceCenter(-32, 23) },
-  { x: -12, z: 37, yaw: faceCenter(-12, 37) },
+  { x: 12, z: 37, yaw: yawTowards(12, 37) },
+  { x: 32, z: 23, yaw: yawTowards(32, 23) },
+  { x: 39, z: 0, yaw: yawTowards(39, 0) },
+  { x: 32, z: -23, yaw: yawTowards(32, -23) },
+  { x: 12, z: -37, yaw: yawTowards(12, -37) },
+  { x: -12, z: -37, yaw: yawTowards(-12, -37) },
+  { x: -32, z: -23, yaw: yawTowards(-32, -23) },
+  { x: -39, z: 0, yaw: yawTowards(-39, 0) },
+  { x: -32, z: 23, yaw: yawTowards(-32, 23) },
+  { x: -12, z: 37, yaw: yawTowards(-12, 37) },
 ];
 
 /**

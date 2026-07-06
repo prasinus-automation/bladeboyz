@@ -7,6 +7,7 @@ import {
   clearSpawnPoints,
   registerSpawnPoint,
 } from '../world/SpawnPoints';
+import { yawTowards } from '../utils/math';
 
 /**
  * Arena v1 — `createArena()` (issues #91 / #112).
@@ -111,8 +112,10 @@ export function createArena(world: GameWorld): ArenaSpec {
 
   // ─── Spawn points (issue #112) ───
   // SpawnPoint table from docs/arena-v1.md § *Spawn Points*. Yaw computed
-  // from `Math.atan2(-deltaX, -deltaZ)` so each spawn faces the arena
-  // center. The `y = 0.1` matches `GROUND_TOP_Y` (feet origin); when the
+  // via `yawTowards(x, z)` (= atan2(x, z) toward the origin) so each spawn
+  // faces the arena center. NOTE: the old `atan2(-x, -z)` form was π off and
+  // faced spawns AWAY from center — fixed in #211/#212. The `y = 0.1` matches
+  // `GROUND_TOP_Y` (feet origin); when the
   // character controller eventually does spawn snap-to-ground (#86) it'll
   // raycast from these positions. v1 ground is flat so the static value
   // works directly.
@@ -123,39 +126,40 @@ export function createArena(world: GameWorld): ArenaSpec {
   // axis (including horizontal) to zero. `spawnAtGround()` already
   // follows this convention; arena spawn points were the lone outlier.
   const SPAWN_Y = GROUND_TOP_Y + CHARACTER_CONTROLLER_OFFSET;
-  // Computed exactly from the architect note: atan2(7, 9) etc. Using
-  // `as const` so TypeScript infers tuple types and we keep the table
-  // literal for review.
+  // Each facing = yawTowards(x, z) — the yaw that orients this spawn toward the
+  // arena origin under the forward = (-sin yaw, -cos yaw) convention. e.g. the
+  // west spawn (-13, 0) faces +X (yaw = -π/2); the NW spawn (-7, -9) faces
+  // atan2(-7, -9) toward center.
   const spawnPoints: SpawnPoint[] = [
     {
       id: 's1',
       position: { x: -13, y: SPAWN_Y, z: 0 },
-      facing: Math.PI / 2, // faces +X (east) toward center
+      facing: yawTowards(-13, 0), // -π/2, faces +X (east) toward center
     },
     {
       id: 's2',
       position: { x: -7, y: SPAWN_Y, z: -9 },
-      facing: Math.atan2(7, 9),
+      facing: yawTowards(-7, -9),
     },
     {
       id: 's3',
       position: { x: 7, y: SPAWN_Y, z: -9 },
-      facing: Math.atan2(-7, 9),
+      facing: yawTowards(7, -9),
     },
     {
       id: 's4',
       position: { x: 13, y: SPAWN_Y, z: 0 },
-      facing: -Math.PI / 2, // faces -X (west) toward center
+      facing: yawTowards(13, 0), // +π/2, faces -X (west) toward center
     },
     {
       id: 's5',
       position: { x: -7, y: SPAWN_Y, z: 9 },
-      facing: Math.atan2(7, -9),
+      facing: yawTowards(-7, 9),
     },
     {
       id: 's6',
       position: { x: 7, y: SPAWN_Y, z: 9 },
-      facing: Math.atan2(-7, -9),
+      facing: yawTowards(7, 9),
     },
   ];
 

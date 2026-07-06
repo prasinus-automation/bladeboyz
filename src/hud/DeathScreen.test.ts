@@ -157,7 +157,7 @@ describe('DeathScreen', () => {
     screen.update();
     expect(screen.isVisible).toBe(true);
 
-    EventBus.emit('RespawnEvent', { eid: playerEid, spawnPointId: 1, tick: 0 });
+    EventBus.emit('RespawnEvent', { eid: playerEid, spawnPointId: 1, yaw: 0, tick: 0 });
     EventBus.flush();
     // RespawnEvent itself doesn't flip visibility — DeadTag does. Simulate
     // the post-respawn state where DeadTag has been removed.

@@ -190,6 +190,11 @@ async function main(): Promise<void> {
   // Rotation.y at 0; we'd otherwise spawn the player facing -Z regardless of
   // which spawn point was used. Mirror what the registry path does.
   Rotation.y[playerEid] = spawn0.facing;
+  // Point the camera along the spawn facing too. MovementSystem overwrites
+  // Rotation.y from the camera yaw every tick, so without this the component
+  // value above is clobbered on tick 1 and the player looks down -Z regardless
+  // of spawn point (#211/#212).
+  cameraController.setYaw(spawn0.facing);
   cameraController.setPlayerMesh(playerMesh);
 
   // Register combat FSM for the player entity using the default starter weapon
@@ -248,6 +253,10 @@ async function main(): Promise<void> {
   // reorient. snap() also resets the locomotion bob accumulator.
   EventBus.on('RespawnEvent', (payload) => {
     if (payload.eid === playerEid) {
+      // Look along the new spawn facing. Must set the camera (not just
+      // Rotation.y) because MovementSystem re-derives Rotation.y from camera
+      // yaw each tick (#211/#212).
+      cameraController.setYaw(payload.yaw);
       viewmodel.snap(world.camera);
     }
   });
@@ -384,7 +393,7 @@ async function main(): Promise<void> {
 
   // Multiplayer: server-message application + state sends + claim
   // interception (see src/net/NetworkSystem.ts for the trust model).
-  const network = new NetworkSystem(world, netClient, playerEid);
+  const network = new NetworkSystem(world, netClient, playerEid, cameraController);
   const matchHUD = new MatchHUD(() =>
     gameMode === 'multiplayer' ? network.matchState : null,
   );

@@ -63,10 +63,20 @@ describe('createShopkeep', () => {
   });
 
   it('faces toward the arena center (origin) by default', () => {
-    const eid = createShopkeep(world, 8, 1.1, 8);
-    // Yaw=0 looks down -Z; for spawn at (8, *, 8) facing origin,
-    // the yaw should be atan2(-8, -8) = -3π/4
-    expect(Rotation.y[eid]).toBeCloseTo(Math.atan2(-8, -8));
+    const x = 8;
+    const z = 8;
+    const eid = createShopkeep(world, x, 1.1, z);
+    // Assert the shopkeep's world FORWARD points at the origin, rather than
+    // restating the formula. forward = (-sin yaw, -cos yaw).
+    const yaw = Rotation.y[eid];
+    const fwdX = -Math.sin(yaw);
+    const fwdZ = -Math.cos(yaw);
+    const len = Math.hypot(-x, -z);
+    const dot = (fwdX * -x + fwdZ * -z) / len;
+    expect(dot).toBeCloseTo(1, 5);
+    // Concretely, yawTowards(8, 8) = atan2(8, 8) = π/4 (the old atan2(-8,-8)
+    // = -3π/4 faced AWAY from center — bug #211/#212).
+    expect(yaw).toBeCloseTo(Math.PI / 4, 5);
   });
 
   it('registers ShopkeepData in shopkeepRegistry', () => {

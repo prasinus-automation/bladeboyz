@@ -37,7 +37,8 @@ import { ARENA_V2_SPAWNS } from '../src/arena/arenaV2Spec';
 // The table carries NO y: clients resolve ground-y from the shared terrain
 // sampler (`sampleTerrainHeight`) per #206, so the server needs no terrain math.
 // `arenaV2Spec.ts` is pure data (no Three.js/Rapier runtime imports), safe to
-// bundle into the Node server.
+// bundle into the Node server. Spawn yaws use the shared `yawTowards(x, z)`
+// helper so each spawn faces the arena center (see #211/#212 for the π-off bug).
 export const ARENA_SPAWNS: NetSpawn[] = ARENA_V2_SPAWNS;
 
 // ── Claim validation tunables ─────────────────────────────

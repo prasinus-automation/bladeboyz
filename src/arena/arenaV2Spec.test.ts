@@ -110,9 +110,18 @@ describe('ARENA_V2_SPAWNS', () => {
     }
   });
 
-  it('every spawn faces the map center (yaw = atan2(-x, -z))', () => {
+  it('every spawn actually faces the map center (forward · toOrigin ≈ 1)', () => {
+    // Assert real facing, not the formula: under the project convention
+    // forward = (-sin yaw, -cos yaw), a spawn facing the origin has its
+    // forward vector aligned with the unit vector from (x,z) to (0,0).
     for (const s of ARENA_V2_SPAWNS) {
-      expect(s.yaw).toBeCloseTo(Math.atan2(-s.x, -s.z), 6);
+      const forwardX = -Math.sin(s.yaw);
+      const forwardZ = -Math.cos(s.yaw);
+      const len = Math.hypot(s.x, s.z);
+      const toOriginX = -s.x / len;
+      const toOriginZ = -s.z / len;
+      const dot = forwardX * toOriginX + forwardZ * toOriginZ;
+      expect(dot).toBeCloseTo(1, 6);
     }
   });
 

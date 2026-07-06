@@ -82,6 +82,15 @@ export interface RespawnEventPayload {
   eid: number;
   /** Spawn-point id from `spawnPointRegistry`, or 0 if none was selected */
   spawnPointId: number;
+  /**
+   * Yaw (radians) the entity was oriented to at the chosen spawn point. The
+   * local player's camera consumes this to look along the spawn facing after
+   * respawn (see main.ts RespawnEvent subscription) — `MovementSystem`
+   * overwrites `Rotation.y` from the camera each tick, so setting the
+   * component alone would be immediately clobbered. In-process only; not a
+   * wire field.
+   */
+  yaw: number;
   /** Fixed-tick of the respawn */
   tick: number;
 }

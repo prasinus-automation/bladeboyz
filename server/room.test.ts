@@ -73,6 +73,19 @@ describe('FfaRoom — roster', () => {
     const left = room.leave('a');
     expect(msgs(left, 'playerLeft')).toHaveLength(1);
   });
+
+  it('every ARENA_SPAWNS yaw makes the spawn face the arena origin', () => {
+    // Server table must stay in lockstep with the client (#211/#212). Assert
+    // the actual facing, not the formula: forward = (-sin yaw, -cos yaw) must
+    // align with (origin - pos).
+    for (const s of ARENA_SPAWNS) {
+      const fwdX = -Math.sin(s.yaw);
+      const fwdZ = -Math.cos(s.yaw);
+      const len = Math.hypot(-s.x, -s.z);
+      const dot = (fwdX * -s.x + fwdZ * -s.z) / len;
+      expect(dot).toBeCloseTo(1, 5);
+    }
+  });
 });
 
 describe('FfaRoom — damage claims', () => {

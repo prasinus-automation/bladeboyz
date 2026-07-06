@@ -34,6 +34,7 @@ import {
   KnockbackState,
 } from '../components';
 import { CombatState } from '../../combat/states';
+import { yawTowards } from '../../utils/math';
 import { CombatInput, fsmRegistry } from '../../combat/CombatFSM';
 import { Direction } from '../../combat/directions';
 import { getCurrentFixedTick } from '../../core/tickCounter';
@@ -128,8 +129,14 @@ export function createBotAISystem(world: GameWorld): () => void {
       const dist = Math.hypot(dx, dz);
 
       // Always face the target (yaw drives the swing arc + hitboxes).
-      // Forward = -Z: facing (dx, dz) means yaw = atan2(-dx, -dz).
-      Rotation.y[eid] = Math.atan2(-dx, -dz);
+      // yawTowards(self, target) = atan2(-dx, -dz) here — behavior-identical
+      // to the old inline, routed through the shared helper (#212).
+      Rotation.y[eid] = yawTowards(
+        Position.x[eid],
+        Position.z[eid],
+        Position.x[target],
+        Position.z[target],
+      );
 
       const meleeRange = BotBrain.meleeRange[eid];
       const ux = dist > 1e-6 ? dx / dist : 0;
