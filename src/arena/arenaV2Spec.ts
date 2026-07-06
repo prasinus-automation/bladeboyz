@@ -85,9 +85,19 @@ export const TERRAIN_SPEC_V2: TerrainSpec = {
     },
     // Four perimeter hills, placed in the angular GAPS between spawn points
     // (spawns sit on a radius-39 ring) so no spawn lands on a steep flank.
-    { kind: 'hill', x: 0, z: 46, radius: 12, height: 6 },
+    //
+    // BOUNDARY-WALL CLEARANCE (issue #207 QA): the north/south hills sit on the
+    // wall-perpendicular axis, so their terrain height at the wall line (z=±50)
+    // must stay well under the boundary wall's top surface (WALL_TOP_Y ≈ 5 in
+    // createArenaV2.ts) — otherwise the terrain overtops the wall and a player
+    // can walk off the edge of the collidable world. With center at z=±44 and
+    // radius 10 the height at the wall line is ≈1.9 m (base 0.5 + ~1.4), leaving
+    // a ~3 m un-climbable lip. The east/west hills are offset OFF the wall axis
+    // so their wall-line height stays ≈2.6 m. `createArenaV2.test.ts` pins the
+    // invariant `sampleTerrainHeight + autostep < WALL_TOP_Y` along every wall.
+    { kind: 'hill', x: 0, z: 44, radius: 10, height: 4 },
     { kind: 'hill', x: 44, z: -14, radius: 11, height: 5 },
-    { kind: 'hill', x: 0, z: -46, radius: 12, height: 7 },
+    { kind: 'hill', x: 0, z: -44, radius: 10, height: 4 },
     { kind: 'hill', x: -44, z: 14, radius: 10, height: 4 },
   ],
 };

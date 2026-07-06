@@ -27,7 +27,7 @@ server bundles it for the spawn table without pulling in the renderer.
 ```
             -Z (north)
    ┌──────────────────────────────────┐
-   │  S6      H3(0,-46)        S5      │
+   │  S6      H3(0,-44)        S5      │
    │      S7                      S4   │   H = hill (peak height)
    │                                   │   S = spawn point
    │ H4          ┌────────┐         H2 │   ▓ = stone plateau (castle site)
@@ -36,10 +36,10 @@ server bundles it for the spawn table without pulling in the renderer.
    │             │▓ y=4  ▓│            │
    │      S9     └────────┘      S2    │
    │                                   │
-   │  S10     H1(0,46)         S1      │
+   │  S10     H1(0,44)         S1      │
    └──────────────────────────────────┘
             +Z (south)
-   Boundary walls at x,z = ±50.25 (stone, 4 m tall)
+   Boundary walls at x,z = ±50.25 (stone, 6 m tall, top y=5)
 ```
 
 ## Terrain features
@@ -50,13 +50,23 @@ Base (flat) height **0.5 m**. Features are summed analytically on top.
 | Feature | Center (x,z) | Size | Peak/top height |
 |---|---|---|---|
 | **Central plateau** | (0, 0) | flat top ±18 (36×36 m), skirt +8 | **y = 4.0** |
-| Hill H1 | (0, 46) | radius 12 | 0.5 + 6 = 6.5 |
+| Hill H1 | (0, 44) | radius 10 | 0.5 + 4 = 4.5 |
 | Hill H2 | (44, −14) | radius 11 | 0.5 + 5 = 5.5 |
-| Hill H3 | (0, −46) | radius 12 | 0.5 + 7 = 7.5 |
+| Hill H3 | (0, −44) | radius 10 | 0.5 + 4 = 4.5 |
 | Hill H4 | (−44, 14) | radius 10 | 0.5 + 4 = 4.5 |
 
-Max terrain height (7.5 m) + any future tower stays far under the #206 raycast
+Max terrain height (5.5 m) + any future tower stays far under the #206 raycast
 origin (`max(50, bounds.max.y + 20) = 50`), so `spawnAtGround` always hits.
+
+**Boundary-wall clearance (issue #207 QA fix):** the north/south hills (H1/H3)
+lie on the wall-perpendicular axis, so their height *at the wall line* (z = ±50)
+must stay under the wall's top surface (`WALL_TOP_Y = 5`) — otherwise the raised
+terrain overtops the buried wall and a player can walk off the edge of the
+heightfield (there is no collider past ±50). With center z = ±44 / radius 10 the
+wall-line height is ≈1.9 m, leaving a ~3 m un-climbable lip. The east/west hills
+are offset off their wall axis, so their wall-line height stays ≈2.6 m. The
+invariant `sampleTerrainHeight + AUTOSTEP_MAX_HEIGHT < WALL_TOP_Y` is asserted
+along every wall line by `createArenaV2.test.ts`.
 
 ### Plateau contract (issue #208 depends on these EXACT numbers)
 
@@ -120,8 +130,10 @@ arena-aware.
 ## Boundary & spec
 
 - **Walls:** 4 stone cuboids at `±50.25` (inside face at `±50`), 0.5 m thick,
-  4 m tall (center y = 1.5), color `0x8a8a8a`. Built via the shared
-  `addStaticBox` helper.
+  6 m tall (center y = 2 → top surface `WALL_TOP_Y = 5`), color `0x8a8a8a`.
+  Built via the shared `addStaticBox` helper. The top clears the tallest
+  wall-line terrain (≈2.6 m) by a ~2.4 m un-climbable lip so the wall genuinely
+  bounds the map (see *Boundary-wall clearance* above).
 - **bounds:** `{ min: (−50, 0, −50), max: (50, 30, 50) }`.
 - **weaponPickupSafeVolume:** inside-walls minus 0.5 m; **y-max = 20** (so the
   plateau at 4 m + future ramparts stay contained — not v1's 10).

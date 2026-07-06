@@ -14,8 +14,29 @@ import {
   sampleTerrainZone,
   ARENA_V2_SPAWNS,
   PLATEAU_TOP_Y,
+  spawnGroundY,
 } from './arenaV2Spec';
 import { clearSpawnPoints, registerSpawnPoint } from '../world/SpawnPoints';
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Boundary-wall geometry (exported so the arena test can assert the terrain
+ * along every wall line stays below the wall top — see the invariant below).
+ * ──────────────────────────────────────────────────────────────────────── */
+
+const COLOR_WALL = 0x8a8a8a;
+const WALL_THICKNESS = 0.5;
+/**
+ * Wall height. The top surface (`WALL_TOP_Y`) must clear the tallest terrain
+ * along any wall line by more than the autostep height, or a perimeter hill
+ * lets a player step over the wall and off the edge of the heightfield (which
+ * ends exactly at ±50 — there is no collider past it). Tallest wall-line
+ * terrain today is ≈2.6 m (east hill), so a 5 m top leaves a ~2.4 m lip.
+ */
+const WALL_HEIGHT = 6;
+/** Center y of the wall box; base sits below the terrain, top stands proud. */
+const WALL_CENTER_Y = 2;
+/** Absolute world-y of the wall's top surface (= center + half height). */
+export const WALL_TOP_Y = WALL_CENTER_Y + WALL_HEIGHT / 2; // 5.0
 
 /**
  * Arena v2 — `createArenaV2()` (issue #207 / parent #205).
@@ -29,8 +50,8 @@ import { clearSpawnPoints, registerSpawnPoint } from '../world/SpawnPoints';
  *      mesh. Both sample `TERRAIN_SPEC_V2` at the SAME grid points, so the
  *      visible surface and the collision surface are byte-for-byte parallel
  *      (a dropped entity rests exactly on the mesh).
- *   3. The 4 boundary walls at ±50.25 (3 m of stone above ground) via the
- *      shared `addStaticBox` helper.
+ *   3. The 4 boundary walls at ±50.25 (top surface at y=5, standing proud of
+ *      the terrain along every wall line) via the shared `addStaticBox` helper.
  *   4. The 10 spawn points — registered into `world/SpawnPoints.ts` and
  *      returned on the `ArenaSpec`. Spawn y is resolved from the terrain
  *      sampler, so respawns land on the real surface.
@@ -108,12 +129,10 @@ export function createArenaV2(world: GameWorld): ArenaSpec {
 
   // ─── Boundary walls ───
   // Stone-grey walls at ±50.25 (half-thickness 0.25 → inside face at ±50).
-  // 4 m tall, centered at y=1.5 so the base sits 0.5 m below the terrain edge
-  // (base height) and the top stands ~3 m proud of the ground.
-  const COLOR_WALL = 0x8a8a8a;
-  const WALL_THICKNESS = 0.5;
-  const WALL_HEIGHT = 4;
-  const WALL_CENTER_Y = 1.5;
+  // 6 m tall, centered at y=2 so the base sits 1 m below the terrain edge and
+  // the top (WALL_TOP_Y = 5) stands proud of every point of terrain along the
+  // wall lines — the perimeter hills top out at ≈2.6 m there, leaving a ~2.4 m
+  // un-climbable lip so a player can never step over the wall and off the map.
   const WALL_SPAN = MAP_SIZE + WALL_THICKNESS; // overlap corners, no seam
   const wallOffset = MAP_HALF + WALL_THICKNESS / 2; // 50.25
   addStaticBox(
@@ -150,7 +169,8 @@ export function createArenaV2(world: GameWorld): ArenaSpec {
     id: `s${i + 1}`,
     position: {
       x: s.x,
-      y: sampleTerrainHeight(TERRAIN_SPEC_V2, s.x, s.z) + CHARACTER_CONTROLLER_OFFSET,
+      // Shared with the server-facing sampler — same formula, one source.
+      y: spawnGroundY(s.x, s.z, CHARACTER_CONTROLLER_OFFSET),
       z: s.z,
     },
     facing: s.yaw,

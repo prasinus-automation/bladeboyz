@@ -145,7 +145,7 @@ describe('Arena v2 heightfield ↔ visible-surface parity (real Rapier)', () => 
     const points: Array<[number, number]> = [
       [0.31, 0.29], // plateau top (~4.0)
       [39.13, 0.27], // +X dirt path, open (~0.5)
-      [0.19, 45.71], // near a hill peak (~6.x)
+      [0.19, 45.71], // on hill H1's flank near its peak (~4.2)
       [-30.37, 25.13], // open grass (~0.5)
       [12.41, 37.19], // at a spawn ring point (~0.5)
     ];

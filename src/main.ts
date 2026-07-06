@@ -175,8 +175,9 @@ async function main(): Promise<void> {
   const arena = createArenaV2(world);
   world.arena = arena;
 
-  // Create player at the first arena spawn point (S1 — west side, on the
-  // E-W axis). The createPlayer factory still falls back to the registry
+  // Create player at the first arena spawn point (S1 — Arena v2's south side,
+  // at (12, 37) on the radius-39 ring). The createPlayer factory falls back to
+  // the registry
   // selector when called without an explicit position, but pinning to S1
   // here keeps initial spawn deterministic and matches the issue spec's
   // "Replace hardcoded player spawn with arena.spawnPoints[0].position"

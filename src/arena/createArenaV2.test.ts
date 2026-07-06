@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as THREE from 'three';
-import { createArenaV2 } from './createArenaV2';
+import { createArenaV2, WALL_TOP_Y } from './createArenaV2';
 import { spawnPointRegistry, clearSpawnPoints } from '../world/SpawnPoints';
 import type { GameWorld } from '../core/types';
-import { CHARACTER_CONTROLLER_OFFSET } from '../core/types';
+import {
+  CHARACTER_CONTROLLER_OFFSET,
+  AUTOSTEP_MAX_HEIGHT,
+} from '../core/types';
 import { sampleTerrainHeight } from './terrain';
 import {
   TERRAIN_SPEC_V2,
@@ -188,10 +191,33 @@ describe('createArenaV2 (Arena v2, #207)', () => {
     it('places the 4 boundary walls at ±50.25', () => {
       createArenaV2(world);
       const wallTranslations = rapierMock.bodies.map((b) => b.translation);
-      expect(wallTranslations).toContainEqual({ x: 0, y: 1.5, z: -50.25 });
-      expect(wallTranslations).toContainEqual({ x: 0, y: 1.5, z: 50.25 });
-      expect(wallTranslations).toContainEqual({ x: 50.25, y: 1.5, z: 0 });
-      expect(wallTranslations).toContainEqual({ x: -50.25, y: 1.5, z: 0 });
+      expect(wallTranslations).toContainEqual({ x: 0, y: 2, z: -50.25 });
+      expect(wallTranslations).toContainEqual({ x: 0, y: 2, z: 50.25 });
+      expect(wallTranslations).toContainEqual({ x: 50.25, y: 2, z: 0 });
+      expect(wallTranslations).toContainEqual({ x: -50.25, y: 2, z: 0 });
+    });
+
+    // Regression for the #207 QA blocker: a perimeter hill (H1/H3) sitting on a
+    // wall-perpendicular axis raised the terrain at the wall line ABOVE the
+    // wall's top surface, so a player could climb the hill, walk over the buried
+    // wall, and fall off the edge of the heightfield (which ends exactly at ±50
+    // — no collider past it). Assert that along EVERY wall line the terrain,
+    // plus a full autostep, still sits below the wall top, so there is always an
+    // un-climbable lip and the wall genuinely bounds the map.
+    it('terrain along every wall line stays below the wall top (no boundary gap)', () => {
+      // Dense sweep of x (for the N/S walls at z=±50) and z (for the E/W walls
+      // at x=±50) across the full inside span.
+      for (let t = -50; t <= 50; t += 0.25) {
+        const samples = [
+          sampleTerrainHeight(TERRAIN_SPEC_V2, t, 50), // north wall
+          sampleTerrainHeight(TERRAIN_SPEC_V2, t, -50), // south wall
+          sampleTerrainHeight(TERRAIN_SPEC_V2, 50, t), // east wall
+          sampleTerrainHeight(TERRAIN_SPEC_V2, -50, t), // west wall
+        ];
+        for (const h of samples) {
+          expect(h + AUTOSTEP_MAX_HEIGHT).toBeLessThan(WALL_TOP_Y);
+        }
+      }
     });
   });
 

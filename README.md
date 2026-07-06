@@ -350,10 +350,10 @@ The game boots into **Arena v2** (`src/arena/createArenaV2.ts`) — a 100×100 m
 
 - **Variable-height terrain** — one Rapier heightfield collider plus a displaced, flat-shaded `PlaneGeometry` visual mesh, both sampled from the same `TERRAIN_SPEC_V2` at the same grid points, so the visible surface and the collision surface match exactly (a dropped entity rests on the mesh).
 - **Central stone plateau** — a 36×36 m flat top raised to `y ≈ 4` with a walkable smoothstep skirt (radius ≈ 26 m). This is the foundation the follow-up **castle** issue builds on.
-- **Perimeter hills** (4, heights 4–7 m) for sightline breaks and verticality, plus four **dirt paths** radiating from the plateau to the map edges.
+- **Perimeter hills** (4, heights ≈4.5–5.5 m) for sightline breaks and verticality, plus four **dirt paths** radiating from the plateau to the map edges.
 - **Material zones without textures** — per-vertex colors on the terrain mesh: grass (olive), dirt (path brown), stone (plateau). `sampleTerrainZone(x, z)` is a pure function so a future minimap/server can reproduce it.
 - **10 spawn points** on a radius-39 ring in open, flat terrain (outside the plateau footprint), each facing map center. The **x/z/yaw** spawn table lives in `src/arena/arenaV2Spec.ts` (`ARENA_V2_SPAWNS`) and is imported verbatim by both the client and the multiplayer server — a deep-equal test pins them in lockstep. Spawn y is resolved at runtime from the terrain sampler.
-- **Boundary walls** at `±50.25` (stone, 4 m tall) and the **lighting rig** (ambient + hemisphere fill + a directional sun repositioned to `(60, 80, 40)` for the larger field; no shadows).
+- **Boundary walls** at `±50.25` (stone, 6 m tall, top at `y = 5` so they stand proud of the perimeter hills and can't be climbed over) and the **lighting rig** (ambient + hemisphere fill + a directional sun repositioned to `(60, 80, 40)` for the larger field; no shadows).
 
 `arenaV2Spec.ts` holds all pure map data (terrain spec, zones, spawn table) with **no** Three.js/Rapier runtime imports, so the headless server bundles the spawn table without pulling in the renderer. Full layout, feature table, plateau contract, and zone map: [`docs/arena-v2.md`](docs/arena-v2.md).
 
