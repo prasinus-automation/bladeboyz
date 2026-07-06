@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import {
   applyPoseLayer,
+  applyAdditivePoseLayer,
   smoothstepEase,
   easeOutBack,
   combatPhaseBlend,
@@ -290,10 +291,75 @@ describe('poseBlending', () => {
       expect(combatPhaseBlend(CombatState.Recovery, 1, 1)).toBe(1);
     });
 
-    it('reactive states keep the crossfade race (block snaps fast)', () => {
-      // phaseT 0 but crossfade done → fully blended.
-      expect(combatPhaseBlend(CombatState.Blocking, 0, 1)).toBe(1);
+    it('reactive states keep the crossfade race (Idle uses smoothstep(max))', () => {
+      // phaseT 0 but crossfade half done → smoothstep of the crossfade.
       expect(combatPhaseBlend(CombatState.Idle, 0, 0.5)).toBeCloseTo(0.5 * 0.5 * (3 - 2 * 0.5), 6);
+    });
+
+    it('Blocking rides easeOutBack on the crossfade — a raise-in sweep (#218)', () => {
+      // phaseT is always 0 during Blocking (phaseTotal == 0), so the curve is
+      // purely the eased crossfade. It overshoots past guard, then settles.
+      expect(combatPhaseBlend(CombatState.Blocking, 0, 0)).toBe(0);
+      expect(combatPhaseBlend(CombatState.Blocking, 0, 1)).toBe(1);
+      expect(combatPhaseBlend(CombatState.Blocking, 0, 0.5)).toBe(easeOutBack(0.5));
+      // Overshoot: somewhere on the ramp the eased factor carries past 1.
+      let peak = 0;
+      for (let c = 0; c <= 1; c += 0.01) {
+        peak = Math.max(peak, combatPhaseBlend(CombatState.Blocking, 0, c));
+      }
+      expect(peak).toBeGreaterThan(1.0);
+      // The phaseT argument is a no-op for Blocking (max() removed).
+      expect(combatPhaseBlend(CombatState.Blocking, 0.9, 0.3)).toBe(
+        combatPhaseBlend(CombatState.Blocking, 0, 0.3),
+      );
+    });
+  });
+
+  describe('applyAdditivePoseLayer', () => {
+    function makeBones(names: string[]): Record<string, THREE.Bone> {
+      const bones: Record<string, THREE.Bone> = {};
+      for (const n of names) bones[n] = new THREE.Bone();
+      return bones;
+    }
+
+    it('post-multiplies the offset onto the existing bone rotation', () => {
+      const bones = makeBones(['upper_arm_R']);
+      // Seed a base rotation the additive layer must compose with, not clobber.
+      const base = new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(0.3, 0, 0, 'XYZ'),
+      );
+      bones.upper_arm_R.quaternion.copy(base);
+
+      const offset: Pose = { upper_arm_R: { z: 0.05 } };
+      applyAdditivePoseLayer(bones, offset, new Set(['upper_arm_R']));
+
+      const expected = base
+        .clone()
+        .multiply(
+          new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0.05, 'XYZ')),
+        );
+      expect(bones.upper_arm_R.quaternion.angleTo(expected)).toBeCloseTo(0, 6);
+      // Must have actually changed from the base.
+      expect(bones.upper_arm_R.quaternion.angleTo(base)).toBeGreaterThan(0);
+    });
+
+    it('only writes bones in BOTH the pose and the owned set', () => {
+      const bones = makeBones(['upper_arm_R', 'chest']);
+      const chestBefore = bones.chest.quaternion.clone();
+      // chest is in the pose but NOT owned → must be left untouched.
+      const offset: Pose = { upper_arm_R: { z: 0.05 }, chest: { x: 0.05 } };
+      applyAdditivePoseLayer(bones, offset, new Set(['upper_arm_R']));
+      expect(bones.chest.quaternion.equals(chestBefore)).toBe(true);
+      expect(bones.upper_arm_R.quaternion.equals(new THREE.Quaternion())).toBe(false);
+    });
+
+    it('ignores owned bones missing from the pose or hierarchy', () => {
+      const bones = makeBones(['upper_arm_R']);
+      const before = bones.upper_arm_R.quaternion.clone();
+      // forearm_R owned but absent from bones; upper_arm_R owned but absent
+      // from pose → nothing should change.
+      applyAdditivePoseLayer(bones, {}, new Set(['upper_arm_R', 'forearm_R']));
+      expect(bones.upper_arm_R.quaternion.equals(before)).toBe(true);
     });
   });
 
@@ -302,6 +368,17 @@ describe('poseBlending', () => {
       expect(crossfadeDurationFor(CombatState.Parry)).toBeLessThan(CROSSFADE_DURATION_SEC);
       expect(crossfadeDurationFor(CombatState.HitStun)).toBeGreaterThan(CROSSFADE_DURATION_SEC);
       expect(crossfadeDurationFor(CombatState.Windup)).toBe(CROSSFADE_DURATION_SEC);
+    });
+
+    it('Blocking gets a longer, readable raise-in sweep (#218)', () => {
+      // 0.14 s vs the 0.08 s default — the "raise weapon to guard" motion.
+      expect(crossfadeDurationFor(CombatState.Blocking)).toBeGreaterThan(
+        CROSSFADE_DURATION_SEC,
+      );
+      // Still slower than a Parry snap (0.05 s) — Parry stays a flourish.
+      expect(crossfadeDurationFor(CombatState.Blocking)).toBeGreaterThan(
+        crossfadeDurationFor(CombatState.Parry),
+      );
     });
   });
 

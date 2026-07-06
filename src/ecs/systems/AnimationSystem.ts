@@ -52,11 +52,14 @@ import {
 import { WALK_SPEED, SPRINT_SPEED } from '../../core/types';
 import {
   applyPoseLayer,
+  applyAdditivePoseLayer,
   smoothstepEase,
   combatPhaseBlend,
   crossfadeDurationFor,
   anchoredPhaseT,
 } from '../../animation/poseBlending';
+import { computeBlockHoldOffsets } from '../../animation/blockMotion';
+import { Direction } from '../../combat/directions';
 import {
   computeArcSwingPose,
   ARC_SWING_OWNED_BONES,
@@ -520,6 +523,22 @@ export function animationSystem(world: GameWorld, dt: number): void {
         combatBlendT,
         combatOwned,
       );
+    }
+
+    // ── 7.6 Living-guard block hold (#218) ──
+    // While Blocking, layer a subtle continuous "breathing guard" motion ON
+    // TOP of the (now-settled) keyframe block pose so it doesn't read as a
+    // frozen statue. Deterministic function of `phaseElapsed` (free-runs every
+    // tick during Blocking — see `CombatFSM.tick`). Restricted to the bones
+    // the combat layer already owns (arm chain + chest), so it never fights
+    // the movement layer. Gated strictly on Blocking — NOT Parry (its snap is
+    // a deliberate reward flourish) or HitStun.
+    if (state === CombatState.Blocking) {
+      const holdOffsets = computeBlockHoldOffsets(
+        direction as Direction,
+        phaseElapsed,
+      );
+      applyAdditivePoseLayer(bones, holdOffsets, combatOwned);
     }
 
     // ── 7.5 Pitch aim (#goal-2026-07 hit-accuracy pass) ──

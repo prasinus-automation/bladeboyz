@@ -35,11 +35,14 @@ import { CombatState } from '../combat/states';
 import { getViewmodelPose } from '../animation/ViewmodelAnimationData';
 import {
   applyPoseLayer,
+  applyAdditivePoseLayer,
   smoothstepEase,
   combatPhaseBlend,
   crossfadeDurationFor,
   anchoredPhaseT,
 } from '../animation/poseBlending';
+import { computeBlockHoldOffsets } from '../animation/blockMotion';
+import { Direction } from '../combat/directions';
 import {
   computeArcSwingPose,
   ARC_SWING_VIEWMODEL_BONES,
@@ -276,6 +279,23 @@ export function viewmodelAnimationSystem(
       effectiveT,
       VIEWMODEL_COMBAT_BONES,
     );
+  }
+
+  // ── Living-guard block hold (#218) ──
+  //
+  // While Blocking, layer a subtle continuous "breathing guard" motion ON
+  // TOP of the (now-settled) keyframe block pose so it doesn't read as a
+  // frozen statue. Deterministic function of `phaseElapsed` (free-runs every
+  // tick during Blocking — see `CombatFSM.tick`). Restricted to the three
+  // permitted viewmodel arm bones; the `chest` offset from the shared
+  // motion function is silently dropped (FP rig has no torso). Gated strictly
+  // on Blocking — NOT Parry (its 0.05 s snap is a reward flourish) or HitStun.
+  if (combatState === CombatState.Blocking) {
+    const holdOffsets = computeBlockHoldOffsets(
+      direction as Direction,
+      phaseElapsed,
+    );
+    applyAdditivePoseLayer(viewmodel.bones, holdOffsets, VIEWMODEL_COMBAT_BONES);
   }
 
   // ── Idle sway / breathing (doc §5) ──
