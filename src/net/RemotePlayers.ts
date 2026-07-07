@@ -65,6 +65,21 @@ export interface RemotePlayerData {
   samples: NetSample[];
   /** Currently attached weapon model id (swap on change). */
   weaponId: number;
+  /**
+   * Last combat state seen on the wire (#224). Used to detect state
+   * transitions — specifically the entry into Blocking — so the free-running
+   * block-hold clock is reset on entry only, never on an in-place
+   * block-direction morph.
+   */
+  prevCombatState: number;
+  /**
+   * Wall-clock ms (`now`) at which this remote entered its current Blocking
+   * hold (#224). Blocking has no bounded duration on the wire (`pt` is always
+   * 0), so `phaseElapsed` is reconstructed locally as `(now - blockStartMs)`
+   * → the #218 living-guard motion animates for spectators instead of
+   * freezing. Meaningless outside Blocking.
+   */
+  blockStartMs: number;
 }
 
 /** eid → remote metadata (side-table; bitECS can't hold strings). */
@@ -145,7 +160,14 @@ export function createRemotePlayer(
 
   createHitboxes(world, eid, skeleton, bones);
 
-  remotePlayerRegistry.set(eid, { netId, name, samples: [], weaponId: -1 });
+  remotePlayerRegistry.set(eid, {
+    netId,
+    name,
+    samples: [],
+    weaponId: -1,
+    prevCombatState: CombatState.Idle,
+    blockStartMs: 0,
+  });
   remoteByNetId.set(netId, eid);
   applyRemoteWeapon(eid, 0);
   return eid;
@@ -218,12 +240,36 @@ export function pushRemoteState(eid: number, s: NetPlayerState, now: number): vo
   Rotation.x[eid] = s.pitch;
 
   // Combat-state mirror → AnimationSystem drives the swing/block pose.
+  const incomingState = s.cs.s;
+  // Detect the entry into Blocking to (re)start the free-running block clock.
+  // Keyed on STATE transitions ONLY — a mid-hold block-direction change
+  // (`setBlockDirection`, an in-place morph) keeps the same state and MUST
+  // NOT reset the counter (#224 parity rule).
+  if (
+    data.prevCombatState !== incomingState &&
+    incomingState === CombatState.Blocking
+  ) {
+    data.blockStartMs = now;
+  }
+  data.prevCombatState = incomingState;
+
   CombatStateComp.state[eid] = s.cs.s;
   CombatStateComp.direction[eid] = s.cs.d;
-  CombatStateComp.phaseT[eid] = s.cs.pt;
-  CombatStateComp.phaseTotal[eid] = 100;
-  CombatStateComp.phaseElapsed[eid] = Math.round(s.cs.pt * 100);
   CombatStateComp.weaponId[eid] = s.cs.w;
+  if (incomingState === CombatState.Blocking) {
+    // Blocking is unbounded — mirror the LOCAL player's Blocking semantics
+    // exactly: phaseTotal 0, phaseT 0. `phaseElapsed` is a client-local
+    // free-running clock owned by `remotePlayerSystem` (advanced per frame,
+    // not per snapshot, so the living-guard breathing stays smooth). See #224.
+    CombatStateComp.phaseTotal[eid] = 0;
+    CombatStateComp.phaseT[eid] = 0;
+  } else {
+    // Bounded states (Windup/Release/Recovery/HitStun/Parry): reconstruct the
+    // synthetic 0..100 phase from the wire fraction, unchanged from before.
+    CombatStateComp.phaseT[eid] = s.cs.pt;
+    CombatStateComp.phaseTotal[eid] = 100;
+    CombatStateComp.phaseElapsed[eid] = Math.round(s.cs.pt * 100);
+  }
   // Mirror onto CombatStateComponent so attacker-side block judgment
   // (NetDamageInterceptor) can read replicated Blocking state/direction.
   CombatStateComponent.state[eid] = s.cs.s;
@@ -325,6 +371,18 @@ export function remotePlayerSystem(world: GameWorld, now: number): void {
     MovementState.speedFactor[eid] = gait.speedFactor;
     MovementState.sprinting[eid] = gait.sprinting;
     MovementState.grounded[eid] = gait.grounded;
+
+    // ── Free-running block-hold clock (#224) ──
+    // Blocking carries no elapsed value on the wire, so drive `phaseElapsed`
+    // from wall-clock time held. Per-frame (not per-snapshot) advancement is
+    // the point — it feeds #218's `computeBlockHoldOffsets`, which needs a
+    // smoothly-increasing tick count to animate the living-guard breathing.
+    if (CombatStateComp.state[eid] === CombatState.Blocking) {
+      const heldTicks = Math.round(
+        (now - data.blockStartMs) / (FIXED_TIMESTEP * 1000),
+      );
+      CombatStateComp.phaseElapsed[eid] = Math.max(0, heldTicks);
+    }
   }
 }
 
