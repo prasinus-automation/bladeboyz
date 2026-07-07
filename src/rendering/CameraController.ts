@@ -226,9 +226,11 @@ export class CameraController {
       // Third-person: orbit camera around player
       _tempTarget.set(x, y + eyeHeight * 0.8, z);
 
-      // Calculate orbit position
+      // Calculate orbit position. offsetY is NEGATED so vertical polarity
+      // matches first-person (#239): pitch > 0 (mouse-up) drops the camera
+      // below the eye line, so lookAt(target) tilts the view UP.
       const offsetX = Math.sin(this.yaw) * Math.cos(this.pitch) * this.orbitDistance;
-      const offsetY = Math.sin(this.pitch) * this.orbitDistance;
+      const offsetY = -Math.sin(this.pitch) * this.orbitDistance;
       const offsetZ = Math.cos(this.yaw) * Math.cos(this.pitch) * this.orbitDistance;
 
       this.camera.position.set(
