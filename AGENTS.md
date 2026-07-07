@@ -70,7 +70,12 @@ bladeboyz/
 │   ├── arena/
 │   │   ├── types.ts             # ArenaSpec, SpawnPoint, ShopkeepStallSpec, Volume3D interfaces + `getGroundHeightAt(arena,x,z)` accessor — the ONE ground-height query every fixed system uses (#206). `ArenaSpec.name` widened to string; `ArenaSpec.terrain?` added
 │   │   ├── terrain.ts           # Terrain engine (#206, parent #205): pure `sampleTerrainHeight(spec,x,z)` (the networking seam — no RNG/clock, client/server agree) + `buildTerrainHeights`/`createTerrainCollider` (Rapier heightfield) + `TerrainSpec`/`TerrainHandle` + plateau/hill/ramp feature primitives. Arena v1 stays flat (terrain absent)
-│   │   └── createArena.ts       # Code-authored Arena v1: lights (#117) + 9 static props + 6 spawn points + ArenaSpec (#112). Arena v2 (10x medieval castle map, variable terrain) in flight — parent #205
+│   │   ├── createArena.ts       # Code-authored Arena v1: lights (#117) + 9 static props + 6 spawn points + ArenaSpec (#112). Kept for tests/reference — the game boots Arena v2 (main.ts:178)
+│   │   ├── createArenaV2.ts     # Arena v2 (SHIPPED, parent #205): 100×100m medieval map — light rig, vertex-colored flat-shaded terrain mesh (PlaneGeometry 128×128 displaced via sampleTerrainHeight) + Rapier heightfield collider + 4 boundary walls (6m, ±50.25). Deliberately server-bundle-lean: castle/props are composed in main.ts, NOT here
+│   │   ├── arenaV2Spec.ts       # TERRAIN_SPEC_V2 (base 0.5m, central 36×36 plateau y=4, 4 perimeter hills) + ZONE_COLORS + pure `sampleTerrainZone(x,z)` (stone plateau > cardinal dirt paths > grass) — deterministic zone source a minimap/splat-texture/server can reproduce
+│   │   ├── createCastle.ts      # 30×30 curtain-wall castle on the plateau: gatehouse, 4 corner towers, keep, ramparts, autostep staircases, well, crates. Named dimension constants exported
+│   │   ├── props.ts             # addMedievalProps: market stall, cart, hay, fence, ruined wall, barrels — ground-snapped via getGroundHeightAt
+│   │   └── addStaticBox.ts      # `addStaticBox(world, center, size, color) → {mesh, body}` — the ONE helper every static env box (v1 props, v2 walls, castle, props) goes through; single choke point for material upgrades
 │   ├── combat/
 │   │   ├── CombatFSM.ts         # Combat state machine definition
 │   │   ├── states.ts            # State enum and transition logic
@@ -256,9 +261,10 @@ npm run lint         # Run ESLint
 
 ## Styling / Rendering Approach
 - **No CSS framework** — minimal HTML/CSS for HUD overlays only
-- **No textures** — flat colored `MeshStandardMaterial` / `MeshBasicMaterial` only
+- **No external texture assets, ever** — no image files, no `TextureLoader`. **Procedurally generated textures (`CanvasTexture`/`DataTexture` built in code) ARE permitted for ENVIRONMENT surfaces** (walls, castle stone, wood props, terrain) as of the #232 environment-detail plan. Characters, weapons, and viewmodels stay flat-colored `MeshStandardMaterial`/`MeshBasicMaterial` — do not texture them. Texture-generation code must stay client-side (composed from `main.ts` / castle / props — never in `arenaV2Spec.ts` or `terrain.ts`, which the headless server imports)
 - **Ultra-low-poly** — box heads, rectangular torsos, cylindrical limbs
 - HUD elements are HTML overlays positioned with CSS, not Three.js sprites
+- **Renderer state (World.ts:29-40)**: `antialias: true`, no shadows (pinned by `createArena.test.ts:209` + `createArenaV2.test.ts:168`), default tone mapping, no fog. The #232 atmosphere issue may change these — update the pinning tests deliberately, never delete them
 
 ## Key Conventions
 - One ECS system per file in `src/ecs/systems/`
