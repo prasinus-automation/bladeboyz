@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import * as THREE from 'three';
 import { CameraController, CameraMode } from './CameraController';
 import { Position, PreviousPosition, Rotation, PreviousRotation, MovementState } from '../ecs/components';
 import { addEntity, addComponent, createWorld } from 'bitecs';
-import { MAX_PITCH } from '../core/types';
+import { MAX_PITCH, EYE_HEIGHT, THIRD_PERSON_DISTANCE } from '../core/types';
 
 // Mock Three.js PerspectiveCamera
 function createMockCamera() {
@@ -206,6 +207,82 @@ describe('CameraController', () => {
       controller.toggleMode();
       controller.updateCamera(eid, 1.0);
       expect(camera.lookAt).toHaveBeenCalled();
+    });
+  });
+
+  describe('third-person orbit polarity (#239)', () => {
+    // The orbit target is player position + 80% eye height (CameraController
+    // third-person branch). Player Y is 1 in this suite's beforeEach.
+    const TARGET_Y = 1 + EYE_HEIGHT * 0.8;
+
+    /**
+     * Drive pitch through the real input path: deltaPitch = -delta.y *
+     * sensitivity, so mouse-UP (negative delta.y) yields POSITIVE pitch
+     * (pinned by the mouse-delta sign tests above — do not bypass them
+     * by poking a private field).
+     */
+    function applyPitch(ctrl: CameraController, inp: any, pitch: number): void {
+      inp.getMouseDelta.mockReturnValue({ x: 0, y: -pitch / ctrl.sensitivity });
+      ctrl.processInput();
+      expect(ctrl.getPitch()).toBeCloseTo(pitch, 4);
+      inp.getMouseDelta.mockReturnValue({ x: 0, y: 0 });
+    }
+
+    it('positive pitch (mouse-up) places the camera BELOW the orbit target', () => {
+      applyPitch(controller, input, 0.3);
+      controller.toggleMode();
+      controller.updateCamera(eid, 1.0);
+
+      const [, camY] = camera.position.set.mock.lastCall;
+      expect(camY).toBeLessThan(TARGET_Y);
+      // Exact offset: target.y - sin(pitch) * orbitDistance
+      expect(camY).toBeCloseTo(TARGET_Y - Math.sin(0.3) * THIRD_PERSON_DISTANCE, 4);
+    });
+
+    it('negative pitch (mouse-down) places the camera ABOVE the orbit target', () => {
+      applyPitch(controller, input, -0.3);
+      controller.toggleMode();
+      controller.updateCamera(eid, 1.0);
+
+      const [, camY] = camera.position.set.mock.lastCall;
+      expect(camY).toBeGreaterThan(TARGET_Y);
+      expect(camY).toBeCloseTo(TARGET_Y + Math.sin(0.3) * THIRD_PERSON_DISTANCE, 4);
+    });
+
+    it('at pitch=0 / yaw=0 the camera sits behind the character on the +Z side at eye-line height', () => {
+      // Character forward is -Z (AGENTS.md Spatial Conventions), so "behind"
+      // is +Z. Horizontal components must be unaffected by the vertical fix.
+      controller.toggleMode();
+      controller.updateCamera(eid, 1.0);
+
+      const [camX, camY, camZ] = camera.position.set.mock.lastCall;
+      expect(camX).toBeCloseTo(0, 4);
+      expect(camY).toBeCloseTo(TARGET_Y, 4);
+      expect(camZ).toBeCloseTo(THIRD_PERSON_DISTANCE, 4);
+    });
+
+    it('cross-mode polarity: FP and TP view directions have the same vertical sign for the same positive pitch', () => {
+      // Real THREE camera so lookAt() and rotation actually produce world
+      // transforms — asserting on real view vectors, not on the formula.
+      const realCamera = new THREE.PerspectiveCamera();
+      const realInput = createMockInput();
+      const ctrl = new CameraController(realCamera, realInput);
+
+      applyPitch(ctrl, realInput, 0.3);
+
+      // First-person: reference polarity — mouse-up must look UP.
+      ctrl.updateCamera(eid, 1.0);
+      const fpDir = new THREE.Vector3();
+      realCamera.getWorldDirection(fpDir);
+      expect(fpDir.y).toBeGreaterThan(0);
+
+      // Third-person with the SAME pitch must look up too.
+      ctrl.toggleMode();
+      ctrl.updateCamera(eid, 1.0);
+      const tpDir = new THREE.Vector3();
+      realCamera.getWorldDirection(tpDir);
+      expect(tpDir.y).toBeGreaterThan(0);
+      expect(Math.sign(tpDir.y)).toBe(Math.sign(fpDir.y));
     });
   });
 
