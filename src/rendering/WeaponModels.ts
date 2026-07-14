@@ -1,5 +1,10 @@
 import * as THREE from 'three';
-import { createLongswordModel, type WeaponModelResult } from './CharacterModel';
+import {
+  createLongswordModel,
+  WEAPON_ATTACH_BASE_POSITION,
+  WEAPON_ATTACH_BASE_ROTATION,
+  type WeaponModelResult,
+} from './CharacterModel';
 
 export type { WeaponModelResult } from './CharacterModel';
 
@@ -626,6 +631,137 @@ export const weaponModelFactories: Record<string, WeaponModelFactory> = {
   'Rapier': createRapierModel,
   'Halberd': createHalberdModel,
 };
+
+// ── Third-Person Grip ───────────────────────────────────────
+
+/**
+ * Per-weapon third-person grip transform, composed ONTO the `weapon_attach`
+ * bone's rest transform (see `WEAPON_ATTACH_BASE_*` in CharacterModel.ts).
+ *
+ * **Why a separate map from the viewmodel `gripOffset`/`gripRotation` (#125):**
+ * the viewmodel grips were tuned in *camera space* for the first-person rig
+ * (which anchors `vm_weapon_attach` at the camera with `ARM_OFFSET` and has
+ * NO baked rotation). The third-person bone hangs off the animated body
+ * skeleton and carries the baked `rotation.x = π`, so those values don't
+ * transfer 1:1. This mirrors the precedent set by `PICKUP_ORIENTATIONS`
+ * (#127), which likewise keeps a purpose-built third-person orientation map.
+ *
+ * **Tracer parity (the hard constraint, #220):** grip is applied to the BONE,
+ * not to the weapon model group. `TracerSystem` sweeps `config.tracerPoints`
+ * through `weapon_attach.matrixWorld`, and the visible mesh is a child of the
+ * same bone — so composing grip on the bone moves the damage geometry and the
+ * visible blade by the exact same transform. Damage always lands where the
+ * blade visually passes. (Offsetting only the model group would desync them —
+ * that is the bug this map must not introduce.) `ThirdPersonGripParity.test.ts`
+ * pins this world-space coincidence.
+ *
+ * **Convention:** `rotation` is composed as a post-multiply in the weapon's
+ * own local frame (rotate the weapon *within* the grip); `offset` is added in
+ * bone-local space (relative to `hand_R`). Weapons absent from this map (or
+ * with a zero grip) attach exactly as they did pre-#220 — the refactor is
+ * behaviour-preserving for them.
+ *
+ * Post-#219 the handle already seats in the fist for every weapon (the model
+ * and poses were corrected to -Z-forward). The grips below are conservative
+ * orientation nudges that lift each blade out of the "resting back over the
+ * shoulder" idle angle toward a readable held guard; the values are
+ * intentionally modest so the arc-swing tuning (arcSwing.ts, BladeTimingParity)
+ * is preserved.
+ */
+export interface ThirdPersonGrip {
+  /** Extra rotation composed onto the baked bone rotation (weapon-local). */
+  rotation?: THREE.Euler;
+  /** Extra position offset in bone-local (hand_R) space. */
+  offset?: THREE.Vector3;
+}
+
+const THIRD_PERSON_GRIPS: Record<string, ThirdPersonGrip> = {
+  // Straight-bladed swords: a small forward pitch lifts the blade toward an
+  // upright ready guard instead of resting back over the shoulder.
+  Longsword: { rotation: new THREE.Euler(-0.22, 0, 0) },
+  Zweihander: { rotation: new THREE.Euler(-0.18, 0, 0) },
+  Katana: { rotation: new THREE.Euler(-0.2, 0, 0) },
+  Rapier: { rotation: new THREE.Euler(-0.2, 0, 0) },
+  // Blunt / short weapons: tiny nudge only.
+  Mace: { rotation: new THREE.Euler(-0.12, 0, 0) },
+  Dagger: { rotation: new THREE.Euler(-0.18, 0, 0) },
+  // Asymmetric-headed poles: a small shaft-axis (local Y) roll turns the
+  // offset head to face outward. The tracer line is on the shaft axis for
+  // these, so a pure Y roll leaves the damage geometry invariant while
+  // reorienting the visible head — hit detection is untouched.
+  Battleaxe: { rotation: new THREE.Euler(-0.12, 0.4, 0) },
+  Warhammer: { rotation: new THREE.Euler(-0.1, 0.4, 0) },
+  Halberd: { rotation: new THREE.Euler(-0.1, 0.4, 0) },
+  // Long thrusting poles: leave orientation, small forward pitch for readability.
+  Spear: { rotation: new THREE.Euler(-0.1, 0, 0) },
+  // Yeeter (tree trunk) and Scythe read fine on the baked rest orientation;
+  // Scythe's off-axis blade tracers make any roll a hit-geometry change, so
+  // it stays identity by design.
+};
+
+const _gripQuat = new THREE.Quaternion();
+const _baseQuat = new THREE.Quaternion();
+
+/**
+ * Attach a weapon model to a third-person character's `weapon_attach` bone,
+ * applying the per-weapon third-person grip.
+ *
+ * This is the SINGLE attach path shared by every third-person combatant
+ * (player, warmup bot, training dummy, remote players, AND live weapon swaps
+ * via `InventorySystem.equipWeapon` — pickups, shop purchases, respawns,
+ * UI-equip) so grip logic can't drift across call sites. It:
+ *   1. clears any currently-attached weapon model from the bone,
+ *   2. resets the bone to its baked rest transform (idempotent — safe to call
+ *      again on a weapon swap),
+ *   3. composes the weapon's `ThirdPersonGrip` onto that base,
+ *   4. builds a fresh model via the registered factory and parents it to the
+ *      bone.
+ *
+ * Grip on the bone (not the model group) keeps tracers and the visible blade
+ * in lockstep — see `THIRD_PERSON_GRIPS` for the parity rationale.
+ *
+ * If `weaponName` has no registered factory the bone is left completely
+ * untouched (existing model + transform preserved) and `null` is returned —
+ * we never strip the old weapon or leave the bone rotated-but-empty. Callers
+ * only pass names validated against `weaponConfigs`, and every canonical
+ * weapon has a factory, so this guard is defence-in-depth against a typo in
+ * `THIRD_PERSON_GRIPS`.
+ *
+ * @returns the attached `WeaponModelResult`, or `null` if `weaponName` has no
+ *          registered factory (caller decides how to handle).
+ */
+export function attachThirdPersonWeapon(
+  weaponAttachBone: THREE.Object3D,
+  weaponName: string,
+): WeaponModelResult | null {
+  const factory = weaponModelFactories[weaponName];
+  if (!factory) return null;
+
+  // Remove any previously-attached weapon model so swaps don't stack models.
+  while (weaponAttachBone.children.length > 0) {
+    weaponAttachBone.remove(weaponAttachBone.children[0]);
+  }
+
+  // Reset to the baked rest transform so repeated calls (swaps) don't
+  // accumulate grip.
+  weaponAttachBone.position.copy(WEAPON_ATTACH_BASE_POSITION);
+  weaponAttachBone.rotation.copy(WEAPON_ATTACH_BASE_ROTATION);
+
+  const grip = THIRD_PERSON_GRIPS[weaponName];
+  if (grip?.rotation) {
+    _baseQuat.setFromEuler(weaponAttachBone.rotation);
+    _gripQuat.setFromEuler(grip.rotation);
+    // Post-multiply: apply the grip in the weapon's local frame.
+    weaponAttachBone.quaternion.copy(_baseQuat.multiply(_gripQuat));
+  }
+  if (grip?.offset) {
+    weaponAttachBone.position.add(grip.offset);
+  }
+
+  const model = factory();
+  weaponAttachBone.add(model.group);
+  return model;
+}
 
 // ── Ground Pickup Model ─────────────────────────────────────
 

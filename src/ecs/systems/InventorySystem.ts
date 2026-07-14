@@ -11,6 +11,7 @@
 import { CombatState } from '../../combat/states';
 import { fsmRegistry } from '../../combat/CombatFSM';
 import { weaponConfigs } from '../../weapons/WeaponConfig';
+import { attachThirdPersonWeapon } from '../../rendering/WeaponModels';
 import { CombatStateComponent, meshRegistry, Position } from '../components';
 import { weaponIdToName } from './CombatSystem';
 import { createWeaponPickup } from '../entities/createWeaponPickup';
@@ -40,23 +41,6 @@ export interface EquipEvent {
   entityId: number;
   weaponName: string;
   previousWeapon: string | null;
-}
-
-// ── Weapon model factory registry ───────────────────────
-
-/**
- * Registry of weapon model factory functions.
- * Each factory returns a Three.js Group (the weapon mesh).
- * Register factories via registerWeaponModelFactory().
- */
-export const weaponModelFactories: Record<string, () => { group: import('three').Group }> = {};
-
-/** Register a weapon model factory */
-export function registerWeaponModelFactory(
-  name: string,
-  factory: () => { group: import('three').Group },
-): void {
-  weaponModelFactories[name] = factory;
 }
 
 // ── Inventory Registry (side-table) ─────────────────────
@@ -171,22 +155,19 @@ export function equipWeapon(entityId: number, weaponName: string): boolean {
 
   const previousWeapon = inventory.equippedWeapon;
 
-  // 5. Swap 3D model on weapon_attach bone
+  // 5. Swap 3D model on weapon_attach bone.
+  //    Route through the SINGLE third-person attach helper so the bone's rest
+  //    transform is reset and the per-weapon grip (THIRD_PERSON_GRIPS) is
+  //    composed on every swap — otherwise a live weapon change (pickup, shop
+  //    purchase, respawn, UI-equip) would leave the bone carrying the PREVIOUS
+  //    weapon's grip rotation (#220 blocker). `attachThirdPersonWeapon` also
+  //    clears the old model children internally, so this is the exact same path
+  //    createPlayer / createWarmupBot / createTrainingDummy / RemotePlayers use.
   const meshData = meshRegistry.get(entityId);
   if (meshData) {
     const weaponBone = meshData.bones['weapon_attach'];
     if (weaponBone) {
-      // Remove old weapon children
-      while (weaponBone.children.length > 0) {
-        weaponBone.remove(weaponBone.children[0]);
-      }
-
-      // Attach new weapon model
-      const factory = weaponModelFactories[weaponName];
-      if (factory) {
-        const { group } = factory();
-        weaponBone.add(group);
-      }
+      attachThirdPersonWeapon(weaponBone, weaponName);
     }
   }
 

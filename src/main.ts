@@ -82,9 +82,7 @@ import {
   addWeaponToInventory,
   getInventory,
   onEquip,
-  registerWeaponModelFactory,
 } from './ecs/systems/InventorySystem';
-import { weaponModelFactories } from './rendering/WeaponModels';
 import { ViewmodelRenderer, getArmOffset } from './rendering/ViewmodelRenderer';
 import { viewmodelAnimationSystem } from './rendering/ViewmodelAnimationSystem';
 import { pickupRenderer } from './rendering/PickupRenderer';
@@ -213,13 +211,11 @@ async function main(): Promise<void> {
   // Register combat FSM for the player entity using the default starter weapon
   createFSM(playerEid, weaponConfigs['Longsword']);
 
-  // Register weapon model factories with InventorySystem (3rd-person model
-  // swap on equip). Single source of truth: the canonical registry lives
-  // in `src/rendering/WeaponModels.ts`. ViewmodelRenderer reads from the
-  // same registry by default — see #125 cleanup.
-  for (const [name, factory] of Object.entries(weaponModelFactories)) {
-    registerWeaponModelFactory(name, factory);
-  }
+  // Third-person weapon model swaps on equip route through
+  // `attachThirdPersonWeapon` (in `src/rendering/WeaponModels.ts`), which reads
+  // the canonical `weaponModelFactories` registry directly — no separate
+  // InventorySystem-side factory registry to seed anymore (#220 QA follow-up).
+  // ViewmodelRenderer likewise reads the same registry by default (#125).
 
   // Initialize player inventory.
   //

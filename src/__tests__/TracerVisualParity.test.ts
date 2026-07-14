@@ -12,7 +12,12 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { weaponModelFactories } from '../rendering/WeaponModels';
+import * as THREE from 'three';
+import {
+  weaponModelFactories,
+  attachThirdPersonWeapon,
+} from '../rendering/WeaponModels';
+import { createCharacterModel } from '../rendering/CharacterModel';
 import { weaponConfigs } from '../weapons/WeaponConfig';
 import { weaponIdToName } from '../ecs/systems/CombatSystem';
 
@@ -52,4 +57,31 @@ describe('tracer points match the visible weapon geometry', () => {
       }
     });
   }
+});
+
+describe('third-person grip (#220) preserves tracer↔visual parity', () => {
+  // The list-equality above is grip-agnostic (both lists are raw local
+  // coordinates). This extension exercises the actual third-person attach
+  // path on a NON-DEFAULT-grip weapon (Longsword pitches forward) and proves
+  // that, once the grip is composed onto the `weapon_attach` bone, the damage
+  // tracers (config × bone matrix) still coincide in WORLD space with the
+  // visible blade (model tracers × model-group matrix). Deeper coverage —
+  // every weapon, idempotent swaps — lives in ThirdPersonGripParity.test.ts.
+  it('Longsword: grip does not move damage off the visible blade', () => {
+    const { group, bones } = createCharacterModel();
+    const bone = bones['weapon_attach'];
+    const model = attachThirdPersonWeapon(bone, 'Longsword')!;
+    group.updateMatrixWorld(true);
+    model.group.updateWorldMatrix(true, false);
+
+    const config = weaponConfigs['Longsword'];
+    for (let i = 0; i < config.tracerPoints.length; i++) {
+      const [cx, cy, cz] = config.tracerPoints[i];
+      const damage = new THREE.Vector3(cx, cy, cz).applyMatrix4(bone.matrixWorld);
+      const visual = model.tracerPoints[i]
+        .clone()
+        .applyMatrix4(model.group.matrixWorld);
+      expect(damage.distanceTo(visual), `Longsword point ${i}`).toBeCloseTo(0, 3);
+    }
+  });
 });

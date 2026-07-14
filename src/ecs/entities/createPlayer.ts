@@ -30,7 +30,7 @@ import { hasPersistedGold, loadGold } from '../../economy/goldPersistence';
 import { registerPhysicsBody } from '../systems/MovementSystem';
 import { spawnAtGround } from '../utils/spawnAtGround';
 import { createCharacterModel } from '../../rendering/CharacterModel';
-import { weaponModelFactories } from '../../rendering/WeaponModels';
+import { attachThirdPersonWeapon } from '../../rendering/WeaponModels';
 import { weaponIdToName } from '../systems/CombatSystem';
 import { weaponBoneMap } from '../systems/TracerSystem';
 import { createHitboxes } from '../systems/HitboxSystem';
@@ -232,11 +232,7 @@ export function createPlayer(
   const weaponAttachBone = bones['weapon_attach'];
   if (weaponAttachBone) {
     weaponBoneMap.set(eid, weaponAttachBone);
-    const factory = weaponModelFactories[startingWeapon];
-    if (factory) {
-      const weaponModel = factory();
-      weaponAttachBone.add(weaponModel.group);
-    }
+    attachThirdPersonWeapon(weaponAttachBone, startingWeapon);
   }
 
   // Mesh root bone is at feet (y=0 in local space), so this is a direct copy.

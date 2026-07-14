@@ -2,7 +2,8 @@
  * Tests for the InventorySystem — inventory management and weapon equipping.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import * as THREE from 'three';
 import { createWorld, addEntity, addComponent, type IWorld } from 'bitecs';
 import { CombatStateComponent, Player, meshRegistry } from '../components';
 import { CombatState } from '../../combat/states';
@@ -21,9 +22,19 @@ import {
   onEquip,
   offEquip,
   resetInventorySystem,
-  registerWeaponModelFactory,
-  weaponModelFactories,
 } from './InventorySystem';
+// `equipWeapon` mounts the third-person model through
+// `attachThirdPersonWeapon`, which reads the canonical `weaponModelFactories`
+// registry in WeaponModels.ts. Tests register their mock weapons there.
+import {
+  weaponModelFactories,
+  attachThirdPersonWeapon,
+} from '../../rendering/WeaponModels';
+import { createCharacterModel } from '../../rendering/CharacterModel';
+// Side-effect imports: register the real weapon configs used by the grip
+// regression suite below.
+import '../../weapons/longsword';
+import '../../weapons/warhammer';
 
 // ── Test weapon config factory ──────────────────────────
 
@@ -80,6 +91,13 @@ function createTestWeapon(name: string): WeaponConfig {
 class MockBone {
   children: any[] = [];
   name: string;
+  // Real THREE math primitives so `attachThirdPersonWeapon`'s transform
+  // reset + grip compose (position.copy / rotation.copy / quaternion) work.
+  // `add`/`remove` stay mock so they accept the lightweight MockGroup the
+  // test factories return (a real Object3D.add would reject a non-Object3D).
+  position = new THREE.Vector3();
+  rotation = new THREE.Euler();
+  quaternion = new THREE.Quaternion();
 
   constructor(name: string) {
     this.name = name;
@@ -114,10 +132,9 @@ describe('InventorySystem', () => {
     meshRegistry.clear();
     resetInventorySystem();
 
-    // Clear weaponModelFactories
-    for (const key of Object.keys(weaponModelFactories)) {
-      delete weaponModelFactories[key];
-    }
+    // Clear any leftover mock weapon factories from a prior test.
+    delete weaponModelFactories['TestSword'];
+    delete weaponModelFactories['TestMace'];
 
     // Clear test weapons from weaponConfigs
     delete weaponConfigs['TestSword'];
@@ -153,9 +170,22 @@ describe('InventorySystem', () => {
       bones: { weapon_attach: weaponAttachBone as any },
     });
 
-    // Register weapon model factories
-    registerWeaponModelFactory('TestSword', () => ({ group: new MockGroup() as any }));
-    registerWeaponModelFactory('TestMace', () => ({ group: new MockGroup() as any }));
+    // Register mock weapon model factories into the canonical registry that
+    // `attachThirdPersonWeapon` (invoked by `equipWeapon`) reads from.
+    weaponModelFactories['TestSword'] = () => ({
+      group: new MockGroup() as any,
+      tracerPoints: [],
+    });
+    weaponModelFactories['TestMace'] = () => ({
+      group: new MockGroup() as any,
+      tracerPoints: [],
+    });
+  });
+
+  afterEach(() => {
+    // Don't leak mock weapons into the shared canonical registry.
+    delete weaponModelFactories['TestSword'];
+    delete weaponModelFactories['TestMace'];
   });
 
   // ── initInventory ────────────────────────────────────
@@ -441,6 +471,92 @@ describe('InventorySystem', () => {
       equipWeapon(eid, 'TestMace');
       expect(listener).not.toHaveBeenCalled();
     });
+  });
+});
+
+// ── equipWeapon third-person grip (regression for #220 QA) ──────────
+//
+// The blocker QA caught: `equipWeapon` (the LIVE weapon-swap path used by
+// pickups / shop / respawn / UI-equip) must reset the `weapon_attach` bone and
+// compose the newly-equipped weapon's grip — not leave the PREVIOUS weapon's
+// grip on the bone. These tests drive real weapons through `equipWeapon` end to
+// end (not `attachThirdPersonWeapon` in isolation) and assert the bone's
+// transform matches the equipped weapon's grip after every swap.
+
+describe('equipWeapon — third-person grip on the weapon_attach bone', () => {
+  let ecsWorld: IWorld;
+  let eid: number;
+  let bone: THREE.Object3D;
+
+  beforeEach(() => {
+    fsmRegistry.clear();
+    meshRegistry.clear();
+    resetInventorySystem();
+
+    ecsWorld = createWorld();
+    eid = addEntity(ecsWorld);
+    addComponent(ecsWorld, CombatStateComponent, eid);
+    addComponent(ecsWorld, Player, eid);
+    CombatStateComponent.state[eid] = CombatState.Idle;
+
+    // Real character rig → real `weapon_attach` bone (carries the baked
+    // rotation.x = π that grips compose onto).
+    const model = createCharacterModel();
+    bone = model.bones['weapon_attach'];
+    meshRegistry.set(eid, {
+      group: model.group as any,
+      skeleton: model.skeleton as any,
+      bones: model.bones as any,
+    });
+
+    // Longsword and Warhammer have DISTINCT grips (forward pitch vs pitch+roll),
+    // so a stale-grip bug is observable. Start unarmed (no equipped weapon) so
+    // the first `equipWeapon` below actually runs the model-swap path rather
+    // than short-circuiting on "already equipped".
+    createFSM(eid, weaponConfigs['Longsword']);
+    initInventory(eid, ['Longsword', 'Warhammer']);
+  });
+
+  /** Bone transform an independent `attachThirdPersonWeapon` call produces. */
+  function reference(weaponName: string): THREE.Object3D {
+    const ref = new THREE.Object3D();
+    attachThirdPersonWeapon(ref, weaponName);
+    return ref;
+  }
+
+  it('the two reference grips differ (guards against a vacuous test)', () => {
+    const l = reference('Longsword');
+    const w = reference('Warhammer');
+    expect(l.quaternion.angleTo(w.quaternion)).toBeGreaterThan(0.1);
+  });
+
+  it('equipping composes that weapon’s grip onto the bone', () => {
+    equipWeapon(eid, 'Longsword');
+    const ref = reference('Longsword');
+    expect(bone.quaternion.angleTo(ref.quaternion)).toBeCloseTo(0, 6);
+    expect(bone.position.distanceTo(ref.position)).toBeCloseTo(0, 6);
+  });
+
+  it('swapping to another weapon replaces the grip (no stale rotation)', () => {
+    equipWeapon(eid, 'Longsword');
+    const longswordRef = reference('Longsword');
+    // Sanity: bone currently carries Longsword's grip.
+    expect(bone.quaternion.angleTo(longswordRef.quaternion)).toBeCloseTo(0, 6);
+
+    // The exact failure QA described: pick up a different weapon mid-life.
+    equipWeapon(eid, 'Warhammer');
+    const warhammerRef = reference('Warhammer');
+    // Bone now matches Warhammer's grip …
+    expect(bone.quaternion.angleTo(warhammerRef.quaternion)).toBeCloseTo(0, 6);
+    // … and NO LONGER carries Longsword's leftover grip.
+    expect(bone.quaternion.angleTo(longswordRef.quaternion)).toBeGreaterThan(0.1);
+  });
+
+  it('a swap leaves exactly one weapon model on the bone (no stacking)', () => {
+    equipWeapon(eid, 'Longsword');
+    expect(bone.children.length).toBe(1);
+    equipWeapon(eid, 'Warhammer');
+    expect(bone.children.length).toBe(1);
   });
 });
 
