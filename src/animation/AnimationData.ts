@@ -128,14 +128,25 @@ export const IDLE_POSE: Pose = {
 // values (Overhead=0, Left=1, Right=2, Stab=3) instead of the old
 // `AttackDirection` (Left=0, Right=1, Overhead=2, Stab=3).
 //
-// #219 audit: the windup keyframes were NOT flipped. They were already tuned
-// to the corrected -Z convention to crossfade seamlessly into the arc-swing
-// Release starts in `arcSwing.ts` (Overhead's shoulder `x: -160°` is
-// 2π-equivalent to arc `shoulderStart x: 3.5`; Left/Right chamber on the
-// same lateral hemisphere as their arc starts; Stab keeps its rear elbow
-// chamber). Negating them would break the windup→Release crossfade. Pinned
-// by `BladeTimingParity.test.ts` (Release) and the windup-hemisphere checks
-// in `AnimationData.orientation.test.ts`.
+// #219 audit: the RIGHT-ARM / weapon-chain windup keyframes were NOT flipped.
+// They were already tuned to the corrected -Z convention to crossfade
+// seamlessly into the arc-swing Release starts in `arcSwing.ts` (Overhead's
+// shoulder `x: -160°` is 2π-equivalent to arc `shoulderStart x: 3.5`;
+// Left/Right chamber on the same lateral hemisphere as their arc starts;
+// Stab keeps its rear elbow chamber). Negating them would break the
+// windup→Release crossfade. Pinned by `BladeTimingParity.test.ts` (Release)
+// and the windup-hemisphere checks in `AnimationData.orientation.test.ts`.
+//
+// #227 follow-up: that #219 guarantee covered the RIGHT-ARM / weapon chain
+// ONLY. The off-hand chain (`shoulder_L` / `upper_arm_L` / `forearm_L`) was
+// still authored to the old +Z convention and read backward (toward the
+// camera) at the start of every swing. It was corrected here via the Ry(π)
+// conjugation — negate the X and Z Euler components, keep Y — after measuring
+// each pose's `hand_L` world-z empirically (see the per-pose notes below and
+// the hand_L assertions in `AnimationData.orientation.test.ts`). Hitboxes and
+// tracers read `weapon_attach` / `hand_R` only, so the off-hand is cosmetic —
+// no hit/tracer test moved. Overhead windup was measured neutral and left as
+// authored (see its note).
 
 const ATTACK_ANIMATIONS: Record<number, CombatAnimation> = {
   // ── Left Swing ──
@@ -148,15 +159,22 @@ const ATTACK_ANIMATIONS: Record<number, CombatAnimation> = {
       chest: { y: -35 * DEG },
       shoulder_R: { x: 72 * DEG, z: 68 * DEG },
       forearm_R: { x: -25 * DEG },
-      shoulder_L: { x: -10 * DEG, z: 15 * DEG },
-      upper_arm_L: { x: -20 * DEG },
+      // #227: off-hand flipped to -Z (Ry(π) conjugation; was {x:-10,z:15} →
+      // full-pose hand_L.z ≈ +0.094 backward; now ≈ -0.421 forward).
+      shoulder_L: { x: 10 * DEG, z: -15 * DEG },
+      upper_arm_L: { x: 20 * DEG },
     },
     release: {
       // Chest unwinds through the swing — the right shoulder drives
       // forward-left. Right-arm bones are owned by the arc during Release.
       chest: { y: 35 * DEG },
-      shoulder_L: { x: -10 * DEG, z: 10 * DEG },
-      upper_arm_L: { x: -20 * DEG },
+      // #227: off-hand corrected to -Z (was {x:-10,z:10}/{x:-20} → hand_L.z ≈
+      // +0.295 backward). The plain Ry(π) flip only reaches ≈ +0.03 here — the
+      // (correct, untouched) chest y:+35 winds the torso so the left arm
+      // trails backward — so the off-hand is given extra forward reach to
+      // clear into the forward hemisphere: now hand_L.z ≈ -0.203 forward.
+      shoulder_L: { x: 35 * DEG, z: -5 * DEG },
+      upper_arm_L: { x: 45 * DEG },
     },
     recovery: IDLE_POSE,
   },
@@ -170,13 +188,19 @@ const ATTACK_ANIMATIONS: Record<number, CombatAnimation> = {
       chest: { y: 35 * DEG },
       shoulder_R: { x: 72 * DEG, z: -68 * DEG },
       forearm_R: { x: -25 * DEG },
-      shoulder_L: { x: -15 * DEG, z: 25 * DEG },
-      upper_arm_L: { x: -30 * DEG },
+      // #227: off-hand corrected to -Z (was {x:-15,z:25}/{x:-30} → hand_L.z ≈
+      // +0.297 backward, the most visible case). Like Left release, the plain
+      // Ry(π) flip only reaches ≈ +0.03 because the (untouched) chest y:+35
+      // winds the torso back; extra forward reach clears it: now ≈ -0.156.
+      shoulder_L: { x: 35 * DEG, z: -15 * DEG },
+      upper_arm_L: { x: 45 * DEG },
     },
     release: {
       chest: { y: -35 * DEG },
-      shoulder_L: { x: -10 * DEG, z: 15 * DEG },
-      upper_arm_L: { x: -20 * DEG },
+      // #227: off-hand flipped (Ry(π); was {x:-10,z:15} → hand_L.z ≈ +0.094
+      // backward; now ≈ -0.421 forward — chest y:-35 aids the flip here).
+      shoulder_L: { x: 10 * DEG, z: -15 * DEG },
+      upper_arm_L: { x: 20 * DEG },
     },
     recovery: IDLE_POSE,
   },
@@ -189,6 +213,11 @@ const ATTACK_ANIMATIONS: Record<number, CombatAnimation> = {
       shoulder_R: { x: -160 * DEG, z: -15 * DEG },
       upper_arm_R: { x: -10 * DEG },
       forearm_R: { x: -30 * DEG },
+      // #227: off-hand LEFT AS AUTHORED. Measured hand_L.z ≈ -0.018 — neutral
+      // (hand sits ~directly above the head as the arms raise), on the forward
+      // side. `shoulder_L x:-140°` is a large-angle 2π-adjacency case, NOT the
+      // small-negative +Z-authoring bug; the sign flip would push the off-hand
+      // up-and-forward, a less natural overhead chamber. Do NOT "fix" by sign.
       shoulder_L: { x: -140 * DEG, z: 15 * DEG },
       upper_arm_L: { x: -10 * DEG },
       forearm_L: { x: -40 * DEG },
@@ -199,9 +228,13 @@ const ATTACK_ANIMATIONS: Record<number, CombatAnimation> = {
       shoulder_R: { x: -30 * DEG, z: -10 * DEG },
       upper_arm_R: { x: -40 * DEG },
       forearm_R: { x: -50 * DEG },
-      shoulder_L: { x: -20 * DEG, z: 10 * DEG },
-      upper_arm_L: { x: -30 * DEG },
-      forearm_L: { x: -30 * DEG },
+      // #227: off-hand flipped (Ry(π); was {x:-20,z:10}/{x:-30}/{x:-30} →
+      // hand_L.z ≈ +0.386 backward; now ≈ -0.405 forward). Small-negative
+      // +Z-authoring bug — unlike the windup's large angle, the 2π caveat does
+      // not apply. The off-hand now follows the chop forward, not trailing.
+      shoulder_L: { x: 20 * DEG, z: -10 * DEG },
+      upper_arm_L: { x: 30 * DEG },
+      forearm_L: { x: 30 * DEG },
     },
     recovery: IDLE_POSE,
   },
@@ -216,9 +249,11 @@ const ATTACK_ANIMATIONS: Record<number, CombatAnimation> = {
       chest: { y: -25 * DEG },
       shoulder_R: { x: 28 * DEG, z: -8 * DEG },
       forearm_R: { x: -88 * DEG },
-      shoulder_L: { x: -40 * DEG, z: 20 * DEG },
-      upper_arm_L: { x: -20 * DEG },
-      forearm_L: { x: -30 * DEG },
+      // #227: off-hand flipped (Ry(π); was {x:-40,z:20}/{x:-20}/{x:-30} →
+      // hand_L.z ≈ +0.355 backward; now ≈ -0.596 forward).
+      shoulder_L: { x: 40 * DEG, z: -20 * DEG },
+      upper_arm_L: { x: 20 * DEG },
+      forearm_L: { x: 30 * DEG },
     },
     release: {
       // Chest drives the right shoulder forward through the thrust. The
@@ -226,9 +261,11 @@ const ATTACK_ANIMATIONS: Record<number, CombatAnimation> = {
       // tip proportionally to weapon reach, and long weapons (Spear)
       // would otherwise stab well left of the crosshair.
       chest: { y: 5 * DEG, x: 5 * DEG },
-      shoulder_L: { x: -20 * DEG, z: 15 * DEG },
-      upper_arm_L: { x: -15 * DEG },
-      forearm_L: { x: -10 * DEG },
+      // #227: off-hand flipped (Ry(π); was {x:-20,z:15}/{x:-15}/{x:-10} →
+      // hand_L.z ≈ +0.301 backward; now ≈ -0.284 forward).
+      shoulder_L: { x: 20 * DEG, z: -15 * DEG },
+      upper_arm_L: { x: 15 * DEG },
+      forearm_L: { x: 10 * DEG },
     },
     recovery: IDLE_POSE,
   },
